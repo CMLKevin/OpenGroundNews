@@ -1,0 +1,29 @@
+{
+  "name": "opengroundnews",
+  "version": "1.0.0",
+  "description": "Open-source Ground News alternative with remote CDP ingestion and archive-first reader mode.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "groundnews:scrape": "node scripts/groundnews_scrape_cdp.mjs",
+    "archive:verify": "node scripts/archive_verify_cdp.mjs",
+    "archive:extract": "node scripts/archive_extract_cdp.mjs",
+    "ingest:groundnews": "node scripts/sync_groundnews_pipeline.mjs"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "next": "^16.0.0",
+    "playwright-core": "^1.58.2",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "@types/react": "^19.2.13",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^5.9.3"
+  }
+}
