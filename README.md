@@ -136,6 +136,11 @@ npm run archive:verify -- --urls-file output/browser_use/archive_tests/test_urls
 
 # Extract one URL via archive-first flow
 npm run archive:extract -- --url https://example.com/news/story
+
+# Restart the full app server (frontend + API routes in Next.js)
+./restart.sh dev
+# or
+PORT=3001 ./restart.sh prod
 ```
 
 ## 8) API Endpoints
