@@ -27,7 +27,7 @@ export function StoryCard({ story }: { story: Story }) {
         <h3 className="story-title">
           <Link href={`/story/${story.slug}`}>{story.title}</Link>
         </h3>
-        <BiasBar story={story} />
+        <BiasBar story={story} showLabels={false} />
         <p className="story-summary">{story.summary}</p>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <span className="pill">{biasLabel(story)} coverage</span>

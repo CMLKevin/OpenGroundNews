@@ -127,7 +127,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
                 <h2 className="lead-title">
                   <Link href={`/story/${leadStory.slug}`}>{leadStory.title}</Link>
                 </h2>
-                <BiasBar story={leadStory} />
+                <BiasBar story={leadStory} showLabels={true} />
                 <p className="story-summary">{leadStory.summary}</p>
                 <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
                   <span className="pill">{leadStory.sourceCount} sources</span>

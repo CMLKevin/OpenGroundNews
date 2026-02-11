@@ -32,13 +32,13 @@ export default async function StoryPage({ params, searchParams }: Props) {
           <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.7rem, 4vw, 2.5rem)", lineHeight: 1.08 }}>
             {story.title}
           </h1>
-          <BiasBar story={story} />
-          <div className="chip-row">
-            <span className="chip">{story.sourceCount} sources</span>
-            <span className="chip">{story.bias.left}% left</span>
-            <span className="chip">{story.bias.center}% center</span>
-            <span className="chip">{story.bias.right}% right</span>
-            {story.blindspot ? <span className="chip">Blindspot</span> : null}
+          <BiasBar story={story} showLabels={true} />
+          <div className="story-stat-row">
+            <span className="story-stat-pill">{story.sourceCount} sources</span>
+            <span className="story-stat-pill">{story.bias.left}% left</span>
+            <span className="story-stat-pill">{story.bias.center}% center</span>
+            <span className="story-stat-pill">{story.bias.right}% right</span>
+            {story.blindspot ? <span className="story-stat-pill">Blindspot candidate</span> : null}
           </div>
           <p className="story-summary" style={{ fontSize: "0.98rem" }}>
             {story.summary}

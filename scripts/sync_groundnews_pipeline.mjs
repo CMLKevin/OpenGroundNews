@@ -123,6 +123,33 @@ function uniqueUrls(urls) {
   return Array.from(new Set(urls.filter(Boolean)));
 }
 
+function sanitizeImageUrl(raw, baseUrl) {
+  const value = (raw || "").trim();
+  if (!value) return FALLBACK_IMAGE;
+
+  if (value.startsWith("/_next/image")) {
+    try {
+      const parsed = new URL(value, baseUrl);
+      const nested = parsed.searchParams.get("url");
+      if (nested) return sanitizeImageUrl(decodeURIComponent(nested), baseUrl);
+      return FALLBACK_IMAGE;
+    } catch {
+      return FALLBACK_IMAGE;
+    }
+  }
+
+  try {
+    const parsed = new URL(value, baseUrl);
+    if (!/^https?:$/i.test(parsed.protocol)) return FALLBACK_IMAGE;
+    if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
+      return FALLBACK_IMAGE;
+    }
+    return parsed.toString();
+  } catch {
+    return FALLBACK_IMAGE;
+  }
+}
+
 async function enrichStory(storyUrl) {
   const res = await fetch(storyUrl, {
     cache: "no-store",
@@ -144,10 +171,11 @@ async function enrichStory(storyUrl) {
     "Story aggregated from multiple sources.",
   );
 
-  const imageUrl =
+  const rawImageUrl =
     $("meta[property='og:image']").attr("content") ||
     $("img").first().attr("src") ||
     FALLBACK_IMAGE;
+  const imageUrl = sanitizeImageUrl(rawImageUrl, storyUrl);
 
   const topic =
     $("meta[property='article:section']").attr("content") ||

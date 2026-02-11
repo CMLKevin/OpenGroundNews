@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { ArchiveEntry, SourceArticle, StoreShape, Story } from "@/lib/types";
+import { normalizeStory } from "@/lib/format";
 
 const STORE_PATH = path.join(process.cwd(), "data", "store.json");
 let writeLock: Promise<void> = Promise.resolve();
@@ -55,7 +56,7 @@ export async function listStories(params?: {
   limit?: number;
 }): Promise<Story[]> {
   const store = await readStore();
-  let stories = [...store.stories].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+  let stories = [...store.stories].map(normalizeStory).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
 
   if (params?.view === "blindspot") stories = stories.filter((s) => s.blindspot);
   if (params?.view === "local") stories = stories.filter((s) => s.local);
@@ -68,7 +69,8 @@ export async function listStories(params?: {
 
 export async function getStoryBySlug(slug: string): Promise<Story | null> {
   const store = await readStore();
-  return store.stories.find((s) => s.slug === slug) ?? null;
+  const story = store.stories.find((s) => s.slug === slug) ?? null;
+  return story ? normalizeStory(story) : null;
 }
 
 export async function upsertStories(stories: Story[], ingestionNote: Partial<StoreShape["ingestion"]> = {}) {
