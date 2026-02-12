@@ -35,7 +35,7 @@ export default async function SourcePage({ params, searchParams }: Props) {
 
   return (
     <main className="container" style={{ padding: "1rem 0 2rem" }}>
-      <section className="panel" style={{ background: "#fff", display: "grid", gap: "0.8rem" }}>
+      <section className="panel" style={{ display: "grid", gap: "0.8rem" }}>
         <div className="section-title" style={{ paddingTop: 0 }}>
           <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.55rem, 4vw, 2.2rem)" }}>
             {displayOutlet}
@@ -56,7 +56,7 @@ export default async function SourcePage({ params, searchParams }: Props) {
         </div>
       </section>
 
-      <section className="panel" style={{ marginTop: "1rem", background: "#fff" }}>
+      <section className="panel" style={{ marginTop: "1rem" }}>
         <div className="section-title" style={{ paddingTop: 0 }}>
           <h2 style={{ margin: 0 }}>Coverage Samples</h2>
           <span className="story-meta">{Math.min(samples.length, 30)} shown</span>
@@ -100,4 +100,3 @@ export default async function SourcePage({ params, searchParams }: Props) {
     </main>
   );
 }
-

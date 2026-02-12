@@ -35,7 +35,7 @@ export function SavedFeed({ initialStories }: Props) {
 
   return (
     <div style={{ display: "grid", gap: "0.9rem" }}>
-      <section className="panel" style={{ background: "#fff" }}>
+      <section className="panel">
         <div className="section-title" style={{ paddingTop: 0 }}>
           <h2 style={{ margin: 0 }}>Saved Preferences</h2>
           <span className="story-meta">{filtered.length} matching stories</span>
@@ -67,4 +67,3 @@ export function SavedFeed({ initialStories }: Props) {
     </div>
   );
 }
-

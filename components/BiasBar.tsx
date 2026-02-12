@@ -34,11 +34,17 @@ export function BiasBar({ story, showLabels = true }: BiasBarProps) {
       </div>
 
       {showLabels ? (
-        <div className="biasbar-meta">
-          <span className="bias-meta-left">{bias.left}% left</span>
-          <span className="bias-meta-center">{bias.center}% center</span>
-          <span className="bias-meta-right">{bias.right}% right</span>
-        </div>
+        hasData ? (
+          <div className="biasbar-meta">
+            <span className="bias-meta-left">{bias.left}% left</span>
+            <span className="bias-meta-center">{bias.center}% center</span>
+            <span className="bias-meta-right">{bias.right}% right</span>
+          </div>
+        ) : (
+          <div className="biasbar-meta">
+            <span className="story-meta">Bias data unavailable</span>
+          </div>
+        )
       ) : null}
     </div>
   );

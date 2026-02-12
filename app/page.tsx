@@ -2,7 +2,7 @@ import Link from "next/link";
 import { StoryCard } from "@/components/StoryCard";
 import { BiasBar } from "@/components/BiasBar";
 import { StoryImage } from "@/components/StoryImage";
-import { prettyDate, slugify } from "@/lib/format";
+import { prettyDate, slugify, sourceCountLabel } from "@/lib/format";
 import { getDashboardStats, listStories } from "@/lib/store";
 
 type HomeProps = {
@@ -132,7 +132,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
       <section className="feed-shell">
         <div className="feed-main">
-          <div className="section-title" style={{ paddingTop: 0.1 }}>
+          <div className="section-title" style={{ paddingTop: 0 }}>
             <h2 style={{ margin: 0 }}>Latest Stories</h2>
             <span className="story-meta">{tagged.length} stories</span>
           </div>
@@ -157,7 +157,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
                 <BiasBar story={leadStory} showLabels={true} />
                 <p className="story-summary">{leadStory.summary}</p>
                 <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
-                  <span className="pill">{leadStory.sourceCount} sources</span>
+                  <span className="pill">{sourceCountLabel(leadStory)}</span>
                   {leadStory.blindspot ? <span className="pill">Blindspot candidate</span> : null}
                   {leadStory.trending ? <span className="pill">Trending</span> : null}
                 </div>
@@ -173,7 +173,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
         </div>
 
         <aside className="feed-rail">
-          <section className="panel" style={{ background: "#fff" }}>
+          <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Feed Filters</h2>
               <Link href={edition ? `/?edition=${encodeURIComponent(edition)}` : "/"} className="story-meta">
@@ -211,7 +211,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
             </form>
           </section>
 
-          <section className="panel" style={{ background: "#fff" }}>
+          <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Daily Briefing</h2>
               <span className="story-meta">Top 6</span>
@@ -223,7 +223,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
                     <StoryImage src={story.imageUrl} alt={story.title} width={86} height={54} className="rail-thumb" unoptimized />
                     <span>
                       <span className="rail-link">{story.title}</span>
-                      <span className="story-meta">{story.sourceCount} sources • {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R</span>
+                      <span className="story-meta">{sourceCountLabel(story)} • {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R</span>
                     </span>
                   </Link>
                 </li>
@@ -231,7 +231,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
             </ol>
           </section>
 
-          <section className="panel" style={{ background: "#fff" }}>
+          <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Blindspot Watch</h2>
               <Link href="/blindspot" className="story-meta">

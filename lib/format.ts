@@ -31,6 +31,20 @@ export function biasLabel(story: Story) {
   return `${value}% ${side}`;
 }
 
+export function formatSourceCount(story: Story): { tracked: number; total: number } {
+  const tracked = Array.isArray(story.sources) ? story.sources.length : 0;
+  const totalCandidate = story.coverage?.totalSources ?? story.sourceCount;
+  const total = typeof totalCandidate === "number" && Number.isFinite(totalCandidate) ? Math.max(tracked, totalCandidate) : tracked;
+  return { tracked, total };
+}
+
+export function sourceCountLabel(story: Story): string {
+  const { tracked, total } = formatSourceCount(story);
+  if (tracked > 0 && total > tracked) return `${tracked} of ${total} sources`;
+  if (total > 0) return `${total} sources`;
+  return `${tracked} sources`;
+}
+
 export function compactHost(rawUrl: string) {
   try {
     return new URL(rawUrl).hostname.replace(/^www\./, "");
@@ -77,19 +91,28 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
   if (!rawUrl || !rawUrl.trim()) return fallback;
   let value = rawUrl.trim();
 
-  // Ground News sometimes emits internal proxy image links like /_next/image?url=...
-  if (value.startsWith("/_next/image")) {
+  const unwrapNextImage = (input: string): string | null => {
+    const clean = (input || "").trim();
+    if (!clean) return null;
     try {
-      const parsed = new URL(`https://ground.news${value}`);
+      const parsed = clean.startsWith("/_next/image") ? new URL(`https://ground.news${clean}`) : new URL(clean);
+      if (parsed.pathname !== "/_next/image") return null;
       const nested = parsed.searchParams.get("url");
-      if (nested) {
-        return sanitizeStoryImageUrl(decodeURIComponent(nested), fallback);
+      if (!nested) return null;
+      try {
+        return decodeURIComponent(nested);
+      } catch {
+        return nested;
       }
-      return fallback;
     } catch {
-      return fallback;
+      return null;
     }
-  }
+  };
+
+  // Ground News sometimes emits internal proxy image links like /_next/image?url=...
+  // Those break cross-origin (403) on our domain, so unwrap them.
+  const unwrapped = unwrapNextImage(value);
+  if (unwrapped) return sanitizeStoryImageUrl(unwrapped, fallback);
 
   if (value.startsWith("//")) value = `https:${value}`;
   if (value.startsWith("/")) return fallback;
@@ -113,16 +136,26 @@ function sanitizeAssetUrl(rawUrl?: string): string | undefined {
   if (!rawUrl || !rawUrl.trim()) return undefined;
   let value = rawUrl.trim();
   if (value.startsWith("//")) value = `https:${value}`;
-  if (value.startsWith("/_next/image")) {
+  const unwrapNextImage = (input: string): string | null => {
+    const clean = (input || "").trim();
+    if (!clean) return null;
     try {
-      const parsed = new URL(`https://ground.news${value}`);
+      const parsed = clean.startsWith("/_next/image") ? new URL(`https://ground.news${clean}`) : new URL(clean);
+      if (parsed.pathname !== "/_next/image") return null;
       const nested = parsed.searchParams.get("url");
-      if (nested) return sanitizeAssetUrl(decodeURIComponent(nested));
-      return undefined;
+      if (!nested) return null;
+      try {
+        return decodeURIComponent(nested);
+      } catch {
+        return nested;
+      }
     } catch {
-      return undefined;
+      return null;
     }
-  }
+  };
+
+  const unwrapped = unwrapNextImage(value);
+  if (unwrapped) return sanitizeAssetUrl(unwrapped);
 
   try {
     const parsed = new URL(value);
@@ -152,14 +185,18 @@ function sanitizeTag(tag: string): string | null {
 }
 
 export function sanitizeStoryTags(tags: string[]): string[] {
-  const dedup = new Set<string>();
+  const dedupKeys = new Set<string>();
+  const dedup: string[] = [];
   for (const tag of tags) {
     const normalized = sanitizeTag(tag);
     if (!normalized) continue;
-    dedup.add(normalized);
-    if (dedup.size >= 8) break;
+    const key = normalized.toLowerCase();
+    if (dedupKeys.has(key)) continue;
+    dedupKeys.add(key);
+    dedup.push(normalized);
+    if (dedup.length >= 8) break;
   }
-  return Array.from(dedup);
+  return dedup;
 }
 
 export function isPlaceholderExcerpt(value: string): boolean {
@@ -228,12 +265,15 @@ export function normalizeStory(story: Story): Story {
     : [];
   const cleanDek = (story.dek || "").trim();
   const cleanAuthor = (story.author || "").trim();
+  const cleanSummary = (story.summary || "").trim();
+  const dedupedDek = cleanDek && cleanSummary && cleanDek === cleanSummary ? "" : cleanDek;
 
   return {
     ...story,
     slug: normalizedSlug,
-    dek: cleanDek || undefined,
+    dek: dedupedDek || undefined,
     author: cleanAuthor || undefined,
+    summary: cleanSummary || story.summary,
     bias: normalizedBias,
     sourceCount: Math.max(
       normalizedSources.length,

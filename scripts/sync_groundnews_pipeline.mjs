@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
+import "./lib/load_env.mjs";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -26,6 +27,7 @@ function parseArgs(argv) {
     out: DEFAULT_OUT,
     articleAuditDir: DEFAULT_ARTICLE_AUDIT_DIR,
     articleAudit: true,
+    refreshExisting: 0,
     sessionStoryBatchSize: 8,
     sessionMaxMs: 11 * 60 * 1000,
     silent: true,
@@ -53,6 +55,10 @@ function parseArgs(argv) {
       i += 1;
     } else if (a === "--no-article-audit") {
       opts.articleAudit = false;
+    } else if (a === "--refresh-existing" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.refreshExisting = Number.isFinite(parsed) && parsed > 0 ? Math.max(0, Math.round(parsed)) : 0;
+      i += 1;
     } else if (a === "--session-story-batch" && argv[i + 1]) {
       const parsed = Number(argv[i + 1]);
       opts.sessionStoryBatchSize = Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : 8;
@@ -281,16 +287,29 @@ function sanitizeImageUrl(raw, baseUrl) {
   const value = normalizeText(raw);
   if (!value) return FALLBACK_IMAGE;
 
-  if (value.startsWith("/_next/image")) {
+  const unwrapNextImage = (input) => {
+    const clean = normalizeText(input);
+    if (!clean) return null;
     try {
-      const parsed = new URL(value, baseUrl);
+      const parsed = clean.startsWith("/_next/image")
+        ? new URL(clean, "https://ground.news")
+        : new URL(clean);
+      if (parsed.pathname !== "/_next/image") return null;
       const nested = parsed.searchParams.get("url");
-      if (nested) return sanitizeImageUrl(decodeURIComponent(nested), baseUrl);
-      return FALLBACK_IMAGE;
+      if (!nested) return null;
+      try {
+        return decodeURIComponent(nested);
+      } catch {
+        return nested;
+      }
     } catch {
-      return FALLBACK_IMAGE;
+      return null;
     }
-  }
+  };
+
+  // Ground News often emits Next.js image optimizer links that break cross-origin.
+  const unwrapped = unwrapNextImage(value);
+  if (unwrapped) return sanitizeImageUrl(unwrapped, baseUrl);
 
   try {
     const parsed = new URL(value, baseUrl);
@@ -314,14 +333,18 @@ function sanitizeTag(tag) {
 }
 
 function sanitizeTags(tags) {
-  const dedup = new Set();
+  const dedupKeys = new Set();
+  const dedup = [];
   for (const tag of tags || []) {
     const clean = sanitizeTag(tag);
     if (!clean) continue;
-    dedup.add(clean);
-    if (dedup.size >= 8) break;
+    const key = clean.toLowerCase();
+    if (dedupKeys.has(key)) continue;
+    dedupKeys.add(key);
+    dedup.push(clean);
+    if (dedup.length >= 8) break;
   }
-  return Array.from(dedup);
+  return dedup;
 }
 
 function parseBiasLabel(value) {
@@ -337,9 +360,11 @@ function parseFactualityLabel(value) {
   const text = normalizeText(value).toLowerCase();
   if (!text) return "unknown";
   if (text.includes("very high")) return "very-high";
+  if (text.includes("veryhigh")) return "very-high";
   if (/(^|\s)high(\s|$)/.test(text)) return "high";
   if (text.includes("mixed")) return "mixed";
   if (text.includes("very low")) return "very-low";
+  if (text.includes("verylow")) return "very-low";
   if (/(^|\s)low(\s|$)/.test(text)) return "low";
   return "unknown";
 }
@@ -348,6 +373,7 @@ function parsePaywallLabel(value) {
   const text = normalizeText(value).toLowerCase();
   if (!text) return undefined;
   if (text.includes("no paywall")) return "none";
+  if (text.includes("nopaywall")) return "none";
   if (text.includes("soft")) return "soft";
   if (text.includes("hard") || text.includes("paywall")) return "hard";
   return undefined;
@@ -377,16 +403,30 @@ function normalizeExternalUrl(value) {
 function normalizeAssetUrl(value, baseUrl = "") {
   const clean = normalizeText(value);
   if (!clean) return undefined;
-  if (clean.startsWith("/_next/image")) {
+
+  const unwrapNextImage = (input) => {
+    const raw = normalizeText(input);
+    if (!raw) return null;
     try {
-      const parsed = new URL(clean, "https://ground.news");
+      const parsed = raw.startsWith("/_next/image")
+        ? new URL(raw, "https://ground.news")
+        : new URL(raw);
+      if (parsed.pathname !== "/_next/image") return null;
       const nested = parsed.searchParams.get("url");
-      if (nested) return normalizeAssetUrl(decodeURIComponent(nested), "https://ground.news");
-      return undefined;
+      if (!nested) return null;
+      try {
+        return decodeURIComponent(nested);
+      } catch {
+        return nested;
+      }
     } catch {
-      return undefined;
+      return null;
     }
-  }
+  };
+
+  const unwrapped = unwrapNextImage(clean);
+  if (unwrapped) return normalizeAssetUrl(unwrapped, baseUrl || "https://ground.news");
+
   try {
     const parsed = new URL(clean, baseUrl || undefined);
     if (!/^https?:$/i.test(parsed.protocol)) return undefined;
@@ -416,6 +456,602 @@ function extractNextDataRawFromHtml(html) {
   } catch {
     return "";
   }
+}
+
+function maxFiniteNumber(...values) {
+  const finite = values
+    .map((value) => (typeof value === "string" && value.trim() ? Number(value.replace(/,/g, "")) : value))
+    .filter((value) => Number.isFinite(value));
+  if (finite.length === 0) return undefined;
+  return Math.max(...finite.map((value) => Number(value)));
+}
+
+function normalizeHost(value) {
+  const clean = normalizeText(value).toLowerCase();
+  if (!clean) return "";
+  return clean.replace(/^www\./, "");
+}
+
+function parseBiasFromAny(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    if (value === 0) return "center";
+    return value < 0 ? "left" : "right";
+  }
+  if (typeof value === "string") return parseBiasLabel(value);
+  if (value && typeof value === "object") {
+    const any = value;
+    return parseBiasFromAny(any.label || any.name || any.value || "");
+  }
+  return "unknown";
+}
+
+function parseFactualityFromAny(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    // Map common 1-5 scales into buckets.
+    if (value >= 4.5) return "very-high";
+    if (value >= 3.5) return "high";
+    if (value >= 2.5) return "mixed";
+    if (value >= 1.5) return "low";
+    return "very-low";
+  }
+  if (typeof value === "string") return parseFactualityLabel(value);
+  if (value && typeof value === "object") {
+    const any = value;
+    return parseFactualityFromAny(any.label || any.name || any.value || "");
+  }
+  return "unknown";
+}
+
+function parsePaywallFromAny(value) {
+  if (typeof value === "boolean") return value ? "hard" : "none";
+  if (typeof value === "number" && Number.isFinite(value)) return value > 0 ? "hard" : "none";
+  if (typeof value === "string") return parsePaywallLabel(value) || "";
+  if (value && typeof value === "object") {
+    const any = value;
+    return parsePaywallFromAny(any.type || any.value || any.label || any.name || "");
+  }
+  return "";
+}
+
+function parseOwnershipFromAny(value) {
+  if (typeof value === "string") return normalizeText(value);
+  if (value && typeof value === "object") {
+    const any = value;
+    const candidate = normalizeText(any.name || any.label || any.value || any.owner || any.ownerName || "");
+    return candidate;
+  }
+  return "";
+}
+
+function parseNextFlightPushCalls(scriptText) {
+  if (!scriptText || !scriptText.includes("__next_f")) return [];
+  const calls = [];
+  const matcher = /(?:self\.__next_f\.push|\(self\.__next_f=self\.__next_f\|\|\[\]\)\.push)\(/g;
+  let match;
+  while ((match = matcher.exec(scriptText)) !== null) {
+    const start = matcher.lastIndex;
+    let depth = 1;
+    let inString = null;
+    let escaped = false;
+    let end = -1;
+
+    for (let i = start; i < scriptText.length; i += 1) {
+      const ch = scriptText[i];
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+          continue;
+        }
+        if (ch === "\\") {
+          escaped = true;
+          continue;
+        }
+        if (ch === inString) {
+          inString = null;
+        }
+        continue;
+      }
+
+      if (ch === "'" || ch === '"' || ch === "`") {
+        inString = ch;
+        continue;
+      }
+      if (ch === "(") depth += 1;
+      if (ch === ")") {
+        depth -= 1;
+        if (depth === 0) {
+          end = i;
+          break;
+        }
+      }
+    }
+
+    if (end <= start) continue;
+    calls.push(scriptText.slice(start, end));
+    matcher.lastIndex = end + 1;
+  }
+  return calls;
+}
+
+function evaluatePushArgExpression(expression) {
+  if (!expression) return null;
+  try {
+    return Function(`"use strict"; return (${expression});`)();
+  } catch {
+    return null;
+  }
+}
+
+function extractNextFlightTextBlocksFromHtml(html) {
+  if (!html) return [];
+  try {
+    const $ = cheerio.load(html);
+    const blocks = [];
+    $("script").each((_, element) => {
+      const script = $(element).html() || "";
+      if (!script.includes("__next_f")) return;
+      const calls = parseNextFlightPushCalls(script);
+      for (const expression of calls) {
+        const payload = evaluatePushArgExpression(expression);
+        if (!Array.isArray(payload)) continue;
+        if (payload.length >= 2 && typeof payload[1] === "string") {
+          blocks.push(payload[1]);
+          continue;
+        }
+        if (payload.length >= 1 && typeof payload[0] === "string") {
+          blocks.push(payload[0]);
+        }
+      }
+    });
+    return blocks;
+  } catch {
+    return [];
+  }
+}
+
+function mergeSourceCandidateRecords(base, incoming) {
+  const merged = {
+    ...base,
+    ...incoming,
+    url: incoming.url || base.url,
+  };
+
+  const baseOutlet = normalizeText(base.outlet || "");
+  const incomingOutlet = normalizeText(incoming.outlet || "");
+  merged.outlet = !looksLikeWeakOutletLabel(baseOutlet)
+    ? baseOutlet
+    : incomingOutlet || baseOutlet || hostFromUrl(merged.url || "");
+
+  const baseExcerpt = normalizeText(base.excerpt || "");
+  const incomingExcerpt = normalizeText(incoming.excerpt || "");
+  merged.excerpt = !looksLikeWeakExcerpt(baseExcerpt) ? baseExcerpt : incomingExcerpt || baseExcerpt;
+
+  merged.logoUrl = normalizeText(base.logoUrl || "") || normalizeText(incoming.logoUrl || "");
+  merged.bias = base.bias && base.bias !== "unknown" ? base.bias : incoming.bias || "unknown";
+  merged.factuality =
+    base.factuality && base.factuality !== "unknown" ? base.factuality : incoming.factuality || "unknown";
+  merged.ownership = normalizeText(base.ownership || "") || normalizeText(incoming.ownership || "");
+  merged.paywall = normalizeText(base.paywall || "") || normalizeText(incoming.paywall || "");
+  merged.locality = normalizeText(base.locality || "") || normalizeText(incoming.locality || "");
+  merged.publishedAt = normalizeText(base.publishedAt || "") || normalizeText(incoming.publishedAt || "");
+  return merged;
+}
+
+function extractStructuredFromNextFlightHtml(html) {
+  const blocks = extractNextFlightTextBlocksFromHtml(html);
+  const coverage = {
+    totalSources: undefined,
+    leaningLeft: undefined,
+    center: undefined,
+    leaningRight: undefined,
+    percentages: undefined,
+  };
+  const sourceByUrl = new Map();
+  const tagSet = new Set();
+  let parsedLineCount = 0;
+  const outletMetaByHost = new Map();
+  const outletMetaById = new Map();
+  const sourceInfoIdByHost = new Map();
+  const ownerById = new Map();
+  const keyHits = {};
+  const keySamples = [];
+
+  const compactValueForSample = (value) => {
+    if (typeof value === "string") return value.slice(0, 160);
+    if (typeof value === "number" || typeof value === "boolean" || value == null) return value;
+    if (Array.isArray(value)) {
+      const first = value[0];
+      if (first && typeof first === "object" && !Array.isArray(first)) {
+        const head = {};
+        for (const key of Object.keys(first).slice(0, 12)) {
+          const v = first[key];
+          if (typeof v === "string") head[key] = v.slice(0, 120);
+          else if (typeof v === "number" || typeof v === "boolean" || v == null) head[key] = v;
+        }
+        return { type: "array", length: value.length, first: head };
+      }
+      return { type: "array", length: value.length, first: typeof first === "string" ? first.slice(0, 120) : first };
+    }
+    if (value && typeof value === "object") {
+      const keys = Object.keys(value);
+      const preview = {};
+      for (const key of keys.slice(0, 10)) {
+        const v = value[key];
+        if (typeof v === "string") preview[key] = v.slice(0, 120);
+        else if (typeof v === "number" || typeof v === "boolean" || v == null) preview[key] = v;
+      }
+      return { type: "object", keys: keys.slice(0, 16), preview };
+    }
+    return null;
+  };
+
+  const recordKeyHits = (node) => {
+    const keys = Object.keys(node || {});
+    if (keys.length === 0) return;
+    const interesting = keys.filter((key) => /(factual|owner|paywall|bias|rating|vantage|tracked|untracked|lock)/i.test(key));
+    if (interesting.length === 0) return;
+    for (const key of interesting) {
+      keyHits[key] = (keyHits[key] || 0) + 1;
+    }
+    const hasRegistryKeys = interesting.some((key) => /^(biasRatings|owners)$/i.test(key));
+    const sampleLimit = hasRegistryKeys ? 140 : 60;
+    if (keySamples.length < sampleLimit) {
+      const sample = {};
+      const identityKeys = [
+        "id",
+        "name",
+        "outlet",
+        "outletName",
+        "publisher",
+        "publisherName",
+        "sourceName",
+        "domain",
+        "hostname",
+        "host",
+        "url",
+        "link",
+        "website",
+        "site",
+        "siteUrl",
+        "sourceUrl",
+        "canonicalUrl",
+      ];
+      for (const key of identityKeys) {
+        if (!(key in node)) continue;
+        sample[key] = compactValueForSample(node[key]);
+      }
+      for (const key of interesting.slice(0, 12)) {
+        sample[key] = compactValueForSample(node[key]);
+      }
+      keySamples.push(sample);
+    }
+  };
+
+  const mergeCoverageFromNode = (node) => {
+    const totalSources = maxFiniteNumber(
+      node.totalNewsSources,
+      node.totalSources,
+      node.sourceCount,
+      node.total_count,
+      node.totalCount,
+    );
+    const leaningLeft = maxFiniteNumber(node.leaningLeft, node.leftSources, node.leftCount);
+    const center = maxFiniteNumber(node.center, node.centre, node.centerSources, node.centerCount);
+    const leaningRight = maxFiniteNumber(node.leaningRight, node.rightSources, node.rightCount);
+    coverage.totalSources = maxFiniteNumber(coverage.totalSources, totalSources);
+    coverage.leaningLeft = maxFiniteNumber(coverage.leaningLeft, leaningLeft);
+    coverage.center = maxFiniteNumber(coverage.center, center);
+    coverage.leaningRight = maxFiniteNumber(coverage.leaningRight, leaningRight);
+
+    const pctLeft = maxFiniteNumber(node.leftPercent, node.leftPct, node.left_percentage);
+    const pctCenter = maxFiniteNumber(node.centerPercent, node.centerPct, node.center_percentage);
+    const pctRight = maxFiniteNumber(node.rightPercent, node.rightPct, node.right_percentage);
+    if ([pctLeft, pctCenter, pctRight].every((value) => Number.isFinite(value))) {
+      coverage.percentages = {
+        left: Number(pctLeft),
+        center: Number(pctCenter),
+        right: Number(pctRight),
+      };
+    }
+  };
+
+  const discoverHostFromNode = (node) => {
+    const direct =
+      normalizeHost(node.domain || node.hostname || node.host || node.site || node.siteHost || "") ||
+      normalizeHost(node.publisherDomain || node.outletDomain || "") ||
+      normalizeHost(node.website || node.siteUrl || node.sourceUrl || "");
+    if (direct) return direct;
+
+    const urlCandidate = typeof node.url === "string" ? node.url : typeof node.link === "string" ? node.link : "";
+    const byUrl = normalizeHost(hostFromUrl(urlCandidate));
+    if (byUrl) return byUrl;
+
+    // Last resort: scan string-ish fields for URL/domain values.
+    const values = Object.values(node)
+      .filter((value) => typeof value === "string")
+      .map((value) => String(value).trim())
+      .filter((value) => value.length >= 4 && value.length <= 240);
+    for (const value of values) {
+      try {
+        const parsed = new URL(value);
+        const host = normalizeHost(parsed.hostname);
+        if (host) return host;
+      } catch {
+        // ignore
+      }
+      const domainMatch = value.match(/([a-z0-9-]+\\.)+[a-z]{2,}/i);
+      if (domainMatch) {
+        const host = normalizeHost(domainMatch[0]);
+        if (host) return host;
+      }
+    }
+
+    return "";
+  };
+
+  const extractSourceInfoIdFromNode = (node) => {
+    const candidate =
+      node.sourceInfoId ||
+      node.sourceInfoID ||
+      node.source_info_id ||
+      node.sourceInfo?.id ||
+      node.sourceInfo?.sourceInfoId ||
+      node.sourceInfo?.source_info_id ||
+      node.source?.id ||
+      node.source?.sourceInfoId ||
+      node.sourceId ||
+      node.source_id ||
+      node.id ||
+      "";
+    const clean = normalizeText(String(candidate || ""));
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(clean) ? clean : "";
+  };
+
+  const mergeOutletMetaFromNode = (node) => {
+    // Owner registries: store owner id -> display name so we can join later.
+    if (Array.isArray(node.owners)) {
+      for (const owner of node.owners) {
+        if (!owner || typeof owner !== "object") continue;
+        const id = normalizeText(String(owner.id || owner.ownerId || owner.uuid || ""));
+        const name = normalizeText(owner.name || owner.label || owner.title || "");
+        if (id && name) ownerById.set(id, name);
+      }
+    }
+
+    // Bias rating registries: often the rich outlet metadata lives here.
+    if (Array.isArray(node.biasRatings)) {
+      for (const entry of node.biasRatings) {
+        if (!entry || typeof entry !== "object") continue;
+        const host = discoverHostFromNode(entry);
+        const sourceInfoId = normalizeText(entry.sourceInfoId || entry.source_info_id || "");
+
+        const bias = parseBiasFromAny(entry.bias || entry.biasRating || entry.lean || entry.politicalBias || entry.bias_label);
+        const factuality = parseFactualityFromAny(
+          entry.factuality || entry.factualityRating || entry.factuality_score || entry.factualityScore || entry.truthiness,
+        );
+        const ownerNameFromId = normalizeText(ownerById.get(normalizeText(entry.ownerId || entry.owner_id || "")) || "");
+        const ownershipFromOwners = Array.isArray(entry.owners)
+          ? entry.owners
+              .map((owner) => (owner && typeof owner === "object" ? normalizeText(owner.name || owner.label || owner.title || "") : ""))
+              .filter(Boolean)
+              .join(", ")
+          : "";
+        const ownership =
+          parseOwnershipFromAny(entry.ownership || entry.owner || entry.ownerName || entry.parentCompany || entry.parent_company) ||
+          ownershipFromOwners ||
+          ownerNameFromId;
+        const paywall = parsePaywallFromAny(entry.paywall || entry.paywallType || entry.isPaywalled || entry.hasPaywall);
+        const outletName = normalizeText(entry.outlet || entry.publisher || entry.publisherName || entry.sourceName || entry.name || "");
+        const logoUrl = normalizeText(entry.logo || entry.logoUrl || entry.icon || entry.image || "");
+
+        if (host) {
+          const existing = outletMetaByHost.get(host) || {};
+          outletMetaByHost.set(host, {
+            host,
+            outletName: existing.outletName || outletName,
+            logoUrl: existing.logoUrl || logoUrl,
+            bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+            factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
+            ownership: existing.ownership || ownership,
+            paywall: existing.paywall || paywall,
+          });
+        }
+        if (sourceInfoId) {
+          const existing = outletMetaById.get(sourceInfoId) || {};
+          outletMetaById.set(sourceInfoId, {
+            id: sourceInfoId,
+            outletName: existing.outletName || outletName,
+            logoUrl: existing.logoUrl || logoUrl,
+            bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+            factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
+            ownership: existing.ownership || ownership,
+            paywall: existing.paywall || paywall,
+          });
+        }
+      }
+    }
+
+    const host = discoverHostFromNode(node);
+    const nodeId = normalizeText(node.id || node.sourceInfoId || node.sourceInfoID || "");
+    if (!host && !nodeId) return;
+
+    const bias = parseBiasFromAny(node.bias || node.biasRating || node.lean || node.politicalBias || node.bias_label);
+    const factuality = parseFactualityFromAny(
+      node.factuality || node.factualityRating || node.factuality_score || node.factualityScore || node.truthiness,
+    );
+    const ownershipFromOwners = Array.isArray(node.owners)
+      ? node.owners
+          .map((owner) => (owner && typeof owner === "object" ? normalizeText(owner.name || owner.label || owner.title || "") : ""))
+          .filter(Boolean)
+          .join(", ")
+      : "";
+    const ownership =
+      parseOwnershipFromAny(node.ownership || node.owner || node.ownerName || node.parentCompany || node.parent_company) ||
+      ownershipFromOwners;
+    const paywall = parsePaywallFromAny(node.paywall || node.paywallType || node.isPaywalled || node.hasPaywall);
+    const outletName = normalizeText(node.outlet || node.publisher || node.publisherName || node.sourceName || node.name || "");
+    const logoUrl = normalizeText(node.logo || node.logoUrl || node.icon || node.image || "");
+
+    const hasAnything =
+      (bias && bias !== "unknown") ||
+      (factuality && factuality !== "unknown") ||
+      Boolean(ownership) ||
+      Boolean(paywall) ||
+      Boolean(outletName) ||
+      Boolean(logoUrl);
+    if (!hasAnything) return;
+
+    if (host) {
+      const existing = outletMetaByHost.get(host) || {};
+      outletMetaByHost.set(host, {
+        host,
+        outletName: existing.outletName || outletName,
+        logoUrl: existing.logoUrl || logoUrl,
+        bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+        factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
+        ownership: existing.ownership || ownership,
+        paywall: existing.paywall || paywall,
+      });
+    }
+    if (nodeId) {
+      const existing = outletMetaById.get(nodeId) || {};
+      outletMetaById.set(nodeId, {
+        id: nodeId,
+        outletName: existing.outletName || outletName,
+        logoUrl: existing.logoUrl || logoUrl,
+        bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+        factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
+        ownership: existing.ownership || ownership,
+        paywall: existing.paywall || paywall,
+      });
+    }
+  };
+
+  const mergeSourceFromNode = (node) => {
+    const rawUrl = typeof node.url === "string" ? node.url : typeof node.link === "string" ? node.link : "";
+    const url = normalizeExternalUrl(rawUrl);
+    if (!url || isGroundNewsUrl(url)) return;
+    const host = normalizeHost(hostFromUrl(url));
+    const sourceInfoId = normalizeText(
+      node.sourceInfoId ||
+        node.sourceInfoID ||
+        node.source_info_id ||
+        node.sourceInfo?.id ||
+        node.sourceInfo?.sourceInfoId ||
+        "",
+    );
+    const resolvedSourceInfoId = sourceInfoId || (host ? sourceInfoIdByHost.get(host) : "");
+    const outletMeta =
+      (resolvedSourceInfoId && outletMetaById.get(resolvedSourceInfoId)) || (host ? outletMetaByHost.get(host) : null);
+    const incoming = {
+      url,
+      sourceInfoId: resolvedSourceInfoId,
+      outlet:
+        normalizeText(node.outlet || node.publisher || node.publisherName || node.sourceName || "") ||
+        normalizeText(outletMeta?.outletName || ""),
+      excerpt: normalizeText(node.excerpt || node.summary || node.description || ""),
+      logoUrl: normalizeText(node.logo || node.logoUrl || node.icon || node.image || "") || normalizeText(outletMeta?.logoUrl || ""),
+      bias: parseBiasFromAny(node.bias || node.biasRating || node.lean || "") || parseBiasFromAny(outletMeta?.bias),
+      factuality:
+        parseFactualityFromAny(node.factuality || node.factualityRating || node.factualityScore || "") ||
+        parseFactualityFromAny(outletMeta?.factuality),
+      ownership: normalizeText(node.ownership || "") || normalizeText(outletMeta?.ownership || ""),
+      paywall: parsePaywallFromAny(node.paywall || node.paywallType || node.isPaywalled || node.hasPaywall) || normalizeText(outletMeta?.paywall || ""),
+      locality: parseLocalityLabel(node.locality || "") || "",
+      publishedAt: normalizeText(node.publishedAt || node.publishDate || node.date || ""),
+    };
+    const existing = sourceByUrl.get(url);
+    sourceByUrl.set(url, existing ? mergeSourceCandidateRecords(existing, incoming) : incoming);
+  };
+
+  const maybeAddTag = (node) => {
+    const rawHref = normalizeText(node.href || node.url || node.link || "");
+    if (!rawHref || (!rawHref.includes("/interest/") && !rawHref.includes("/topic/"))) return;
+    const name = normalizeText(node.name || node.label || node.title || "");
+    if (!name || name.length < 2 || name.length > 60) return;
+    tagSet.add(name);
+  };
+
+  const walk = (root) => {
+    const stack = [root];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node || typeof node !== "object") continue;
+      if (Array.isArray(node)) {
+        for (const child of node) stack.push(child);
+        continue;
+      }
+
+      {
+        const host = discoverHostFromNode(node);
+        const id = extractSourceInfoIdFromNode(node);
+        if (host && id && !sourceInfoIdByHost.has(host)) {
+          sourceInfoIdByHost.set(host, id);
+        }
+      }
+
+      recordKeyHits(node);
+      mergeCoverageFromNode(node);
+      mergeOutletMetaFromNode(node);
+      mergeSourceFromNode(node);
+      maybeAddTag(node);
+      for (const value of Object.values(node)) {
+        if (value && typeof value === "object") stack.push(value);
+      }
+    }
+  };
+
+  for (const block of blocks) {
+    const lines = String(block)
+      .split("\n")
+      .map((line) => line.trim())
+      .filter(Boolean);
+    for (const line of lines) {
+      const match = line.match(/^\d+:(.+)$/);
+      if (!match) continue;
+      const payload = match[1].trim().replace(/,$/, "");
+      if (!(payload.startsWith("{") || payload.startsWith("["))) continue;
+      try {
+        const parsed = JSON.parse(payload);
+        parsedLineCount += 1;
+        walk(parsed);
+      } catch {
+        // Not strict JSON or not a payload that we can parse directly.
+      }
+    }
+  }
+
+  const finalSources = Array.from(sourceByUrl.values()).map((source) => {
+    const host = normalizeHost(hostFromUrl(source.url || ""));
+    const id = normalizeText(source.sourceInfoId || "") || (host ? sourceInfoIdByHost.get(host) || "" : "");
+    const meta = (id && outletMetaById.get(id)) || (host ? outletMetaByHost.get(host) : null);
+    if (!meta) return source;
+
+    const next = { ...source };
+    if (id && !next.sourceInfoId) next.sourceInfoId = id;
+    if (looksLikeWeakOutletLabel(next.outlet) && normalizeText(meta.outletName)) next.outlet = normalizeText(meta.outletName);
+    if ((!next.logoUrl || !normalizeText(next.logoUrl)) && normalizeText(meta.logoUrl)) next.logoUrl = normalizeText(meta.logoUrl);
+    if ((!next.bias || next.bias === "unknown") && meta.bias && meta.bias !== "unknown") next.bias = meta.bias;
+    if ((!next.factuality || next.factuality === "unknown") && meta.factuality && meta.factuality !== "unknown") {
+      next.factuality = meta.factuality;
+    }
+    if (!normalizeText(next.ownership) && normalizeText(meta.ownership)) next.ownership = normalizeText(meta.ownership);
+    if (!normalizeText(next.paywall) && normalizeText(meta.paywall)) next.paywall = normalizeText(meta.paywall);
+    return next;
+  });
+
+  return {
+    chunkCount: blocks.length,
+    parsedLineCount,
+    coverage,
+    tags: Array.from(tagSet).slice(0, 24),
+    sources: finalSources,
+    outletMetaCount: outletMetaByHost.size,
+    outletMetaIdCount: outletMetaById.size,
+    hostMapCount: sourceInfoIdByHost.size,
+    keyHits,
+    keySamples,
+  };
 }
 
 async function clickIfVisible(locator, options = {}) {
@@ -1049,39 +1685,90 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       return extractLocality(text);
     };
 
-    const findTagsInTopicsPanel = () => {
-      const tagSet = new Set();
-      const headingCandidates = Array.from(document.querySelectorAll("h2,h3,h4,div,span,strong")).filter((node) =>
-        /similar news topics|related topics/i.test(normalize(node.textContent || "")),
-      );
+    const extractSimilarTopicsFromModule = () => {
+      const BIAS_LABEL = /^(lean left|lean right|far left|far right|left|right|center)$/i;
+      const SKIP_TEXT = /^(show all|all|\+\d+)$/i;
 
-      for (const heading of headingCandidates) {
-        const section = heading.closest("section,aside,article,div");
-        if (!section) continue;
-        const anchors = Array.from(section.querySelectorAll("a[href*='/interest/'],a[href*='/topic/']"));
+      const tagSet = new Set();
+      const candidates = Array.from(document.querySelectorAll("h1,h2,h3,h4,div,span,strong"))
+        .map((node) => ({ node, text: normalize(node.textContent || "") }))
+        .filter(({ text }) => /^(similar news topics|related topics)$/i.test(text));
+
+      const collectFromContainer = (container) => {
+        if (!container) return [];
+        const interestAnchors = container.querySelectorAll("a[href*='/interest/'],a[href*='/topic/']");
+        const trendingAnchors = container.querySelectorAll("a[id^='trending-topic_'][href*='/interest/']");
+        const maxAnchors = 36;
+        if (interestAnchors.length === 0 || interestAnchors.length > maxAnchors) return [];
+
+        // The Similar Topics module uses stable "trending-topic_*" ids today. Avoid falling back to
+        // generic interest links unless the container is already very small.
+        if (trendingAnchors.length === 0 && interestAnchors.length > 12) return [];
+
+        const anchors = trendingAnchors.length > 0 ? Array.from(trendingAnchors) : Array.from(interestAnchors);
+        const tags = [];
+
         for (const anchor of anchors) {
-          const text = normalize(anchor.textContent || "");
+          const href = normalize(anchor.getAttribute("href") || "");
+          if (!href || href.includes("#bias-ratings")) continue;
+
+          let text = normalize(anchor.textContent || "");
+          const alt = normalize(anchor.querySelector("img")?.getAttribute("alt") || "");
+          if (alt && /icon$/i.test(alt) && alt.length <= 70) {
+            const cleanedAlt = normalize(alt.replace(/\bicon\b/i, ""));
+            if (cleanedAlt && cleanedAlt.length <= 48) text = cleanedAlt;
+          }
+
           if (!text || text.length < 2 || text.length > 48) continue;
-          if (/^(show all|all|\+\d+)$/i.test(text)) continue;
-          tagSet.add(text);
+          if (SKIP_TEXT.test(text)) continue;
+          if (BIAS_LABEL.test(text)) continue;
+          tags.push(text);
+          if (tags.length >= 18) break;
         }
+
+        return tags;
+      };
+
+      // Prefer the actual "Similar News Topics" module container, not global nav.
+      for (const { node } of candidates) {
+        let current = node;
+        for (let depth = 0; depth < 10 && current; depth += 1) {
+          const container = current.parentElement;
+          current = container;
+          if (!container) break;
+
+          const interestCount = container.querySelectorAll("a[href*='/interest/'],a[href*='/topic/']").length;
+          if (interestCount === 0 || interestCount > 60) continue;
+
+          const tags = collectFromContainer(container);
+          if (tags.length >= 2) {
+            for (const t of tags) {
+              if (!tagSet.has(t)) tagSet.add(t);
+              if (tagSet.size >= 24) break;
+            }
+            break;
+          }
+        }
+        if (tagSet.size >= 2) break;
       }
 
-      if (tagSet.size > 0) return Array.from(tagSet);
+      if (tagSet.size > 0) {
+        return Array.from(tagSet);
+      }
 
       const keywordMeta = normalize(document.querySelector("meta[name='keywords']")?.getAttribute("content") || "");
       if (keywordMeta) {
         return keywordMeta
           .split(",")
           .map((part) => normalize(part))
-          .filter((text) => text.length >= 2 && text.length <= 48)
+          .filter((text) => text.length >= 2 && text.length <= 48 && !BIAS_LABEL.test(text) && !SKIP_TEXT.test(text))
           .slice(0, 16);
       }
 
       return [];
     };
 
-    const tags = findTagsInTopicsPanel();
+    const tags = extractSimilarTopicsFromModule();
 
     const sourceByUrl = new Map();
     const sourceCandidateLinks = Array.from(document.querySelectorAll("a[href^='http']")).filter((anchor) => {
@@ -1300,8 +1987,9 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       normalize(document.querySelector("main p")?.textContent || "");
 
     const topic =
+      tags[0] ||
       meta("meta[property='article:section']") ||
-      normalize(document.querySelector("a[href*='/interest/']")?.textContent || "") ||
+      normalize(document.querySelector("main a[href*='/interest/']")?.textContent || "") ||
       "Top Stories";
 
     const location = normalize(
@@ -1418,6 +2106,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
     const articleHtmlPath = path.join(auditState.dir, "articles", `${key}.raw.html`);
     const articleFeaturesPath = path.join(auditState.dir, "articles", `${key}.features.json`);
     const articleNextDataPath = path.join(auditState.dir, "articles", `${key}.__NEXT_DATA__.json`);
+    const articleNextFlightPath = path.join(auditState.dir, "articles", `${key}.__NEXT_FLIGHT__.json`);
     const html = await page.content();
     await writeTextFile(articleHtmlPath, html);
     const nextDataRaw = extractNextDataRawFromHtml(html);
@@ -1426,6 +2115,8 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
     } else {
       await writeTextFile(articleNextDataPath, "");
     }
+    const nextFlightStructured = extractStructuredFromNextFlightHtml(html);
+    await writeJsonFile(articleNextFlightPath, nextFlightStructured);
 
     await writeJsonFile(articleFeaturesPath, {
       capturedAt: new Date().toISOString(),
@@ -1437,9 +2128,13 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       htmlPath: articleHtmlPath,
       featurePath: articleFeaturesPath,
       nextDataPath: articleNextDataPath,
+      nextFlightPath: articleNextFlightPath,
       sourceCardCount: rendered?.rawFeatures?.sourceCardCount ?? 0,
       hasBiasDistribution: Boolean(rendered?.rawFeatures?.hasBiasDistribution),
       hasCoverageDetails: Boolean(rendered?.rawFeatures?.hasCoverageDetails),
+      nextFlightChunkCount: nextFlightStructured.chunkCount || 0,
+      nextFlightParsedLines: nextFlightStructured.parsedLineCount || 0,
+      nextFlightSourceCount: nextFlightStructured.sources?.length || 0,
     });
   }
 
@@ -1479,31 +2174,38 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
 
 async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, auditState, articleOrdinal) {
   const rendered = await extractStoryFromDom(page, storyUrl, auditState, articleOrdinal);
-  const renderedHtml = auditState?.enabled ? await page.content().catch(() => "") : "";
+  const renderedHtml = await page.content().catch(() => "");
   const nextData = renderedHtml ? extractNextDataFromHtml(renderedHtml) : null;
+  const nextFlightStructured = renderedHtml ? extractStructuredFromNextFlightHtml(renderedHtml) : null;
   const updatedAt = new Date().toISOString();
   const sourceOutletSet = new Set(
     (rendered.sources || [])
       .map((source) => normalizeText(source.outlet).toLowerCase())
       .filter(Boolean),
   );
+  const seedTags = [...(rendered.tags || []), ...(nextFlightStructured?.tags || [])];
   const tags = sanitizeTags(
-    (rendered.tags || []).filter((tag) => !sourceOutletSet.has(normalizeText(tag).toLowerCase())),
+    seedTags.filter((tag) => !sourceOutletSet.has(normalizeText(tag).toLowerCase())),
   );
   const title = summarizeText(rendered.title, "Untitled story");
   const slug = toSlugFromUrl(storyUrl, title);
-  const candidates = Array.from(
-    new Map(
-      (rendered.sources || [])
-        .map((source) => ({ ...source, url: normalizeExternalUrl(source.url) }))
-        .filter((source) => source.url)
-        .map((source) => [source.url, source]),
-    ).values(),
+  const candidateByUrl = new Map(
+    (rendered.sources || [])
+      .map((source) => ({ ...source, url: normalizeExternalUrl(source.url) }))
+      .filter((source) => source.url)
+      .map((source) => [source.url, source]),
   );
 
+  for (const source of nextFlightStructured?.sources || []) {
+    const url = normalizeExternalUrl(source.url);
+    if (!url) continue;
+    const existing = candidateByUrl.get(url);
+    candidateByUrl.set(url, existing ? mergeSourceCandidateRecords(existing, source) : source);
+  }
+
   // If the DOM-based pass produced weak outlet/excerpt values, try to repair them from Next.js hydration state.
-  if (nextData && candidates.length > 0) {
-    const byUrl = new Map(candidates.map((c) => [c.url, c]));
+  if (nextData) {
+    const byUrl = new Map(candidateByUrl);
     const stack = [nextData];
     while (stack.length > 0) {
       const node = stack.pop();
@@ -1520,18 +2222,24 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
       const rawUrl = typeof anyNode.url === "string" ? anyNode.url : typeof anyNode.link === "string" ? anyNode.link : "";
       const normalized = normalizeExternalUrl(rawUrl);
       if (!normalized) continue;
-      const existing = byUrl.get(normalized);
-      if (!existing) continue;
-
-      const outlet = normalizeText(anyNode.outlet || anyNode.publisher || anyNode.publisherName || anyNode.sourceName || "");
-      const excerpt = normalizeText(anyNode.excerpt || anyNode.summary || anyNode.description || "");
-      const logoUrl = normalizeText(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || "");
-
-      if (outlet && looksLikeWeakOutletLabel(existing.outlet)) existing.outlet = outlet;
-      if (excerpt && looksLikeWeakExcerpt(existing.excerpt)) existing.excerpt = excerpt;
-      if (logoUrl && !existing.logoUrl) existing.logoUrl = logoUrl;
+      const existing = byUrl.get(normalized) || { url: normalized };
+      const incoming = {
+        url: normalized,
+        outlet: normalizeText(anyNode.outlet || anyNode.publisher || anyNode.publisherName || anyNode.sourceName || ""),
+        excerpt: normalizeText(anyNode.excerpt || anyNode.summary || anyNode.description || ""),
+        logoUrl: normalizeText(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || ""),
+        bias: parseBiasLabel(anyNode.bias || anyNode.biasRating || ""),
+        factuality: parseFactualityLabel(anyNode.factuality || anyNode.factualityRating || ""),
+        ownership: normalizeText(anyNode.ownership || ""),
+        paywall: parsePaywallLabel(anyNode.paywall || "") || "",
+        locality: parseLocalityLabel(anyNode.locality || "") || "",
+        publishedAt: normalizeText(anyNode.publishedAt || anyNode.publishDate || anyNode.date || ""),
+      };
+      byUrl.set(normalized, mergeSourceCandidateRecords(existing, incoming));
     }
+    for (const [url, value] of byUrl.entries()) candidateByUrl.set(url, value);
   }
+  const candidates = Array.from(candidateByUrl.values());
 
   const enrichedSources = (
     await mapWithConcurrency(candidates, SOURCE_FETCH_CONCURRENCY, (candidate) =>
@@ -1541,7 +2249,7 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
 
   const signals = linkSignals.get(storyUrl) || { trending: false, blindspot: false, local: false };
   const derivedBias = deriveBiasDistribution(enrichedSources);
-  const coverageBiasRaw = rendered?.coverage?.percentages;
+  const coverageBiasRaw = rendered?.coverage?.percentages || nextFlightStructured?.coverage?.percentages;
   const coverageBias =
     coverageBiasRaw &&
     Number.isFinite(coverageBiasRaw.left) &&
@@ -1559,13 +2267,28 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
   const dominant = totalKnown > 0 ? Math.max(bias.left, bias.right) : 0;
   const coverageTotals = {
     totalSources:
-      typeof rendered?.coverage?.totalSources === "number" ? Math.max(0, Math.round(rendered.coverage.totalSources)) : undefined,
+      typeof rendered?.coverage?.totalSources === "number"
+        ? Math.max(0, Math.round(rendered.coverage.totalSources))
+        : typeof nextFlightStructured?.coverage?.totalSources === "number"
+          ? Math.max(0, Math.round(nextFlightStructured.coverage.totalSources))
+          : undefined,
     leaningLeft:
-      typeof rendered?.coverage?.leaningLeft === "number" ? Math.max(0, Math.round(rendered.coverage.leaningLeft)) : undefined,
-    center: typeof rendered?.coverage?.center === "number" ? Math.max(0, Math.round(rendered.coverage.center)) : undefined,
+      typeof rendered?.coverage?.leaningLeft === "number"
+        ? Math.max(0, Math.round(rendered.coverage.leaningLeft))
+        : typeof nextFlightStructured?.coverage?.leaningLeft === "number"
+          ? Math.max(0, Math.round(nextFlightStructured.coverage.leaningLeft))
+          : undefined,
+    center:
+      typeof rendered?.coverage?.center === "number"
+        ? Math.max(0, Math.round(rendered.coverage.center))
+        : typeof nextFlightStructured?.coverage?.center === "number"
+          ? Math.max(0, Math.round(nextFlightStructured.coverage.center))
+          : undefined,
     leaningRight:
       typeof rendered?.coverage?.leaningRight === "number"
         ? Math.max(0, Math.round(rendered.coverage.leaningRight))
+        : typeof nextFlightStructured?.coverage?.leaningRight === "number"
+          ? Math.max(0, Math.round(nextFlightStructured.coverage.leaningRight))
         : undefined,
   };
 
@@ -1640,6 +2363,56 @@ function dedupeStories(stories) {
   return Array.from(bySlug.values()).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
 }
 
+function normalizeStoryRecordForStore(story) {
+  if (!story || typeof story !== "object") return story;
+  const canonicalUrl = normalizeText(story.canonicalUrl || story.url || "");
+  const baseUrl = canonicalUrl || "https://ground.news";
+
+  const summary = normalizeText(story.summary || "");
+  const dek = normalizeText(story.dek || "");
+  const cleanedDek = dek && summary && dek === summary ? "" : dek;
+
+  const topic = normalizeText(story.topic || "") || "Top Stories";
+  const tagsRaw = Array.isArray(story.tags) ? story.tags : [];
+  const tags = sanitizeTags(tagsRaw).filter((t) => t.toLowerCase() !== topic.toLowerCase());
+
+  const sourcesRaw = Array.isArray(story.sources) ? story.sources : [];
+  const sources = sourcesRaw
+    .filter((src) => src && typeof src === "object")
+    .map((src) => ({
+      ...src,
+      outlet: normalizeText(src.outlet || ""),
+      url: normalizeText(src.url || ""),
+      excerpt: normalizeText(src.excerpt || ""),
+      logoUrl: normalizeAssetUrl(src.logoUrl, baseUrl),
+      ownership: normalizeText(src.ownership || ""),
+      paywall: normalizeText(src.paywall || "") || undefined,
+      locality: normalizeText(src.locality || "") || undefined,
+      publishedAt: normalizeText(src.publishedAt || "") || undefined,
+    }))
+    .filter((src) => src.outlet && src.url);
+
+  const coverage = story.coverage || {};
+  const cleanCoverage = {
+    totalSources: typeof coverage.totalSources === "number" && Number.isFinite(coverage.totalSources) ? Math.max(0, Math.round(coverage.totalSources)) : undefined,
+    leaningLeft: typeof coverage.leaningLeft === "number" && Number.isFinite(coverage.leaningLeft) ? Math.max(0, Math.round(coverage.leaningLeft)) : undefined,
+    center: typeof coverage.center === "number" && Number.isFinite(coverage.center) ? Math.max(0, Math.round(coverage.center)) : undefined,
+    leaningRight: typeof coverage.leaningRight === "number" && Number.isFinite(coverage.leaningRight) ? Math.max(0, Math.round(coverage.leaningRight)) : undefined,
+  };
+
+  return {
+    ...story,
+    canonicalUrl: canonicalUrl || story.canonicalUrl,
+    summary: summary || story.summary,
+    dek: cleanedDek || undefined,
+    topic,
+    tags: tags.length > 0 ? tags : ["News"],
+    imageUrl: sanitizeImageUrl(story.imageUrl, baseUrl),
+    sources,
+    coverage: cleanCoverage,
+  };
+}
+
 export async function runGroundNewsIngestion(opts = {}) {
   requireApiKey();
   const options = {
@@ -1647,6 +2420,8 @@ export async function runGroundNewsIngestion(opts = {}) {
     ...opts,
   };
   const limit = Number.isFinite(options.storyLimit) && options.storyLimit > 0 ? options.storyLimit : Infinity;
+  const refreshExisting = Number.isFinite(options.refreshExisting) && options.refreshExisting > 0 ? options.refreshExisting : 0;
+  const effectiveLimit = Number.isFinite(limit) ? limit + refreshExisting : Infinity;
   const auditState = {
     enabled: Boolean(options.articleAudit),
     dir: resolveAuditDir(options.articleAuditDir),
@@ -1673,7 +2448,7 @@ export async function runGroundNewsIngestion(opts = {}) {
 
   const linkSignals = computeLinkSignals(scrape);
   const scrapeLinks = Array.from(new Set(scrape.allStoryLinks.map(normalizeExternalUrl).filter(Boolean)));
-  let links = scrapeLinks.slice(0, limit);
+  let links = scrapeLinks.slice(0, effectiveLimit);
   let homepageSnapshot = null;
 
   const stories = [];
@@ -1700,7 +2475,7 @@ export async function runGroundNewsIngestion(opts = {}) {
 
     const homepageLinks = Array.from(new Set((homepageSnapshot?.discoveredLinks || []).map(normalizeExternalUrl).filter(Boolean)));
     const chosenDiscoveryLinks = homepageLinks.length > 0 ? homepageLinks : scrapeLinks;
-    links = chosenDiscoveryLinks.slice(0, limit);
+    links = chosenDiscoveryLinks.slice(0, effectiveLimit);
     for (const homeLink of homepageSnapshot?.discoveredLinks || []) {
       const existing = linkSignals.get(homeLink) || { trending: false, blindspot: false, local: false };
       linkSignals.set(homeLink, { ...existing, trending: true });
@@ -1712,6 +2487,26 @@ export async function runGroundNewsIngestion(opts = {}) {
         console.log("front-page discovery returned 0 links; falling back to route scrape links");
       }
       console.log(`article links selected for enrichment: ${links.length}`);
+    }
+
+    if (refreshExisting > 0) {
+      const store = await readStoreSafe();
+      const suspicious = new Set(["Israel-Gaza", "Top Stories"]);
+      const refreshCandidates = store.stories
+        .filter((story) => normalizeText(story.canonicalUrl || "").includes("ground.news/article/"))
+        .filter((story) => suspicious.has(normalizeText(story.topic)) || (story.tags || []).some((t) => /valentine|olympics|pam bondi/i.test(String(t))))
+        .sort((a, b) => +new Date(a.updatedAt || 0) - +new Date(b.updatedAt || 0))
+        .map((story) => normalizeExternalUrl(story.canonicalUrl))
+        .filter(Boolean)
+        .slice(0, refreshExisting);
+
+      if (refreshCandidates.length > 0) {
+        const mergedLinks = Array.from(new Set([...links, ...refreshCandidates]));
+        links = mergedLinks.slice(0, effectiveLimit);
+        if (!options.silent) {
+          console.log(`refreshing ${refreshCandidates.length} existing story page(s) with suspicious topic/tags`);
+        }
+      }
     }
 
     let articleIndex = 0;
@@ -1801,15 +2596,15 @@ export async function runGroundNewsIngestion(opts = {}) {
 
   const merged = await withStoreLock(async () => {
     const store = await readStoreSafe();
-    store.stories = dedupeStories([...store.stories, ...stories]);
+    store.stories = dedupeStories([...store.stories, ...stories]).map(normalizeStoryRecordForStore);
     store.ingestion = {
       ...store.ingestion,
       lastRunAt: new Date().toISOString(),
       lastMode: "groundnews-frontpage-individual-article-pipeline",
-      storyCount: store.stories.length,
-      routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
-      notes: `Synced ${stories.length} stories from ${links.length} front-page article links`,
-    };
+	      storyCount: store.stories.length,
+	      routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+	      notes: `Synced ${stories.length} stories from ${links.length} article link(s) (refreshExisting=${refreshExisting})`,
+	    };
     await writeStoreAtomic(store);
     return store;
   });

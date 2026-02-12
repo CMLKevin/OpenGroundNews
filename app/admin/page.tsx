@@ -54,7 +54,7 @@ export default async function AdminPage() {
           <code>curl -X POST -H "x-ogn-api-key: &lt;key&gt;" http://localhost:3000/api/ingest/groundnews</code>
         </p>
 
-        <section className="panel" style={{ background: "#fff" }}>
+        <section className="panel">
           <h2 style={{ marginTop: 0 }}>Feature Parity Checklist</h2>
           <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.4rem" }}>
             {parityChecklist.map((item) => (
@@ -65,7 +65,7 @@ export default async function AdminPage() {
           </ul>
         </section>
 
-        <div className="panel" style={{ background: "#fff" }}>
+        <div className="panel">
           <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(stats.ingestion, null, 2)}</pre>
         </div>
       </div>

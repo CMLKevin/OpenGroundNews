@@ -69,6 +69,21 @@ export function BiasDistributionPanel({ story }: Props) {
   const leftPct = pct(story.bias.left);
   const centerPct = pct(story.bias.center);
   const rightPct = pct(story.bias.right);
+  const hasBiasData = leftPct + centerPct + rightPct > 0 && left.length + center.length + right.length > 0;
+
+  if (!hasBiasData) {
+    return (
+      <section className="panel bias-dist-panel">
+        <div className="section-title" style={{ paddingTop: 0 }}>
+          <h2 style={{ margin: 0 }}>Bias Distribution</h2>
+        </div>
+        <p className="note" style={{ margin: 0 }}>
+          Bias distribution data is not available for this story yet.
+        </p>
+      </section>
+    );
+  }
+
   const dominant = [
     { side: "Left", value: leftPct },
     { side: "Center", value: centerPct },
@@ -125,4 +140,3 @@ export function BiasDistributionPanel({ story }: Props) {
     </section>
   );
 }
-
