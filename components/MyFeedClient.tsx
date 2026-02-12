@@ -104,9 +104,9 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
   return (
     <section className="my-shell">
       <aside className="my-rail my-rail-left">
-        <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>Filters</h2>
+        <section className="panel u-grid u-grid-gap-07">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Filters</h2>
             <button
               className="btn"
               type="button"
@@ -119,7 +119,7 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
               Reset
             </button>
           </div>
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+          <label className="story-meta u-grid u-grid-gap-02">
             Feed
             <select className="select-control" value={view} onChange={(e) => setView(e.target.value as any)}>
               <option value="all">All</option>
@@ -128,7 +128,7 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
               <option value="local">Local</option>
             </select>
           </label>
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+          <label className="story-meta u-grid u-grid-gap-02">
             Coverage bias
             <select className="select-control" value={bias} onChange={(e) => setBias(e.target.value as any)}>
               <option value="all">All</option>
@@ -137,7 +137,7 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
               <option value="right">Right</option>
             </select>
           </label>
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+          <label className="story-meta u-grid u-grid-gap-02">
             Search
             <input className="input-control" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter by keyword" />
           </label>
@@ -145,50 +145,60 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
       </aside>
 
       <div className="my-main">
-        <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>{hasFollows ? "My Feed" : "Top Stories For You"}</h2>
+        <section className="panel u-grid u-grid-gap-06">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">{hasFollows ? "My Feed" : "Top Stories For You"}</h2>
             <span className="story-meta">
               {cloud ? "Synced" : "Guest"} • {filtered.length} stories
             </span>
           </div>
           {!hasFollows ? (
-            <p className="story-meta" style={{ margin: 0 }}>
+            <p className="story-meta u-m0">
               Follow a few topics and sources from <Link href="/my/discover">Discover</Link> to personalize this feed.
             </p>
           ) : null}
         </section>
 
-        <div className="panel" style={{ marginTop: "1rem" }}>
-          <div className="news-list">
-            {filtered.slice(0, 80).map((story) => (
-              <StoryListItem key={story.id} story={story} dense={true} showSummary={true} />
-            ))}
-          </div>
+        <div className="panel u-mt-1">
+          {filtered.length > 0 ? (
+            <div className="news-list">
+              {filtered.slice(0, 80).map((story) => (
+                <StoryListItem key={story.id} story={story} dense={true} showSummary={true} />
+              ))}
+            </div>
+          ) : (
+            <p className="story-meta u-m0">
+              No stories match your current filters. Try switching feed view or clearing search terms.
+            </p>
+          )}
         </div>
       </div>
 
       <aside className="my-rail my-rail-right">
-        <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>Favorites</h2>
+        <section className="panel u-grid u-grid-gap-06">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Favorites</h2>
             <span className="story-meta">{cloud ? "Account" : "This device"}</span>
           </div>
-          <div className="story-meta">
-            {followedTopics.length} topics • {followedOutlets.length} sources
-          </div>
-          <div className="chip-row">
-            {followedTopics.slice(0, 18).map((t) => (
-              <Link key={`t-${t}`} className="pill" href={`/interest/${encodeURIComponent(t)}`}>
-                #{t}
-              </Link>
-            ))}
-            {followedOutlets.slice(0, 18).map((o) => (
-              <Link key={`o-${o}`} className="pill" href={`/source/${encodeURIComponent(o)}`}>
-                {o}
-              </Link>
-            ))}
-          </div>
+          <div className="story-meta">{followedTopics.length} topics • {followedOutlets.length} sources</div>
+          {hasFollows ? (
+            <div className="chip-row">
+              {followedTopics.slice(0, 18).map((t) => (
+                <Link key={`t-${t}`} className="pill" href={`/interest/${encodeURIComponent(t)}`}>
+                  {t}
+                </Link>
+              ))}
+              {followedOutlets.slice(0, 18).map((o) => (
+                <Link key={`o-${o}`} className="pill" href={`/source/${encodeURIComponent(o)}`}>
+                  {o}
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="story-meta u-m0">
+              Follow topics and sources in Discover to turn this into your personalized dashboard.
+            </p>
+          )}
           <Link className="btn" href="/my/discover">
             Discover more
           </Link>
@@ -197,4 +207,3 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
     </section>
   );
 }
-

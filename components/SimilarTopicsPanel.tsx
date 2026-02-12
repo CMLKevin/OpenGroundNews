@@ -15,14 +15,14 @@ export function SimilarTopicsPanel({ story }: { story: Story }) {
 
   return (
     <section className="panel">
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Similar News Topics</h2>
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Similar News Topics</h2>
       </div>
       <ul className="topic-list">
         {tags.map((tag, idx) => (
           <li key={`${story.id}-${tag}-${idx}`} className="topic-item">
             <span className="topic-avatar">{initials(tag)}</span>
-            <Link href={`/interest/${topicSlug(tag)}`} style={{ textDecoration: "none" }}>
+            <Link href={`/interest/${topicSlug(tag)}`} className="u-no-underline">
               {tag}
             </Link>
             <FollowToggle kind="topic" slug={topicSlug(tag)} label={tag} />

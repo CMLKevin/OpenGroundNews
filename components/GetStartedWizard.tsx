@@ -2,6 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { DEFAULT_EDITION, EDITIONS } from "@/lib/constants";
 
 const EDITION_KEY = "ogn_edition";
 const THEME_KEY = "ogn_theme";
@@ -43,7 +45,7 @@ export function GetStartedWizard({
   suggestedOutlets: Suggestion[];
 }) {
   const [step, setStep] = useState<Step>(1);
-  const [edition, setEdition] = useState("International");
+  const [edition, setEdition] = useState(DEFAULT_EDITION);
   const [theme, setTheme] = useState<"dark" | "light" | "auto">("auto");
   const [localLabel, setLocalLabel] = useState("");
   const [localLat, setLocalLat] = useState<number | null>(null);
@@ -58,6 +60,7 @@ export function GetStartedWizard({
   const [notifyFollowed, setNotifyFollowed] = useState(false);
   const [signedIn, setSignedIn] = useState(false);
   const [busy, setBusy] = useState(false);
+  const router = useRouter();
 
   useEffect(() => {
     (async () => {
@@ -138,6 +141,8 @@ export function GetStartedWizard({
       window.localStorage.setItem(NOTIFY_DAILY_KEY, notifyDailyBriefing ? "1" : "0");
       window.localStorage.setItem(NOTIFY_BLINDSPOT_KEY, notifyBlindspot ? "1" : "0");
       window.localStorage.setItem(NOTIFY_FOLLOWED_KEY, notifyFollowed ? "1" : "0");
+      window.localStorage.setItem("ogn_follow_topics", JSON.stringify(Array.from(selectedTopics)));
+      window.localStorage.setItem("ogn_follow_outlets", JSON.stringify(Array.from(selectedOutlets)));
       window.localStorage.setItem(LOCAL_LABEL_KEY, localLabel.trim());
       if (localLat != null && localLon != null) {
         window.localStorage.setItem(LOCAL_LAT_KEY, String(localLat));
@@ -160,12 +165,12 @@ export function GetStartedWizard({
           notifyBlindspot,
           notifyFollowed,
         });
-        for (const slug of Array.from(selectedTopics)) {
-          await postJson("/api/follows", { kind: "topic", slug });
-        }
-        for (const slug of Array.from(selectedOutlets)) {
-          await postJson("/api/follows", { kind: "outlet", slug });
-        }
+        await postJson("/api/follows/batch", {
+          follows: [
+            ...Array.from(selectedTopics).map((slug) => ({ kind: "topic", slug })),
+            ...Array.from(selectedOutlets).map((slug) => ({ kind: "outlet", slug })),
+          ],
+        });
       }
     } finally {
       setBusy(false);
@@ -173,10 +178,10 @@ export function GetStartedWizard({
   }
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.85rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <div style={{ display: "grid", gap: "0.25rem" }}>
-          <h2 style={{ margin: 0 }}>Get Started</h2>
+    <section className="panel u-grid u-grid-gap-085">
+      <div className="section-title u-pt-0">
+        <div className="u-grid u-grid-gap-025">
+          <h2 className="u-m0">Get Started</h2>
           <span className="story-meta">Step {step} of 5</span>
         </div>
       </div>
@@ -202,22 +207,22 @@ export function GetStartedWizard({
       </div>
 
       {step === 1 ? (
-        <div style={{ display: "grid", gap: "0.7rem" }}>
-          <p className="story-meta" style={{ margin: 0 }}>
+        <div className="u-grid u-grid-gap-07">
+          <p className="story-meta u-m0">
             Pick an edition and theme. You can change these anytime.
           </p>
           <div className="filters-grid">
-            <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+            <label className="story-meta u-grid u-grid-gap-02">
               Edition
               <select className="select-control" value={edition} onChange={(e) => setEdition(e.target.value)}>
-                {["International", "United States", "Canada", "United Kingdom", "Europe"].map((e) => (
+                {EDITIONS.map((e) => (
                   <option key={e} value={e}>
                     {e}
                   </option>
                 ))}
               </select>
             </label>
-            <div className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+            <div className="story-meta u-grid u-grid-gap-02">
               Theme
               <div className="theme-toggle">
                 {(["light", "dark", "auto"] as const).map((t) => (
@@ -245,11 +250,11 @@ export function GetStartedWizard({
       ) : null}
 
       {step === 2 ? (
-        <div style={{ display: "grid", gap: "0.7rem" }}>
-          <p className="story-meta" style={{ margin: 0 }}>
+        <div className="u-grid u-grid-gap-07">
+          <p className="story-meta u-m0">
             Set your location to personalize Local and enable the Weather forecast.
           </p>
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+          <label className="story-meta u-grid u-grid-gap-02">
             Location
             <input
               className="input-control"
@@ -260,9 +265,9 @@ export function GetStartedWizard({
           </label>
           {geoLoading ? <div className="story-meta">Searching locations...</div> : null}
           {geoResults.length ? (
-            <div className="panel" style={{ padding: "0.7rem", display: "grid", gap: "0.45rem" }}>
+            <div className="panel u-p-07 u-grid u-grid-gap-045">
               <div className="story-meta">Suggestions</div>
-              <div style={{ display: "grid", gap: "0.35rem" }}>
+              <div className="u-grid u-grid-gap-035">
                 {geoResults.slice(0, 6).map((r) => {
                   const label = labelForResult(r);
                   const lat = Number(r.latitude);
@@ -314,7 +319,7 @@ export function GetStartedWizard({
             >
               Use my location
             </button>
-            <Link className="btn" href="/local">
+            <Link className="btn" href="/local" target="_blank" rel="noreferrer">
               Preview Local
             </Link>
           </div>
@@ -330,10 +335,15 @@ export function GetStartedWizard({
       ) : null}
 
       {step === 3 ? (
-        <div style={{ display: "grid", gap: "0.7rem" }}>
-          <p className="story-meta" style={{ margin: 0 }}>
+        <div className="u-grid u-grid-gap-07">
+          <p className="story-meta u-m0">
             Follow topics to tune your feed.
           </p>
+          {selectedTopics.size < 3 ? (
+            <p className="note u-m0">
+              Tip: selecting at least 3 topics improves recommendation quality.
+            </p>
+          ) : null}
           <div className="chip-row">
             {topicList.map((t) => (
               <button
@@ -364,10 +374,15 @@ export function GetStartedWizard({
       ) : null}
 
       {step === 4 ? (
-        <div style={{ display: "grid", gap: "0.7rem" }}>
-          <p className="story-meta" style={{ margin: 0 }}>
+        <div className="u-grid u-grid-gap-07">
+          <p className="story-meta u-m0">
             Follow sources you trust (or want to monitor).
           </p>
+          {selectedOutlets.size < 3 ? (
+            <p className="note u-m0">
+              Tip: selecting at least 3 sources gives you a better bias baseline.
+            </p>
+          ) : null}
           <div className="chip-row">
             {outletList.map((o) => (
               <button
@@ -381,7 +396,7 @@ export function GetStartedWizard({
               </button>
             ))}
           </div>
-          <p className="note" style={{ margin: 0 }}>
+          <p className="note u-m0">
             {signedIn ? "These will sync to your account." : "Sign in to sync these picks across devices."}
           </p>
           <div className="chip-row">
@@ -401,8 +416,8 @@ export function GetStartedWizard({
       ) : null}
 
       {step === 5 ? (
-        <div style={{ display: "grid", gap: "0.7rem" }}>
-          <p className="story-meta" style={{ margin: 0 }}>
+        <div className="u-grid u-grid-gap-07">
+          <p className="story-meta u-m0">
             Want alerts? Choose what you care about. You can enable push per-device on the Notifications page.
           </p>
           <label className="toggle-row">
@@ -417,7 +432,7 @@ export function GetStartedWizard({
             <input type="checkbox" checked={notifyFollowed} onChange={(e) => setNotifyFollowed(e.target.checked)} />
             <span>Followed topic/source spikes</span>
           </label>
-          <p className="note" style={{ margin: 0 }}>
+          <p className="note u-m0">
             After finishing, open <Link href="/notifications">Notifications</Link> to enable push on this browser.
           </p>
           <div className="chip-row">
@@ -429,7 +444,8 @@ export function GetStartedWizard({
               type="button"
               onClick={async () => {
                 await persistPrefs();
-                window.location.href = "/my";
+                router.push("/my");
+                router.refresh();
               }}
               disabled={busy}
             >

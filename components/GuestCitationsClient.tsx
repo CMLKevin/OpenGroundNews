@@ -69,13 +69,13 @@ export function GuestCitationsClient() {
   }, [missing]);
 
   return (
-    <div style={{ display: "grid", gap: "0.85rem" }}>
+    <div className="u-grid u-grid-gap-085">
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Citations</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Citations</h2>
           <span className="story-meta">Guest (this device)</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Citations list the source articles behind each story you read recently.
         </p>
       </section>
@@ -84,17 +84,17 @@ export function GuestCitationsClient() {
         slugs.map((slug) => {
           const story = stories[slug];
           return (
-            <section key={slug} className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-              <div className="section-title" style={{ paddingTop: 0 }}>
-                <h3 style={{ margin: 0 }}>
-                  <Link href={`/story/${encodeURIComponent(slug)}`} style={{ textDecoration: "none" }}>
+            <section key={slug} className="panel u-grid u-grid-gap-06">
+              <div className="section-title u-pt-0">
+                <h3 className="u-m0">
+                  <Link href={`/story/${encodeURIComponent(slug)}`} className="u-no-underline">
                     {story?.title || slug}
                   </Link>
                 </h3>
                 <span className="story-meta">{story ? `${story.sources.length} sources` : "Loading..."}</span>
               </div>
               {story ? (
-                <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
+                <ul className="rail-list u-list-reset">
                   {story.sources.slice(0, 10).map((src) => (
                     <li key={src.id}>
                       <a className="rail-link" href={src.url} target="_blank" rel="noreferrer">
@@ -110,7 +110,7 @@ export function GuestCitationsClient() {
         })
       ) : (
         <section className="panel">
-          <p className="story-meta" style={{ margin: 0 }}>
+          <p className="story-meta u-m0">
             No citations yet. Read a story to populate this page.
           </p>
         </section>

@@ -28,13 +28,13 @@ export function LocalPublishersList({ publishers }: { publishers: Publisher[] })
 
   return (
     <section className="panel">
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Local News Publishers</h2>
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Local News Publishers</h2>
         <button className="btn" type="button" onClick={() => setOpen(!open)} disabled={publishers.length <= 8}>
           {open ? "Show less" : remaining ? `Show all (${publishers.length})` : "All"}
         </button>
       </div>
-      <ul className="topic-list" style={{ gap: "0.52rem" }}>
+      <ul className="topic-list u-gap-052">
         {visible.map((o) => (
           <li key={o.slug} className="topic-item">
             <span className="topic-avatar" aria-hidden="true">
@@ -42,13 +42,13 @@ export function LocalPublishersList({ publishers }: { publishers: Publisher[] })
                 <img
                   src={String(o.logoUrl)}
                   alt={o.outlet}
-                  style={{ width: 24, height: 24, borderRadius: 999, objectFit: "cover" }}
+                  className="u-avatar-24"
                 />
               ) : (
                 initials(o.outlet)
               )}
             </span>
-            <Link href={`/source/${encodeURIComponent(o.slug)}`} style={{ textDecoration: "none" }}>
+            <Link href={`/source/${encodeURIComponent(o.slug)}`} className="u-no-underline">
               {o.outlet}
             </Link>
             <span className="topic-item-right">
@@ -60,7 +60,7 @@ export function LocalPublishersList({ publishers }: { publishers: Publisher[] })
           </li>
         ))}
       </ul>
-      <p className="story-meta" style={{ margin: "0.6rem 0 0" }}>
+      <p className="story-meta u-mt-06">
         Publishers are inferred from scraped source cards; locality metadata may be incomplete.
       </p>
     </section>

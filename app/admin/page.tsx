@@ -17,7 +17,7 @@ const parityChecklist = [
   { feature: "Perspective summary tabs", status: "done" },
   { feature: "Source sorting and filters (bias/factuality/ownership/paywall)", status: "done" },
   { feature: "Archive-first article reader with fallback", status: "done" },
-  { feature: "Pricing/subscribe surface", status: "done" },
+  { feature: "Non-commercial project support page", status: "done" },
   { feature: "Edition selector", status: "done" },
   { feature: "User auth + cloud-synced follows", status: "planned" },
   { feature: "Podcast context panels", status: "planned" },
@@ -67,9 +67,9 @@ export default async function AdminPage() {
   }
 
   return (
-    <main className="container" style={{ padding: "1.1rem 0 2rem" }}>
-      <div className="panel" style={{ display: "grid", gap: "1rem" }}>
-        <h1 style={{ margin: 0 }}>Ingestion + Parity Admin</h1>
+    <main className="container u-page-pad-compact">
+      <div className="panel u-grid u-grid-gap-1">
+        <h1 className="u-m0">Ingestion + Parity Admin</h1>
         <div className="kpi-strip">
           <div className="kpi">
             <span>Stories</span>
@@ -89,12 +89,12 @@ export default async function AdminPage() {
           </div>
           <div className="kpi">
             <span>Last Mode</span>
-            <strong style={{ fontSize: "0.95rem" }}>{stats.ingestion.lastMode ?? "n/a"}</strong>
+            <strong className="u-text-095">{stats.ingestion.lastMode ?? "n/a"}</strong>
           </div>
         </div>
 
-        <form action={triggerIngest} className="panel" style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
-          <div style={{ display: "grid", gap: "0.15rem" }}>
+        <form action={triggerIngest} className="panel u-flex u-justify-between u-flex-gap-1 u-items-center">
+          <div className="u-grid u-grid-gap-015">
             <strong>Trigger Ground News ingestion</strong>
             <span className="story-meta">
               Uses server-side <code>OGN_API_KEY</code> + your admin session cookie (no key exposed to the browser).
@@ -105,34 +105,34 @@ export default async function AdminPage() {
           </button>
         </form>
 
-        <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>Recent Ingestion Runs</h2>
+        <section className="panel u-grid u-grid-gap-06">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Recent Ingestion Runs</h2>
             <span className="story-meta">DB</span>
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+          <div className="u-overflow-x-auto">
+            <table className="u-table-admin">
               <thead>
-                <tr style={{ textAlign: "left" }}>
-                  <th style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>Started</th>
-                  <th style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>Status</th>
-                  <th style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>Routes</th>
-                  <th style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>Unique Links</th>
-                  <th style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>Stories</th>
+                <tr className="u-text-left">
+                  <th>Started</th>
+                  <th>Status</th>
+                  <th>Routes</th>
+                  <th>Unique Links</th>
+                  <th>Stories</th>
                 </tr>
               </thead>
               <tbody>
                 {runs.map((r) => (
                   <tr key={r.id}>
-                    <td style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>
+                    <td>
                       {r.startedAt.toISOString().replace("T", " ").slice(0, 16)}
                     </td>
-                    <td style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>
+                    <td>
                       <span className="pill">{r.status}</span>
                     </td>
-                    <td style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>{r.routeCount}</td>
-                    <td style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>{r.uniqueStoryLinks}</td>
-                    <td style={{ padding: "0.4rem 0.5rem", borderBottom: "1px solid var(--line)" }}>{r.ingestedStories}</td>
+                    <td>{r.routeCount}</td>
+                    <td>{r.uniqueStoryLinks}</td>
+                    <td>{r.ingestedStories}</td>
                   </tr>
                 ))}
               </tbody>
@@ -141,8 +141,8 @@ export default async function AdminPage() {
         </section>
 
         <section className="panel">
-          <h2 style={{ marginTop: 0 }}>Feature Parity Checklist</h2>
-          <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.4rem" }}>
+          <h2 className="u-mt-0">Feature Parity Checklist</h2>
+          <ul className="u-m0 u-pl-12 u-grid u-grid-gap-04">
             {parityChecklist.map((item) => (
               <li key={item.feature}>
                 <strong>{item.status === "done" ? "[Done]" : "[Planned]"}</strong> {item.feature}
@@ -152,7 +152,7 @@ export default async function AdminPage() {
         </section>
 
         <div className="panel">
-          <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(stats.ingestion, null, 2)}</pre>
+          <pre className="u-m0 u-prewrap">{JSON.stringify(stats.ingestion, null, 2)}</pre>
         </div>
       </div>
     </main>

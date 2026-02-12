@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="OpenGroundNews icon">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#113a4b"/>
+      <stop offset="100%" stop-color="#c15a2d"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="#ecefe8" stroke="#113a4b" stroke-width="3"/>
+  <circle cx="32" cy="32" r="17" fill="url(#g)"/>
+  <path d="M20 33c4-7 8-11 12-11 4 0 8 4 12 11-4 7-8 11-12 11-4 0-8-4-12-11z" fill="#f8faf5"/>
+  <circle cx="32" cy="33" r="5" fill="#113a4b"/>
+</svg>
+

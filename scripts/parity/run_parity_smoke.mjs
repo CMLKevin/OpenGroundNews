@@ -79,7 +79,6 @@ async function run() {
       { id: "signup", url: `${opts.baseUrl}/signup` },
       { id: "get-started", url: `${opts.baseUrl}/get-started` },
       { id: "rating-system", url: `${opts.baseUrl}/rating-system` },
-      { id: "subscribe", url: `${opts.baseUrl}/subscribe` },
     ];
     if (storySlug) routes.splice(1, 0, { id: "story", url: `${opts.baseUrl}/story/${encodeURIComponent(storySlug)}` });
 
@@ -149,4 +148,3 @@ run().catch((err) => {
   console.error(err?.stack || err?.message || String(err));
   process.exit(1);
 });
-

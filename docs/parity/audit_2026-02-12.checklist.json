@@ -1,7 +1,7 @@
 {
   "generatedAt": "2026-02-12T15:44:40.126Z",
   "source": "audit.md",
-  "issueCount": 120,
+  "issueCount": 114,
   "issues": [
     {
       "id": "A1",
@@ -114,18 +114,6 @@
     {
       "id": "A10",
       "title": "Nav links styled as pills vs plain text",
-      "priority": "P2",
-      "section": {
-        "id": "A",
-        "title": "Global / Cross-Page Issues"
-      },
-      "status": "open",
-      "verifiedAt": null,
-      "notes": ""
-    },
-    {
-      "id": "A11",
-      "title": "Missing \"Subscribe\" button in header",
       "priority": "P2",
       "section": {
         "id": "A",
@@ -1378,66 +1366,6 @@
       "section": {
         "id": "L",
         "title": "Rating System Page"
-      },
-      "status": "open",
-      "verifiedAt": null,
-      "notes": ""
-    },
-    {
-      "id": "M1",
-      "title": "No imagery/illustrations in plan cards",
-      "priority": "P1",
-      "section": {
-        "id": "M",
-        "title": "Subscribe Page"
-      },
-      "status": "open",
-      "verifiedAt": null,
-      "notes": ""
-    },
-    {
-      "id": "M2",
-      "title": "No pricing toggle (Monthly/Annual)",
-      "priority": "P2",
-      "section": {
-        "id": "M",
-        "title": "Subscribe Page"
-      },
-      "status": "open",
-      "verifiedAt": null,
-      "notes": ""
-    },
-    {
-      "id": "M3",
-      "title": "No \"As featured on\" logo strip",
-      "priority": "P3",
-      "section": {
-        "id": "M",
-        "title": "Subscribe Page"
-      },
-      "status": "open",
-      "verifiedAt": null,
-      "notes": ""
-    },
-    {
-      "id": "M4",
-      "title": "No testimonial section",
-      "priority": "P3",
-      "section": {
-        "id": "M",
-        "title": "Subscribe Page"
-      },
-      "status": "open",
-      "verifiedAt": null,
-      "notes": ""
-    },
-    {
-      "id": "M5",
-      "title": "No feature comparison table",
-      "priority": "P1",
-      "section": {
-        "id": "M",
-        "title": "Subscribe Page"
       },
       "status": "open",
       "verifiedAt": null,

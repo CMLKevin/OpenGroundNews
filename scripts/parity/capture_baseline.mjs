@@ -61,7 +61,6 @@ async function main() {
     { id: "signup", url: `${opts.baseUrl}/signup` },
     { id: "get-started", url: `${opts.baseUrl}/get-started` },
     { id: "rating-system", url: `${opts.baseUrl}/rating-system` },
-    { id: "subscribe", url: `${opts.baseUrl}/subscribe` },
   ];
 
   const browser = await chromium.launch({ headless: !opts.headed });
@@ -86,4 +85,3 @@ main().catch((err) => {
   console.error(err?.stack || err?.message || String(err));
   process.exit(1);
 });
-

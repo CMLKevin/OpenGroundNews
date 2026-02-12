@@ -9,8 +9,8 @@ export function TopNewsStories({ stories }: { stories: Story[] }) {
 
   return (
     <section className="panel">
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Top News Stories</h2>
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Top News Stories</h2>
         <span className="story-meta">
           {visible.length} stories • {totalArticles} articles
         </span>

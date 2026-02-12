@@ -29,25 +29,25 @@ export function ForgotPasswordForm() {
   }
 
   return (
-    <section className="panel auth-shell" style={{ display: "grid", gap: "0.8rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <div style={{ display: "grid", gap: "0.1rem" }}>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Forgot password</h1>
+    <section className="panel auth-shell u-grid u-grid-gap-08">
+      <div className="section-title u-pt-0">
+        <div className="u-grid u-grid-gap-01">
+          <h1 className="u-m0 u-font-serif">Forgot password</h1>
           <span className="story-meta">Reset your account password</span>
         </div>
       </div>
 
-      <p className="story-meta" style={{ margin: 0 }}>
+      <p className="story-meta u-m0">
         Enter the email address associated with your account. If it exists, we’ll generate a reset link.
       </p>
 
-      <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+      <label className="story-meta u-grid u-grid-gap-02">
         Email
         <input className="input-control" value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
       </label>
 
       {result?.ok ? (
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           If an account exists for that email, a reset link has been generated.
           {result.devResetUrl ? (
             <>
@@ -61,7 +61,7 @@ export function ForgotPasswordForm() {
           ) : null}
         </p>
       ) : result && !result.ok ? (
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           {result.error || "Unable to generate reset link"}
         </p>
       ) : null}

@@ -39,22 +39,22 @@ export function ResetPasswordForm() {
   }
 
   return (
-    <section className="panel auth-shell" style={{ display: "grid", gap: "0.8rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <div style={{ display: "grid", gap: "0.1rem" }}>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Reset password</h1>
+    <section className="panel auth-shell u-grid u-grid-gap-08">
+      <div className="section-title u-pt-0">
+        <div className="u-grid u-grid-gap-01">
+          <h1 className="u-m0 u-font-serif">Reset password</h1>
           <span className="story-meta">{token ? "Enter a new password" : "Missing token"}</span>
         </div>
       </div>
 
       {!token ? (
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           This reset link is missing a token. Request a new reset from{" "}
           <Link href="/forgot-password">Forgot password</Link>.
         </p>
       ) : (
         <>
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+          <label className="story-meta u-grid u-grid-gap-02">
             New password
             <input
               className="input-control"
@@ -67,11 +67,11 @@ export function ResetPasswordForm() {
           </label>
 
           {result?.ok ? (
-            <p className="note" style={{ margin: 0 }}>
+            <p className="note u-m0">
               Password updated. Redirecting to sign in...
             </p>
           ) : result && !result.ok ? (
-            <p className="note" style={{ margin: 0 }}>
+            <p className="note u-m0">
               {result.error || "Unable to reset password"}
             </p>
           ) : null}

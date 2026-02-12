@@ -4,10 +4,10 @@ export const dynamic = "force-dynamic";
 
 export default function MyLayout({ children }: { children: React.ReactNode }) {
   return (
-    <main className="container" style={{ padding: "1rem 0 2rem" }}>
-      <section className="panel" style={{ marginBottom: "1rem", display: "grid", gap: "0.55rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>For You</h1>
+    <main className="container u-page-pad">
+      <section className="panel u-mb-1 u-grid u-grid-gap-055">
+        <div className="section-title u-pt-0">
+          <h1 className="u-m0 u-font-serif">For You</h1>
           <span className="story-meta">Personalized feed, follows, and tools</span>
         </div>
         <MyTabs />

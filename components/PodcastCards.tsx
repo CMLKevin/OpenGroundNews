@@ -39,7 +39,7 @@ export function PodcastCards({ entries }: { entries: string[] }) {
     <div className="podcast-grid">
       {cards.map((c, idx) => (
         <article key={`${c.url || c.label}-${idx}`} className="podcast-card">
-          <div style={{ display: "grid", gap: "0.2rem" }}>
+          <div className="u-grid u-grid-gap-02">
             <strong>{c.label}</strong>
             {c.host ? <span className="story-meta">{labelForHost(c.host)}</span> : null}
           </div>

@@ -9,6 +9,8 @@ import { getCurrentUser } from "@/lib/authStore";
 import { NewsList } from "@/components/NewsList";
 import { TopNewsStories } from "@/components/TopNewsStories";
 import { BlindspotWidget } from "@/components/BlindspotWidget";
+import { StoryCard } from "@/components/StoryCard";
+import { outletSlug, topicSlug } from "@/lib/lookup";
 
 type HomeProps = {
   searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string; page?: string }>;
@@ -57,11 +59,41 @@ export default async function HomePage({ searchParams }: HomeProps) {
     : biasFiltered;
 
   const leadStory = pageNumber === 1 ? (tagged[0] ?? null) : null;
-  const gridStart = 1 + (pageNumber - 1) * PAGE_SIZE;
-  const gridStories = tagged.slice(gridStart, gridStart + PAGE_SIZE);
   const topStories = tagged.slice(0, 6);
   const blindspotStories = tagged.filter((s) => s.blindspot).slice(0, 6);
   const heroListStories = leadStory ? tagged.slice(1, 1 + 10) : tagged.slice(0, 10);
+  const heroRenderedSlugs = new Set([leadStory?.slug, ...heroListStories.map((s) => s.slug)].filter(Boolean) as string[]);
+  const feedPool = tagged.filter((story) => !heroRenderedSlugs.has(story.slug));
+  const gridStart = (pageNumber - 1) * PAGE_SIZE;
+  const gridStories = feedPool.slice(gridStart, gridStart + PAGE_SIZE);
+  const cardStories = gridStories.slice(0, 4);
+  const listStoriesFeed = gridStories.slice(4);
+
+  const exploreTopics = Array.from(
+    tagged
+      .flatMap((story) => story.tags || [])
+      .reduce((acc, tag) => {
+        const key = topicSlug(tag);
+        acc.set(key, { key, label: tag, count: (acc.get(key)?.count || 0) + 1 });
+        return acc;
+      }, new Map<string, { key: string; label: string; count: number }>())
+      .values(),
+  )
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, 6);
+
+  const exploreOutlets = Array.from(
+    tagged
+      .flatMap((story) => story.sources || [])
+      .reduce((acc, source) => {
+        const key = source.outlet.toLowerCase();
+        acc.set(key, { key, label: source.outlet, count: (acc.get(key)?.count || 0) + 1 });
+        return acc;
+      }, new Map<string, { key: string; label: string; count: number }>())
+      .values(),
+  )
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, 6);
 
   const paramsForPage = (nextPage: number) => {
     const params = new URLSearchParams();
@@ -74,14 +106,14 @@ export default async function HomePage({ searchParams }: HomeProps) {
     return params.toString() ? `?${params.toString()}` : "";
   };
 
-  const hasMore = gridStart + gridStories.length < tagged.length;
+  const hasMore = gridStart + gridStories.length < feedPool.length;
 
   return (
     <main className="container">
       <section className="home-hero-grid">
         <div className="home-hero-left">
           <DailyBriefingList stories={topStories} />
-          <div style={{ marginTop: "1rem" }}>
+          <div className="u-mt-1">
             <TopNewsStories stories={tagged.slice(6, 18)} />
           </div>
         </div>
@@ -91,14 +123,14 @@ export default async function HomePage({ searchParams }: HomeProps) {
           {heroListStories.length ? <NewsList stories={heroListStories} dense={true} /> : null}
           {!leadStory ? (
             <section className="panel">
-              <div className="section-title" style={{ paddingTop: 0 }}>
-                <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Top story</h1>
+              <div className="section-title u-pt-0">
+                <h1 className="u-m0 u-font-serif">Top story</h1>
               </div>
-              <p className="story-meta" style={{ margin: 0 }}>
+              <p className="story-meta u-m0">
                 No stories available yet. Run ingestion from admin once your Browser Use key is configured.
               </p>
               {isAdmin ? (
-                <Link className="btn" href="/admin" style={{ marginTop: "0.7rem", display: "inline-flex" }}>
+                <Link className="btn u-mt-07 u-inline-flex" href="/admin">
                   Open admin
                 </Link>
               ) : null}
@@ -114,7 +146,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
       </section>
 
       {query ? (
-        <p className="note" style={{ marginBottom: "1rem" }}>
+        <p className="note u-mb-1">
           Showing {tagged.length} result(s) for <strong>{q}</strong>
         </p>
       ) : null}
@@ -122,7 +154,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
       <section className="feed-shell">
         <aside className="feed-rail feed-rail-left">
           <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
+            <div className="section-title u-pt-0">
               <h2>Explore</h2>
             </div>
             <div className="chip-row">
@@ -138,25 +170,52 @@ export default async function HomePage({ searchParams }: HomeProps) {
               <Link className="pill" href="/rating-system">
                 Rating system
               </Link>
-              <Link className="pill" href="/subscribe">
-                Support
-              </Link>
             </div>
+            {exploreTopics.length > 0 ? (
+              <>
+                <div className="story-meta u-mt-06">
+                  Popular topics
+                </div>
+                <div className="chip-row">
+                  {exploreTopics.map((topic) => (
+                    <Link key={topic.key} className="pill" href={`/interest/${encodeURIComponent(topic.key)}`}>
+                      {topic.label}
+                    </Link>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            {exploreOutlets.length > 0 ? (
+              <>
+                <div className="story-meta u-mt-06">
+                  Most covered outlets
+                </div>
+                <div className="chip-row">
+                  {exploreOutlets.map((outlet) => (
+                    <Link key={outlet.key} className="pill" href={`/source/${encodeURIComponent(outletSlug(outlet.label))}`}>
+                      {outlet.label}
+                    </Link>
+                  ))}
+                </div>
+              </>
+            ) : null}
           </section>
         </aside>
 
         <div className="feed-main">
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>Latest Stories</h2>
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Latest Stories</h2>
             <span className="story-meta">
-              {tagged.length === 0 ? "0 stories" : `Showing ${Math.min(tagged.length, gridStart + gridStories.length)} of ${tagged.length}`}
+              {tagged.length === 0
+                ? "0 stories"
+                : `Showing ${Math.min(feedPool.length, gridStart + gridStories.length)} of ${feedPool.length}`}
             </span>
           </div>
 
           {tagged.length === 0 ? (
-            <section className="panel" style={{ display: "grid", gap: "0.5rem" }}>
-              <h3 style={{ margin: 0 }}>No stories match your current filters.</h3>
-              <p className="story-meta" style={{ margin: 0 }}>
+            <section className="panel u-grid u-grid-gap-05">
+              <h3 className="u-m0">No stories match your current filters.</h3>
+              <p className="story-meta u-m0">
                 Try clearing a filter, changing edition, or broadening your search query.
               </p>
               <Link className="btn" href={edition ? `/?edition=${encodeURIComponent(edition)}` : "/"}>
@@ -167,10 +226,17 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
           {/* Lead story is rendered in the homepage hero for parity; keep feed focused on the grid. */}
 
-          <NewsList stories={gridStories} dense={true} />
+          {cardStories.length > 0 ? (
+            <section className="grid">
+              {cardStories.map((story) => (
+                <StoryCard key={story.id} story={story} />
+              ))}
+            </section>
+          ) : null}
+          <NewsList stories={listStoriesFeed} dense={true} />
 
           {hasMore ? (
-            <div style={{ display: "flex", justifyContent: "center" }}>
+            <div className="u-flex u-justify-center">
               <Link className="btn" href={`/${paramsForPage(pageNumber + 1)}`}>
                 Load more stories
               </Link>
@@ -180,7 +246,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
         <aside className="feed-rail feed-rail-right">
           <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
+            <div className="section-title u-pt-0">
               <h2>Feed Filters</h2>
               <Link href={edition ? `/?edition=${encodeURIComponent(edition)}` : "/"} className="story-meta">
                 Reset
@@ -189,7 +255,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
             <form action="/" method="get" className="filters-grid">
               {edition ? <input type="hidden" name="edition" value={edition} /> : null}
               {q ? <input type="hidden" name="q" value={q} /> : null}
-              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+              <label className="story-meta u-grid u-grid-gap-02">
                 View
                 <select className="select-control" name="view" defaultValue={normalizedView}>
                   <option value="all">All</option>
@@ -198,7 +264,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
                   <option value="local">Local</option>
                 </select>
               </label>
-              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+              <label className="story-meta u-grid u-grid-gap-02">
                 Bias
                 <select className="select-control" name="bias" defaultValue={normalizedBias}>
                   <option value="all">All</option>
@@ -207,7 +273,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
                   <option value="right">Right-leaning coverage</option>
                 </select>
               </label>
-              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+              <label className="story-meta u-grid u-grid-gap-02">
                 Topic
                 <input className="select-control" name="tag" defaultValue={tag ?? ""} placeholder="e.g. Israel-Gaza" />
               </label>
@@ -218,13 +284,13 @@ export default async function HomePage({ searchParams }: HomeProps) {
           </section>
 
           <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
+            <div className="section-title u-pt-0">
               <h2>Blindspot Watch</h2>
               <Link href="/blindspot" className="story-meta">
                 open
               </Link>
             </div>
-            <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
+            <ul className="rail-list u-list-reset">
               {blindspotStories.map((story) => (
                 <li key={story.id}>
                   <Link href={`/story/${story.slug}`} className="rail-link">

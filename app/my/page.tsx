@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function MyFeedPage() {
   const user = await getCurrentUser();
-  const stories = await listStories({ view: "all", limit: 240 });
+  const stories = await listStories({ view: "all", limit: 80 });
 
   const recentReads = user
     ? await db.readingEvent.findMany({
@@ -22,17 +22,17 @@ export default async function MyFeedPage() {
     : [];
 
   return (
-    <div style={{ display: "grid", gap: "1rem" }}>
+    <div className="u-grid u-grid-gap-1">
       <section className="my-dashboard">
         <MyNewsBiasWidget />
         {user ? (
-          <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Reading History</h2>
+          <section className="panel u-grid u-grid-gap-06">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Reading History</h2>
               <span className="story-meta">{recentReads.length ? "Recent" : "No reads yet"}</span>
             </div>
             {recentReads.length > 0 ? (
-              <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
+              <ul className="rail-list u-list-reset">
                 {recentReads.map((ev) => (
                   <li key={ev.id}>
                     <Link className="rail-link" href={`/story/${encodeURIComponent(ev.story.slug)}`}>
@@ -51,7 +51,7 @@ export default async function MyFeedPage() {
                 ))}
               </ul>
             ) : (
-              <p className="story-meta" style={{ margin: 0 }}>
+              <p className="story-meta u-m0">
                 Open a story to start building your bias dashboard.
               </p>
             )}
@@ -63,7 +63,7 @@ export default async function MyFeedPage() {
 
       {!user ? (
         <section className="panel">
-          <p className="note" style={{ margin: 0 }}>
+          <p className="note u-m0">
             Sign in to sync your followed topics and outlets across devices. <Link href="/login?next=/my">Sign in</Link>.
           </p>
         </section>
@@ -73,4 +73,3 @@ export default async function MyFeedPage() {
     </div>
   );
 }
-

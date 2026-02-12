@@ -189,6 +189,47 @@ export async function toggleFollow(userId: string, params: { kind: "topic" | "ou
   };
 }
 
+export async function addFollowsBatch(
+  userId: string,
+  follows: Array<{ kind: "topic" | "outlet"; slug: string }>,
+) {
+  const clean = follows
+    .map((item) => ({
+      kind: item.kind,
+      slug: (item.slug || "").trim().toLowerCase(),
+    }))
+    .filter((item) => (item.kind === "topic" || item.kind === "outlet") && item.slug.length > 0);
+
+  if (clean.length === 0) {
+    const prefs = await getPrefsForUser(userId);
+    return { prefs: { topics: prefs.topics, outlets: prefs.outlets } };
+  }
+
+  await db.$transaction(
+    clean.map((item) =>
+      db.follow.upsert({
+        where: { userId_kind_slug: { userId, kind: item.kind, slug: item.slug } },
+        update: {},
+        create: { id: `follow_${randomToken(10)}`, userId, kind: item.kind, slug: item.slug },
+      }),
+    ),
+  );
+
+  const followsNow = await db.follow.findMany({ where: { userId } });
+  return {
+    prefs: {
+      topics: followsNow
+        .filter((f) => f.kind === "topic")
+        .map((f) => f.slug)
+        .sort(),
+      outlets: followsNow
+        .filter((f) => f.kind === "outlet")
+        .map((f) => f.slug)
+        .sort(),
+    },
+  };
+}
+
 export async function requestPasswordReset(emailRaw: string) {
   const email = normalizeEmail(emailRaw);
   // Always return ok to avoid user enumeration.

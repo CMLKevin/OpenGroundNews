@@ -36,7 +36,7 @@ It provides:
 - Local feed (`/local`)
 - Story detail view (`/story/[slug]`) with source coverage panel
 - Ratings explainer (`/rating-system`)
-- Subscribe/info surface (`/subscribe`)
+- Project support page (`/subscribe`) (non-commercial)
 - Admin panel (`/admin`) with ingestion controls and status
 - Notifications setup (`/notifications`) via Web Push (requires VAPID keys)
 - Browser extension surface (`/extension`) + MV3 extension in `extension/`
@@ -210,4 +210,3 @@ See:
   - [Blindspot](https://ground.news/blindspot)
   - [Local](https://ground.news/local)
   - [Rating System](https://ground.news/rating-system)
-  - [Subscribe](https://ground.news/subscribe)

@@ -149,17 +149,17 @@ export function ManageAccountClient() {
   }
 
   return (
-    <div style={{ display: "grid", gap: "0.85rem" }}>
+    <div className="u-grid u-grid-gap-085">
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Manage</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Manage</h2>
           <span className="story-meta">{signedIn ? "Account" : "Guest mode"}</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           {signedIn ? `Signed in as ${me.user?.email}` : "Sign in to sync preferences across devices."}
         </p>
         {!signedIn ? (
-          <div className="chip-row" style={{ marginTop: "0.65rem" }}>
+          <div className="chip-row u-mt-065">
             <Link className="btn" href="/login?next=/my/manage">
               Sign in
             </Link>
@@ -170,13 +170,13 @@ export function ManageAccountClient() {
         ) : null}
       </section>
 
-      <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Preferences</h2>
+      <section className="panel u-grid u-grid-gap-07">
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Preferences</h2>
           <span className="story-meta">Edition, theme, location</span>
         </div>
 
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Edition
           <select
             className="select-control"
@@ -191,7 +191,7 @@ export function ManageAccountClient() {
           </select>
         </label>
 
-        <div className="story-meta" style={{ display: "flex", gap: "0.45rem", alignItems: "center", flexWrap: "wrap" }}>
+        <div className="story-meta u-flex u-flex-gap-045 u-items-center u-wrap">
           Theme:
           {(["light", "dark", "auto"] as const).map((t) => (
             <button
@@ -205,7 +205,7 @@ export function ManageAccountClient() {
           ))}
         </div>
 
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Location (for Local + Weather)
           <input
             className="input-control"
@@ -216,9 +216,9 @@ export function ManageAccountClient() {
         </label>
         {loadingGeo ? <div className="story-meta">Searching locations...</div> : null}
         {results.length ? (
-          <div className="panel" style={{ padding: "0.7rem", display: "grid", gap: "0.45rem" }}>
+          <div className="panel u-p-07 u-grid u-grid-gap-045">
             <div className="story-meta">Suggestions</div>
-            <div style={{ display: "grid", gap: "0.35rem" }}>
+            <div className="u-grid u-grid-gap-035">
               {results.slice(0, 6).map((r) => {
                 const label = labelForResult(r);
                 const lat = Number(r.latitude);
@@ -257,7 +257,7 @@ export function ManageAccountClient() {
         </div>
 
         {status ? (
-          <p className="note" style={{ margin: 0 }}>
+          <p className="note u-m0">
             {status}
           </p>
         ) : null}

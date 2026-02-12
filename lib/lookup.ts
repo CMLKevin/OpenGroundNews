@@ -1,8 +1,10 @@
 import { slugify } from "@/lib/format";
 import { SourceArticle, Story } from "@/lib/types";
+import { canonicalTopicSlug, topicMatchesSlug } from "@/lib/topics";
 
 export function topicSlug(label: string) {
-  return slugify(label || "");
+  const normalized = canonicalTopicSlug(label || "");
+  return normalized || slugify(label || "");
 }
 
 export function outletSlug(label: string) {
@@ -12,7 +14,8 @@ export function outletSlug(label: string) {
 export function storyHasTopicSlug(story: Story, slug: string) {
   const needle = (slug || "").trim().toLowerCase();
   if (!needle) return false;
-  return story.tags.some((tag) => topicSlug(tag).toLowerCase() === needle);
+  if (topicMatchesSlug(story.topic, needle)) return true;
+  return story.tags.some((tag) => topicMatchesSlug(tag, needle));
 }
 
 export function sourceMatchesOutletSlug(source: SourceArticle, slug: string) {
@@ -20,4 +23,3 @@ export function sourceMatchesOutletSlug(source: SourceArticle, slug: string) {
   if (!needle) return false;
   return outletSlug(source.outlet).toLowerCase() === needle;
 }
-

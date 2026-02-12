@@ -87,15 +87,15 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
   const totalArticles = Math.max(totalSourceCount ?? sources.length, sources.length);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.8rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>{totalArticles} Articles</h2>
+    <section className="panel u-grid u-grid-gap-08">
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">{totalArticles} Articles</h2>
         <span className="story-meta">
           {paged.length} shown / {filtered.length} filtered
         </span>
       </div>
 
-      <div className="chip-row" style={{ gap: "0.35rem" }}>
+      <div className="chip-row u-flex-gap-035">
         <button className={`btn ${biasFilter === "all" ? "perspective-btn is-active" : ""}`} onClick={() => setBiasFilter("all")}>
           All {biasCounts.all}
         </button>
@@ -111,7 +111,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
       </div>
 
       <div className="filters-grid">
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Sort
           <select className="select-control" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
             <option value="latest">Latest</option>
@@ -121,7 +121,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
           </select>
         </label>
 
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Bias
           <select className="select-control" value={biasFilter} onChange={(e) => setBiasFilter(e.target.value)}>
             <option value="all">All</option>
@@ -132,7 +132,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
           </select>
         </label>
 
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Factuality
           <select className="select-control" value={factFilter} onChange={(e) => setFactFilter(e.target.value)}>
             <option value="all">All</option>
@@ -145,7 +145,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
           </select>
         </label>
 
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Ownership
           <select className="select-control" value={ownershipFilter} onChange={(e) => setOwnershipFilter(e.target.value)}>
             <option value="all">All</option>
@@ -157,7 +157,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
           </select>
         </label>
 
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Paywall
           <select className="select-control" value={paywallFilter} onChange={(e) => setPaywallFilter(e.target.value)}>
             <option value="all">All</option>
@@ -183,7 +183,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
       </div>
 
       {(totalSourceCount ?? sources.length) > sources.length ? (
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           Showing a scraped sample of {sources.length} source cards out of {(totalSourceCount ?? sources.length)} total
           coverage sources.
         </p>
@@ -197,9 +197,9 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
               <div className="source-head">
                 <div className="source-outlet">
                   {src.logoUrl ? <img src={src.logoUrl} alt={src.outlet} className="source-logo" /> : <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>}
-                  <div style={{ display: "grid", gap: "0.08rem" }}>
+                  <div className="u-grid u-grid-gap-008">
                     <strong>
-                      <Link href={`/source/${outletSlug(src.outlet)}`} style={{ textDecoration: "none" }}>
+                      <Link href={`/source/${outletSlug(src.outlet)}`} className="u-no-underline">
                         {src.outlet}
                       </Link>
                     </strong>
@@ -209,7 +209,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
                     </span>
                   </div>
                 </div>
-                <div className="chip-row source-chip-row" style={{ alignItems: "center" }}>
+                <div className="chip-row source-chip-row u-items-center">
                   <span className="chip">{src.bias === "unknown" ? "Unclassified" : src.bias}</span>
                   <span className="chip">{src.factuality === "unknown" ? "Not rated" : src.factuality}</span>
                   <FollowToggle kind="outlet" slug={outletSlug(src.outlet)} label={src.outlet} />
@@ -219,7 +219,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
               <div className="story-meta">
                 Ownership: {normalizeOwnership(src.ownership)} • Paywall: {src.paywall ?? "unknown"}
               </div>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <div className="u-flex u-flex-gap-05 u-wrap">
                 <Link className="btn" href={href}>
                   Read in OpenGroundNews Reader
                 </Link>

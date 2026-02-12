@@ -10,36 +10,35 @@ export default async function SubscribePage({ searchParams }: Props) {
   const { success, canceled } = await searchParams;
 
   return (
-    <main className="container" style={{ padding: "1.1rem 0 2rem" }}>
+    <main className="container u-page-pad-compact">
       <section className="hero">
         <div className="hero-panel">
-          <h1>Support OpenGroundNews</h1>
+          <h1>Project Support</h1>
           <p>
-            OpenGroundNews is building full Ground News-style feature parity, but with open infrastructure and
-            transparent ingestion. Plans are presented in the familiar 3-tier layout, but payments are intentionally
-            disabled for now.
+            OpenGroundNews is an open project focused on data quality, perspective coverage, and transparent tooling.
+            This page exists for contribution guidance, not subscriptions.
           </p>
         </div>
         <div className="hero-panel">
-          <p className="note" style={{ margin: 0 }}>
-            If you want to help: run ingestion regularly, report scraper regressions, and share problematic article URLs
-            so we can improve the archive and fallback extractors.
+          <p className="note u-m0">
+            If you want to help: run ingestion regularly, report scraper regressions, and share problematic article
+            URLs so we can improve extraction quality.
           </p>
         </div>
       </section>
 
       {success ? (
-        <p className="note" style={{ marginTop: "1rem" }}>
-          Payments are disabled. This message is kept for link compatibility.
+        <p className="note u-mt-1">
+          No checkout flow is used in this project.
         </p>
       ) : null}
       {canceled ? (
-        <p className="note" style={{ marginTop: "1rem" }}>
-          Payments are disabled. This message is kept for link compatibility.
+        <p className="note u-mt-1">
+          No checkout flow is used in this project.
         </p>
       ) : null}
 
-      <div style={{ marginTop: "1rem" }}>
+      <div className="u-mt-1">
         <SubscribePlans />
       </div>
     </main>

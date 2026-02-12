@@ -15,11 +15,418 @@ const STORE_LOCK_PATH = path.join(process.cwd(), "data", "store.lock");
 const DEFAULT_OUT = "output/browser_use/groundnews_cdp/ingest_scrape.json";
 const DEFAULT_ARTICLE_AUDIT_DIR = "output/browser_use/groundnews_cdp/article_audit";
 const FALLBACK_IMAGE = "/images/story-fallback.svg";
+const FALLBACK_IMAGE_VARIANTS = [
+  "/images/fallbacks/story-fallback-1.svg",
+  "/images/fallbacks/story-fallback-2.svg",
+  "/images/fallbacks/story-fallback-3.svg",
+  "/images/fallbacks/story-fallback-4.svg",
+  "/images/fallbacks/story-fallback-5.svg",
+];
+const IMAGE_CACHE_DIR = path.join(process.cwd(), "public", "images", "cache");
+const IMAGE_CACHE_MAX_BYTES = 5 * 1024 * 1024;
+const IMAGE_CACHE_TIMEOUT_MS = 15000;
 const LOCK_TIMEOUT_MS = 15000;
 const LOCK_STALE_MS = 120000;
 const LOCK_WAIT_STEP_MS = 80;
 const SOURCE_FETCH_TIMEOUT_MS = 12000;
 const SOURCE_FETCH_CONCURRENCY = 4;
+
+const TOPIC_ALIAS_RULES = [
+  { slug: "us-news", label: "US News", aliases: ["us politics", "u.s. politics", "united states", "washington", "congress", "white house", "american politics"] },
+  { slug: "world", label: "World", aliases: ["international", "global", "world news", "foreign affairs", "geopolitics"] },
+  { slug: "science", label: "Science", aliases: ["science & technology", "research", "space", "biology", "physics"] },
+  { slug: "technology", label: "Technology", aliases: ["tech", "artificial intelligence", "ai", "cybersecurity", "internet"] },
+  { slug: "business", label: "Business", aliases: ["markets", "economy", "finance", "business & markets"] },
+  { slug: "health", label: "Health", aliases: ["health & medicine", "medicine", "public health", "healthcare"] },
+  { slug: "sports", label: "Sports", aliases: ["sport", "athletics", "football", "basketball", "baseball"] },
+  { slug: "climate", label: "Climate", aliases: ["environment", "climate change", "global warming"] },
+  { slug: "entertainment", label: "Entertainment", aliases: ["music", "culture", "movies", "film", "television", "celebrity"] },
+  { slug: "politics", label: "Politics", aliases: ["government", "election", "policy", "law"] },
+];
+
+const ENTERTAINMENT_KEYWORDS = [
+  "music",
+  "movie",
+  "film",
+  "tv",
+  "television",
+  "celebrity",
+  "streaming",
+  "box office",
+  "album",
+  "song",
+  "artist",
+  "concert",
+  "super bowl halftime",
+];
+
+const POLITICS_KEYWORDS = [
+  "election",
+  "senate",
+  "congress",
+  "white house",
+  "president",
+  "governor",
+  "lawmakers",
+  "campaign",
+  "policy",
+  "bill",
+  "legislation",
+  "minister",
+];
+
+const US_NEWS_KEYWORDS = ["u.s.", "us ", "united states", "american", "washington"];
+
+const TLD_COUNTRY_MAP = new Map([
+  ["us", "United States"],
+  ["uk", "United Kingdom"],
+  ["ca", "Canada"],
+  ["au", "Australia"],
+  ["in", "India"],
+  ["de", "Germany"],
+  ["fr", "France"],
+  ["it", "Italy"],
+  ["es", "Spain"],
+  ["jp", "Japan"],
+  ["kr", "South Korea"],
+  ["br", "Brazil"],
+  ["mx", "Mexico"],
+  ["za", "South Africa"],
+  ["ie", "Ireland"],
+  ["nz", "New Zealand"],
+  ["sg", "Singapore"],
+  ["hk", "Hong Kong"],
+]);
+
+const TOPIC_ALIAS_TO_RULE = new Map();
+for (const rule of TOPIC_ALIAS_RULES) {
+  TOPIC_ALIAS_TO_RULE.set(rule.slug, rule);
+  TOPIC_ALIAS_TO_RULE.set(rule.label.toLowerCase(), rule);
+  for (const alias of rule.aliases) {
+    TOPIC_ALIAS_TO_RULE.set(String(alias).toLowerCase(), rule);
+    TOPIC_ALIAS_TO_RULE.set(slugify(alias), rule);
+  }
+}
+
+const OUTLET_REFERENCE_DATA = new Map(
+  [
+    {
+      match: ["reuters", "reuters.com"],
+      websiteUrl: "https://www.reuters.com",
+      country: "United Kingdom",
+      foundedYear: 1851,
+      description: "International news agency headquartered in London.",
+      biasRating: "center",
+      factuality: "very-high",
+    },
+    {
+      match: ["cnn", "cnn.com"],
+      websiteUrl: "https://www.cnn.com",
+      country: "United States",
+      foundedYear: 1980,
+      description: "US cable and digital news network.",
+      biasRating: "left",
+      factuality: "mixed",
+    },
+    {
+      match: ["fox news", "foxnews.com"],
+      websiteUrl: "https://www.foxnews.com",
+      country: "United States",
+      foundedYear: 1996,
+      description: "US cable and digital news network.",
+      biasRating: "right",
+      factuality: "mixed",
+    },
+    {
+      match: ["associated press", "apnews.com"],
+      websiteUrl: "https://apnews.com",
+      country: "United States",
+      foundedYear: 1846,
+      description: "Independent global news cooperative.",
+      biasRating: "center",
+      factuality: "very-high",
+    },
+    {
+      match: ["bbc", "bbc.com", "bbc.co.uk"],
+      websiteUrl: "https://www.bbc.com",
+      country: "United Kingdom",
+      foundedYear: 1922,
+      description: "British public service broadcaster.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["new york times", "nytimes.com"],
+      websiteUrl: "https://www.nytimes.com",
+      country: "United States",
+      foundedYear: 1851,
+      description: "US newspaper focused on national and global coverage.",
+      biasRating: "left",
+      factuality: "high",
+    },
+    {
+      match: ["wall street journal", "wsj.com"],
+      websiteUrl: "https://www.wsj.com",
+      country: "United States",
+      foundedYear: 1889,
+      description: "US newspaper with business and political reporting.",
+      biasRating: "lean-right",
+      factuality: "high",
+    },
+    {
+      match: ["washington post", "washingtonpost.com"],
+      websiteUrl: "https://www.washingtonpost.com",
+      country: "United States",
+      foundedYear: 1877,
+      description: "US newspaper with national and international reporting.",
+      biasRating: "lean-left",
+      factuality: "high",
+    },
+    {
+      match: ["npr", "npr.org"],
+      websiteUrl: "https://www.npr.org",
+      country: "United States",
+      foundedYear: 1970,
+      description: "US nonprofit public radio network and newsroom.",
+      biasRating: "lean-left",
+      factuality: "high",
+    },
+    {
+      match: ["the guardian", "theguardian.com"],
+      websiteUrl: "https://www.theguardian.com",
+      country: "United Kingdom",
+      foundedYear: 1821,
+      description: "British newspaper with international digital coverage.",
+      biasRating: "lean-left",
+      factuality: "high",
+    },
+    {
+      match: ["abc news", "abcnews.go.com"],
+      websiteUrl: "https://abcnews.go.com",
+      country: "United States",
+      foundedYear: 1945,
+      description: "US broadcast and digital news division.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["cbs news", "cbsnews.com"],
+      websiteUrl: "https://www.cbsnews.com",
+      country: "United States",
+      foundedYear: 1927,
+      description: "US broadcast and digital news division.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["nbc news", "nbcnews.com", "msnbc.com"],
+      websiteUrl: "https://www.nbcnews.com",
+      country: "United States",
+      foundedYear: 1940,
+      description: "US broadcast and digital news division.",
+      biasRating: "lean-left",
+      factuality: "high",
+    },
+    {
+      match: ["usa today", "usatoday.com"],
+      websiteUrl: "https://www.usatoday.com",
+      country: "United States",
+      foundedYear: 1982,
+      description: "US national newspaper and digital outlet.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["bloomberg", "bloomberg.com"],
+      websiteUrl: "https://www.bloomberg.com",
+      country: "United States",
+      foundedYear: 1990,
+      description: "Global business and markets news organization.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["financial times", "ft.com"],
+      websiteUrl: "https://www.ft.com",
+      country: "United Kingdom",
+      foundedYear: 1888,
+      description: "UK-based global business newspaper.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["politico", "politico.com"],
+      websiteUrl: "https://www.politico.com",
+      country: "United States",
+      foundedYear: 2007,
+      description: "US politics and policy digital newsroom.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["axios", "axios.com"],
+      websiteUrl: "https://www.axios.com",
+      country: "United States",
+      foundedYear: 2016,
+      description: "US digital outlet focused on politics, business, and tech.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["al jazeera", "aljazeera.com"],
+      websiteUrl: "https://www.aljazeera.com",
+      country: "Qatar",
+      foundedYear: 1996,
+      description: "International news network headquartered in Doha.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["sky news", "news.sky.com"],
+      websiteUrl: "https://news.sky.com",
+      country: "United Kingdom",
+      foundedYear: 1989,
+      description: "UK television and digital news outlet.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["the hill", "thehill.com"],
+      websiteUrl: "https://thehill.com",
+      country: "United States",
+      foundedYear: 1994,
+      description: "US outlet focused on Congress and policy.",
+      biasRating: "center",
+      factuality: "mixed",
+    },
+    {
+      match: ["newsweek", "newsweek.com"],
+      websiteUrl: "https://www.newsweek.com",
+      country: "United States",
+      foundedYear: 1933,
+      description: "US news magazine and digital publisher.",
+      biasRating: "center",
+      factuality: "mixed",
+    },
+    {
+      match: ["time", "time.com"],
+      websiteUrl: "https://time.com",
+      country: "United States",
+      foundedYear: 1923,
+      description: "US news magazine and digital publisher.",
+      biasRating: "center",
+      factuality: "high",
+    },
+    {
+      match: ["the atlantic", "theatlantic.com"],
+      websiteUrl: "https://www.theatlantic.com",
+      country: "United States",
+      foundedYear: 1857,
+      description: "US magazine focused on politics, culture, and ideas.",
+      biasRating: "lean-left",
+      factuality: "high",
+    },
+    {
+      match: ["new york post", "nypost.com"],
+      websiteUrl: "https://nypost.com",
+      country: "United States",
+      foundedYear: 1801,
+      description: "US tabloid newspaper and digital outlet.",
+      biasRating: "right",
+      factuality: "mixed",
+    },
+    {
+      match: ["los angeles times", "latimes.com"],
+      websiteUrl: "https://www.latimes.com",
+      country: "United States",
+      foundedYear: 1881,
+      description: "US regional newspaper with national coverage.",
+      biasRating: "lean-left",
+      factuality: "high",
+    },
+    {
+      match: ["daily mail", "dailymail.co.uk"],
+      websiteUrl: "https://www.dailymail.co.uk",
+      country: "United Kingdom",
+      foundedYear: 1896,
+      description: "UK tabloid newspaper and digital outlet.",
+      biasRating: "right",
+      factuality: "mixed",
+    },
+    {
+      match: ["huffpost", "huffingtonpost.com"],
+      websiteUrl: "https://www.huffpost.com",
+      country: "United States",
+      foundedYear: 2005,
+      description: "US digital news and opinion publication.",
+      biasRating: "left",
+      factuality: "mixed",
+    },
+    {
+      match: ["vox", "vox.com"],
+      websiteUrl: "https://www.vox.com",
+      country: "United States",
+      foundedYear: 2014,
+      description: "US explanatory journalism outlet.",
+      biasRating: "left",
+      factuality: "mixed",
+    },
+    {
+      match: ["breitbart", "breitbart.com"],
+      websiteUrl: "https://www.breitbart.com",
+      country: "United States",
+      foundedYear: 2007,
+      description: "US conservative digital news outlet.",
+      biasRating: "right",
+      factuality: "mixed",
+    },
+    {
+      match: ["daily wire", "dailywire.com"],
+      websiteUrl: "https://www.dailywire.com",
+      country: "United States",
+      foundedYear: 2015,
+      description: "US conservative digital news and commentary outlet.",
+      biasRating: "right",
+      factuality: "mixed",
+    },
+    {
+      match: ["washington examiner", "washingtonexaminer.com"],
+      websiteUrl: "https://www.washingtonexaminer.com",
+      country: "United States",
+      foundedYear: 2005,
+      description: "US conservative politics and policy outlet.",
+      biasRating: "lean-right",
+      factuality: "mixed",
+    },
+    {
+      match: ["the independent", "independent.co.uk"],
+      websiteUrl: "https://www.independent.co.uk",
+      country: "United Kingdom",
+      foundedYear: 1986,
+      description: "UK digital newspaper with global coverage.",
+      biasRating: "lean-left",
+      factuality: "high",
+    },
+    {
+      match: ["telegraph", "telegraph.co.uk"],
+      websiteUrl: "https://www.telegraph.co.uk",
+      country: "United Kingdom",
+      foundedYear: 1855,
+      description: "UK newspaper focused on national and world news.",
+      biasRating: "lean-right",
+      factuality: "high",
+    },
+    {
+      match: ["cnbc", "cnbc.com"],
+      websiteUrl: "https://www.cnbc.com",
+      country: "United States",
+      foundedYear: 1989,
+      description: "US business and markets news network.",
+      biasRating: "center",
+      factuality: "high",
+    },
+  ].flatMap((entry) => entry.match.map((key) => [key, entry])),
+);
 
 function parseArgs(argv) {
   const opts = {
@@ -234,10 +641,46 @@ function normalizeText(value) {
 }
 
 function summarizeText(input, fallback = "Summary unavailable.") {
-  const clean = normalizeText(input);
+  const clean = sanitizeSummaryText(input);
   if (!clean) return fallback;
   if (clean.length <= 260) return clean;
   return `${clean.slice(0, 257)}...`;
+}
+
+function sanitizeSummaryText(value) {
+  const clean = normalizeText(value);
+  if (!clean) return "";
+  const withoutWire = clean
+    .replace(/^\(adds?[^)]+\)\s*/i, "")
+    .replace(/^\([^)]+updates?[^)]+\)\s*/i, "")
+    .replace(/^[A-Z][A-Z .'-]{1,25},\s*[A-Z][a-z]{2,8}\s+\d{1,2}\s*-\s*/i, "")
+    .trim();
+  if (!withoutWire) return "";
+  const commaParts = withoutWire.split(",").map((part) => part.trim()).filter(Boolean);
+  if (commaParts.length >= 4 && commaParts.every((part) => part.length <= 24 && /^[A-Za-z][A-Za-z\s&'-]+$/.test(part))) {
+    return "";
+  }
+  if (/^(breaking news|latest news|top stories|news)$/i.test(withoutWire)) return "";
+  return withoutWire;
+}
+
+function sanitizeCdnPathArtifacts(value) {
+  return String(value || "")
+    .replace(/\/\[[^\]]+\]\//g, "/")
+    .replace(/%5B[^%]+%5D/gi, "");
+}
+
+function fallbackImageForSeed(seed = "story") {
+  const hashHex = shortHash(seed, 4);
+  const num = Number.parseInt(hashHex, 16);
+  const idx = Number.isFinite(num) ? num % FALLBACK_IMAGE_VARIANTS.length : 0;
+  return FALLBACK_IMAGE_VARIANTS[idx] || FALLBACK_IMAGE;
+}
+
+function normalizeTopicRule(input) {
+  const key = normalizeText(input).toLowerCase();
+  if (!key) return null;
+  return TOPIC_ALIAS_TO_RULE.get(key) || TOPIC_ALIAS_TO_RULE.get(slugify(key)) || null;
 }
 
 function parsePublishedAt(value) {
@@ -254,6 +697,19 @@ function hostFromUrl(raw) {
   } catch {
     return raw;
   }
+}
+
+function containsAnyKeyword(text, keywords) {
+  const hay = normalizeText(text).toLowerCase();
+  if (!hay) return false;
+  return keywords.some((keyword) => hay.includes(keyword.toLowerCase()));
+}
+
+function inferCountryFromUrl(rawUrl) {
+  const host = normalizeText(hostFromUrl(rawUrl)).toLowerCase();
+  if (!host || !host.includes(".")) return "";
+  const tld = host.split(".").pop() || "";
+  return TLD_COUNTRY_MAP.get(tld) || "";
 }
 
 function looksLikeWeakOutletLabel(value) {
@@ -285,8 +741,8 @@ function isGroundNewsUrl(url) {
 }
 
 function sanitizeImageUrl(raw, baseUrl) {
-  const value = normalizeText(raw);
-  if (!value) return FALLBACK_IMAGE;
+  const value = sanitizeCdnPathArtifacts(normalizeText(raw));
+  if (!value) return fallbackImageForSeed(baseUrl || "story");
 
   const unwrapNextImage = (input) => {
     const clean = normalizeText(input);
@@ -314,20 +770,23 @@ function sanitizeImageUrl(raw, baseUrl) {
 
   try {
     const parsed = new URL(value, baseUrl);
-    if (!/^https?:$/i.test(parsed.protocol)) return FALLBACK_IMAGE;
+    if (!/^https?:$/i.test(parsed.protocol)) return fallbackImageForSeed(baseUrl || "story");
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
-      return FALLBACK_IMAGE;
+      return fallbackImageForSeed(baseUrl || "story");
     }
     // GN "webMetaImg" endpoints bake bias bars into the image. Avoid for UI parity (we render our own).
     const lowerPath = String(parsed.pathname || "").toLowerCase();
     if (lowerPath.includes("webmetaimg") || (lowerPath.includes("webmeta") && lowerPath.includes("img"))) {
-      return FALLBACK_IMAGE;
+      return fallbackImageForSeed(baseUrl || "story");
+    }
+    if (/(\.|^)ground\.news$/i.test(parsed.hostname) && lowerPath.startsWith("/images/")) {
+      return fallbackImageForSeed(baseUrl || "story");
     }
     const lowerHref = parsed.toString().toLowerCase();
-    if (lowerHref.includes("webmetaimg")) return FALLBACK_IMAGE;
+    if (lowerHref.includes("webmetaimg")) return fallbackImageForSeed(baseUrl || "story");
     return parsed.toString();
   } catch {
-    return FALLBACK_IMAGE;
+    return fallbackImageForSeed(baseUrl || "story");
   }
 }
 
@@ -374,12 +833,63 @@ function tagSeemsRelevant(tag, storyText) {
 }
 
 function chooseTopic(renderedTopic, tags, storyText) {
+  const normalizedStoryText = normalizeText(storyText).toLowerCase();
   const topic = normalizeText(renderedTopic) || "Top Stories";
+  const tagList = Array.isArray(tags) ? tags.map((tag) => normalizeText(tag)).filter(Boolean) : [];
+  const candidates = [topic, ...tagList];
+
+  const scoredRule = candidates
+    .map((candidate) => {
+      const rule = normalizeTopicRule(candidate);
+      if (!rule) return null;
+      const score = rule.aliases.reduce((acc, alias) => acc + (normalizedStoryText.includes(alias.toLowerCase()) ? 1 : 0), 0);
+      const keywordScore = rule.aliases.some((alias) => candidate.toLowerCase().includes(alias.toLowerCase())) ? 2 : 0;
+      return { rule, score: score + keywordScore, candidate };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score)[0];
+
+  const adjustByContent = (candidateLabel) => {
+    const lower = normalizeText(candidateLabel).toLowerCase();
+    const entertainmentHeavy =
+      containsAnyKeyword(normalizedStoryText, ENTERTAINMENT_KEYWORDS) || tagList.some((tag) => containsAnyKeyword(tag, ENTERTAINMENT_KEYWORDS));
+    const politicsHeavy =
+      containsAnyKeyword(normalizedStoryText, POLITICS_KEYWORDS) || tagList.some((tag) => containsAnyKeyword(tag, POLITICS_KEYWORDS));
+    const usHeavy =
+      containsAnyKeyword(normalizedStoryText, US_NEWS_KEYWORDS) || tagList.some((tag) => containsAnyKeyword(tag, US_NEWS_KEYWORDS));
+
+    // Guard against common misclassifications (e.g., music/entertainment stories incorrectly tagged Politics).
+    if ((lower === "politics" || lower === "us news") && entertainmentHeavy && !politicsHeavy) return "Entertainment";
+    if (lower === "entertainment" && politicsHeavy && !entertainmentHeavy) return usHeavy ? "US News" : "Politics";
+    if (lower === "top stories") {
+      if (usHeavy && politicsHeavy) return "US News";
+      if (containsAnyKeyword(normalizedStoryText, ["science", "research", "space", "scientists"])) return "Science";
+      if (containsAnyKeyword(normalizedStoryText, ["global", "international", "foreign affairs", "geopolitics"])) return "World";
+      if (entertainmentHeavy) return "Entertainment";
+    }
+    return candidateLabel;
+  };
+
+  if (scoredRule && scoredRule.rule?.label) {
+    if (scoredRule.score > 0) return scoredRule.rule.label;
+    const fallbackFromTags = tagList.find((tag) => {
+      const rule = normalizeTopicRule(tag);
+      if (!rule) return false;
+      return rule.aliases.some((alias) => normalizedStoryText.includes(alias.toLowerCase()));
+    });
+    if (fallbackFromTags) {
+      const rule = normalizeTopicRule(fallbackFromTags);
+      if (rule?.label) return adjustByContent(rule.label);
+    }
+    return adjustByContent(scoredRule.rule.label);
+  }
+
   const topicTokens = extractKeywordTokens(topic);
-  const topicLooksRelevant = topicTokens.length > 0 ? topicTokens.some((t) => storyText.includes(t)) : true;
+  const topicLooksRelevant = topicTokens.length > 0 ? topicTokens.some((t) => normalizedStoryText.includes(t)) : true;
   if (topicLooksRelevant) return topic;
-  const tagCandidate = (tags || []).find((t) => tagSeemsRelevant(t, storyText));
-  return normalizeText(tagCandidate || topic) || "Top Stories";
+
+  const tagCandidate = tagList.find((tag) => tagSeemsRelevant(tag, normalizedStoryText));
+  return adjustByContent(normalizeText(tagCandidate || topic) || "Top Stories");
 }
 
 function parseBiasLabel(value) {
@@ -456,7 +966,7 @@ function normalizeExternalUrl(value) {
 }
 
 function normalizeAssetUrl(value, baseUrl = "") {
-  const clean = normalizeText(value);
+  const clean = sanitizeCdnPathArtifacts(normalizeText(value));
   if (!clean) return undefined;
 
   const unwrapNextImage = (input) => {
@@ -485,6 +995,9 @@ function normalizeAssetUrl(value, baseUrl = "") {
   try {
     const parsed = new URL(clean, baseUrl || undefined);
     if (!/^https?:$/i.test(parsed.protocol)) return undefined;
+    if (/(\.|^)ground\.news$/i.test(parsed.hostname) && String(parsed.pathname || "").toLowerCase().startsWith("/images/")) {
+      return undefined;
+    }
     return parsed.toString();
   } catch {
     return undefined;
@@ -1590,21 +2103,26 @@ async function fetchSourceMetadata(url, cache) {
       });
 
       if (!response.ok) {
-        return { excerpt: "", publishedAt: null, title: "" };
+        return { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
       }
 
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.toLowerCase().includes("text/html")) {
-        return { excerpt: "", publishedAt: null, title: "" };
+        return { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
       }
 
       const html = await response.text();
       const $ = cheerio.load(html);
+      const paragraphCandidates = $("article p, main p, p")
+        .toArray()
+        .map((el) => normalizeText($(el).text() || ""))
+        .filter((text) => text.length >= 80)
+        .filter((text) => !/^(updated|published|by\s+[A-Z]|copyright|all rights reserved)/i.test(text))
+        .slice(0, 6);
       const excerpt =
         $("meta[property='og:description']").attr("content") ||
         $("meta[name='description']").attr("content") ||
-        $("article p").first().text() ||
-        $("main p").first().text() ||
+        paragraphCandidates[0] ||
         "";
 
       const publishedAt =
@@ -1618,14 +2136,19 @@ async function fetchSourceMetadata(url, cache) {
         $("h1").first().text() ||
         $("title").text() ||
         "";
+      const imageUrl =
+        $("meta[property='og:image']").attr("content") ||
+        $("meta[name='twitter:image']").attr("content") ||
+        "";
 
       return {
-        excerpt: summarizeText(excerpt, ""),
+        excerpt: summarizeText(sanitizeSummaryText(excerpt), ""),
         publishedAt: parsePublishedAt(publishedAt),
         title: normalizeText(title),
+        imageUrl: normalizeText(imageUrl),
       };
     } catch {
-      return { excerpt: "", publishedAt: null, title: "" };
+      return { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
     }
   })();
 
@@ -1648,6 +2171,102 @@ async function mapWithConcurrency(items, limit, mapper) {
   const workers = Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, () => worker());
   await Promise.all(workers);
   return results;
+}
+
+function findOutletReference(outletName, sourceUrl) {
+  const outlet = normalizeText(outletName).toLowerCase();
+  const host = normalizeText(hostFromUrl(sourceUrl)).toLowerCase();
+  if (!outlet && !host) return null;
+  for (const [match, data] of OUTLET_REFERENCE_DATA.entries()) {
+    if (outlet.includes(match) || host.includes(match)) return data;
+  }
+  return null;
+}
+
+function applyReferenceToSource(source) {
+  const reference = findOutletReference(source.outlet, source.url);
+  if (!reference) return source;
+  const biasRating = parseBiasRatingLabel(source.biasRating || reference.biasRating || "");
+  const inferredBias = bucket3FromRating(biasRating);
+  return {
+    ...source,
+    biasRating: source.biasRating && source.biasRating !== "unknown" ? source.biasRating : biasRating,
+    bias: source.bias && source.bias !== "unknown" ? source.bias : inferredBias,
+    factuality:
+      source.factuality && source.factuality !== "unknown" ? source.factuality : parseFactualityLabel(reference.factuality || ""),
+    websiteUrl: source.websiteUrl || reference.websiteUrl,
+    country: source.country || reference.country,
+    foundedYear: typeof source.foundedYear === "number" ? source.foundedYear : reference.foundedYear,
+    description: source.description || reference.description,
+  };
+}
+
+function aggregateOutletBias(sources) {
+  const byOutlet = new Map();
+  for (const source of sources) {
+    const key = normalizeText(source.outlet).toLowerCase();
+    if (!key) continue;
+    const item = byOutlet.get(key) || { left: 0, center: 0, right: 0 };
+    if (source.bias === "left") item.left += 1;
+    if (source.bias === "center") item.center += 1;
+    if (source.bias === "right") item.right += 1;
+    byOutlet.set(key, item);
+  }
+
+  return sources.map((source) => {
+    if (source.bias && source.bias !== "unknown") return source;
+    const bucket = byOutlet.get(normalizeText(source.outlet).toLowerCase());
+    if (!bucket) return source;
+    const ranked = [
+      { key: "left", value: bucket.left },
+      { key: "center", value: bucket.center },
+      { key: "right", value: bucket.right },
+    ].sort((a, b) => b.value - a.value);
+    const top = ranked[0];
+    if (!top || top.value <= 0) return source;
+    return { ...source, bias: top.key };
+  });
+}
+
+async function cacheStoryImage(imageUrl, storySlug) {
+  const cleaned = normalizeText(imageUrl);
+  if (!cleaned || cleaned.startsWith("/images/")) return cleaned || fallbackImageForSeed(storySlug);
+  try {
+    const parsed = new URL(cleaned);
+    if (!/^https?:$/i.test(parsed.protocol)) return fallbackImageForSeed(storySlug);
+
+    const response = await fetch(parsed.toString(), {
+      cache: "no-store",
+      signal: AbortSignal.timeout(IMAGE_CACHE_TIMEOUT_MS),
+      headers: {
+        "user-agent": "OpenGroundNewsImageCache/1.0",
+        accept: "image/*,*/*;q=0.8",
+      },
+    });
+    if (!response.ok) return cleaned;
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.startsWith("image/")) return cleaned;
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (!buffer.length || buffer.length > IMAGE_CACHE_MAX_BYTES) return cleaned;
+
+    const ext =
+      contentType.includes("png")
+        ? "png"
+        : contentType.includes("webp")
+          ? "webp"
+          : contentType.includes("gif")
+            ? "gif"
+            : contentType.includes("jpeg") || contentType.includes("jpg")
+              ? "jpg"
+              : "jpg";
+    const fileName = `${shortHash(`${storySlug}:${parsed.toString()}`, 16)}.${ext}`;
+    const targetPath = path.join(IMAGE_CACHE_DIR, fileName);
+    await fs.mkdir(IMAGE_CACHE_DIR, { recursive: true });
+    await fs.writeFile(targetPath, buffer);
+    return `/images/cache/${fileName}`;
+  } catch {
+    return cleaned || fallbackImageForSeed(storySlug);
+  }
 }
 
 function deriveBiasDistribution(sources) {
@@ -2217,10 +2836,11 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       .replace(/^by\s+/i, "")
       .trim();
 
-    const summary =
+    const summaryCandidate =
       meta("meta[property='og:description']") ||
       meta("meta[name='description']") ||
       normalize(document.querySelector("main p")?.textContent || "");
+    const summary = summaryCandidate;
 
     const topic =
       tags[0] ||
@@ -2386,34 +3006,45 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
   const shouldFetchSourceMeta = candidateExcerpt.length < 48 || !candidatePublishedAt;
   const sourceMeta = shouldFetchSourceMeta
     ? await fetchSourceMetadata(normalizedUrl, sourceMetadataCache)
-    : { excerpt: "", publishedAt: null, title: "" };
+    : { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
   const outlet = normalizeText(candidate.outlet) || hostFromUrl(normalizedUrl);
   const excerptFromMeta = normalizeText(sourceMeta.excerpt);
   const excerptCandidate = looksLikeWeakExcerpt(candidateExcerpt) ? "" : candidateExcerpt;
   const excerptResolved = excerptCandidate || excerptFromMeta || candidateExcerpt || "";
-  const excerpt = summarizeText(excerptResolved, "Excerpt unavailable from publisher metadata.");
+  const excerpt = summarizeText(sanitizeSummaryText(excerptResolved), "Excerpt unavailable from publisher metadata.");
+  const host = hostFromUrl(normalizedUrl);
+  const websiteFromUrl = host ? normalizeExternalUrl(`https://${host}`) : "";
+  const descriptionFallback =
+    sanitizeSummaryText(candidate.description || sourceMeta.title || sourceMeta.excerpt || "") ||
+    `${outlet} coverage sourced from publisher metadata.`;
 
-	  return {
-	    id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
-	    outlet,
-	    url: normalizedUrl,
-	    excerpt,
-	    logoUrl: normalizeAssetUrl(candidate.logoUrl, storyUrlForAssets || "https://ground.news"),
-	    bias: parseBiasLabel(candidate.bias),
+  const baseSource = {
+    id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
+    outlet,
+    url: normalizedUrl,
+    excerpt,
+    logoUrl: normalizeAssetUrl(candidate.logoUrl, storyUrlForAssets || "https://ground.news"),
+    bias: parseBiasLabel(candidate.bias),
       biasRating: parseBiasRatingLabel(candidate.biasRating || ""),
-	    factuality: parseFactualityLabel(candidate.factuality),
-	    ownership: normalizeText(candidate.ownership) || "Unlabeled",
+    factuality: parseFactualityLabel(candidate.factuality),
+    ownership: normalizeText(candidate.ownership) || "Unlabeled",
       groundNewsSourceId: normalizeText(candidate.sourceInfoId || candidate.groundNewsSourceId || "") || undefined,
       groundNewsSourceSlug: normalizeText(candidate.sourceInfoSlug || candidate.groundNewsSourceSlug || "") || undefined,
-	    repostedBy:
-	      typeof candidate.repostedBy === "number" && Number.isFinite(candidate.repostedBy)
-	        ? Math.max(0, Math.round(candidate.repostedBy))
-	        : undefined,
-	    publishedAt: candidatePublishedAt || sourceMeta.publishedAt || undefined,
-	    paywall: parsePaywallLabel(candidate.paywall),
-	    locality: parseLocalityLabel(candidate.locality),
-	  };
-	}
+    repostedBy:
+      typeof candidate.repostedBy === "number" && Number.isFinite(candidate.repostedBy)
+        ? Math.max(0, Math.round(candidate.repostedBy))
+        : undefined,
+    publishedAt: candidatePublishedAt || sourceMeta.publishedAt || undefined,
+    paywall: parsePaywallLabel(candidate.paywall),
+    locality: parseLocalityLabel(candidate.locality),
+    websiteUrl: normalizeExternalUrl(candidate.websiteUrl || websiteFromUrl || ""),
+    country: normalizeText(candidate.country || inferCountryFromUrl(normalizedUrl) || ""),
+    foundedYear: Number.isFinite(Number(candidate.foundedYear)) ? Number(candidate.foundedYear) : undefined,
+    description: descriptionFallback,
+  };
+
+  return applyReferenceToSource(baseSource);
+}
 
 async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, auditState, articleOrdinal) {
   const rendered = await extractStoryFromDom(page, storyUrl, auditState, articleOrdinal);
@@ -2489,11 +3120,14 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
   }
   const candidates = Array.from(candidateByUrl.values());
 
-  const enrichedSources = (
+  let enrichedSources = (
     await mapWithConcurrency(candidates, SOURCE_FETCH_CONCURRENCY, (candidate) =>
       enrichSourceCandidate(slug, candidate, sourceMetadataCache, storyUrl),
     )
-  ).filter(Boolean);
+  )
+    .filter(Boolean)
+    .map((source) => applyReferenceToSource(source));
+  enrichedSources = aggregateOutletBias(enrichedSources);
 
   const signals = linkSignals.get(storyUrl) || { trending: false, blindspot: false, local: false };
   const derivedBias = deriveBiasDistribution(enrichedSources);
@@ -2553,6 +3187,19 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
     location: rendered.location,
   });
 
+  let storyImageCandidate = sanitizeImageUrl(rendered.imageUrl, storyUrl);
+  if (storyImageCandidate.startsWith("/images/")) {
+    for (const source of enrichedSources.slice(0, 4)) {
+      const sourceMeta = await fetchSourceMetadata(source.url, sourceMetadataCache);
+      const sourceImage = sanitizeImageUrl(sourceMeta.imageUrl || "", source.url);
+      if (sourceImage && !sourceImage.startsWith("/images/")) {
+        storyImageCandidate = sourceImage;
+        break;
+      }
+    }
+  }
+  const imageUrl = await cacheStoryImage(storyImageCandidate, slug);
+
   const localContext = `${title} ${summary} ${tags.join(" ")}`.toLowerCase();
   const localHeuristic = /\b(local|city|county|state|province|district|municipal)\b/.test(localContext);
   const blindspotGap = Math.abs((bias.left || 0) - (bias.right || 0));
@@ -2570,7 +3217,7 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
     topic: summarizeText(topic, "Top Stories"),
     location,
     tags: tags.length > 0 ? tags : ["News"],
-    imageUrl: sanitizeImageUrl(rendered.imageUrl, storyUrl),
+    imageUrl,
     publishedAt,
     updatedAt,
     sourceCount: Math.max(enrichedSources.length, coverageTotals.totalSources ?? 0),
@@ -2586,29 +3233,91 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
   };
 }
 
+function titleFingerprint(value) {
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]+/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length >= 4)
+    .join(" ");
+}
+
+function titleSimilarity(a, b) {
+  const tokensA = new Set(titleFingerprint(a).split(/\s+/).filter(Boolean));
+  const tokensB = new Set(titleFingerprint(b).split(/\s+/).filter(Boolean));
+  if (tokensA.size === 0 || tokensB.size === 0) return 0;
+  let overlap = 0;
+  for (const token of tokensA) {
+    if (tokensB.has(token)) overlap += 1;
+  }
+  const union = tokensA.size + tokensB.size - overlap;
+  return union > 0 ? overlap / union : 0;
+}
+
+function mergeStoryRecords(preferred, candidate) {
+  const byUrl = new Map();
+  for (const source of [...(preferred.sources || []), ...(candidate.sources || [])]) {
+    const url = normalizeText(source?.url || "");
+    if (!url) continue;
+    byUrl.set(url, source);
+  }
+  const mergedSources = Array.from(byUrl.values());
+  const preferredCoverage = preferred.coverage || {};
+  const candidateCoverage = candidate.coverage || {};
+  return {
+    ...preferred,
+    sourceCount: Math.max(preferred.sourceCount || 0, candidate.sourceCount || 0, mergedSources.length),
+    sources: mergedSources,
+    coverage: {
+      totalSources: Math.max(preferredCoverage.totalSources || 0, candidateCoverage.totalSources || 0) || undefined,
+      leaningLeft:
+        typeof preferredCoverage.leaningLeft === "number"
+          ? preferredCoverage.leaningLeft
+          : candidateCoverage.leaningLeft,
+      center: typeof preferredCoverage.center === "number" ? preferredCoverage.center : candidateCoverage.center,
+      leaningRight:
+        typeof preferredCoverage.leaningRight === "number"
+          ? preferredCoverage.leaningRight
+          : candidateCoverage.leaningRight,
+    },
+  };
+}
+
 function dedupeStories(stories) {
   const bySlug = new Map();
   const byCanonical = new Map();
   const byTitle = new Map();
+  const deduped = [];
 
   for (const story of stories) {
     const canonical = normalizeText(story.canonicalUrl || "").toLowerCase();
     const titleKey = normalizeText(story.title).toLowerCase();
-    const existing = (canonical && byCanonical.get(canonical)) || byTitle.get(titleKey);
+    let existing = (canonical && byCanonical.get(canonical)) || byTitle.get(titleKey);
+    if (!existing) {
+      existing = deduped.find((item) => {
+        const similarity = titleSimilarity(item.title, story.title);
+        const publishedGapHours = Math.abs(+new Date(item.publishedAt || 0) - +new Date(story.publishedAt || 0)) / 36e5;
+        return similarity >= 0.82 && publishedGapHours <= 72;
+      });
+    }
 
     if (existing) {
       const newer = +new Date(story.updatedAt) >= +new Date(existing.updatedAt) ? story : existing;
       const older = newer === story ? existing : story;
+      const merged = mergeStoryRecords(newer, older);
       bySlug.delete(older.slug);
-      bySlug.set(newer.slug, newer);
-      if (canonical) byCanonical.set(canonical, newer);
-      byTitle.set(titleKey, newer);
+      bySlug.set(merged.slug, merged);
+      if (canonical) byCanonical.set(canonical, merged);
+      byTitle.set(titleKey, merged);
+      const idx = deduped.findIndex((item) => item.slug === older.slug || item.slug === merged.slug);
+      if (idx >= 0) deduped[idx] = merged;
       continue;
     }
 
     bySlug.set(story.slug, story);
     if (canonical) byCanonical.set(canonical, story);
     byTitle.set(titleKey, story);
+    deduped.push(story);
   }
 
   return Array.from(bySlug.values()).sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
@@ -2640,6 +3349,13 @@ function normalizeStoryRecordForStore(story) {
       paywall: normalizeText(src.paywall || "") || undefined,
       locality: normalizeText(src.locality || "") || undefined,
       publishedAt: normalizeText(src.publishedAt || "") || undefined,
+      websiteUrl: normalizeText(src.websiteUrl || "") || undefined,
+      country: normalizeText(src.country || "") || undefined,
+      foundedYear:
+        typeof src.foundedYear === "number" && Number.isFinite(src.foundedYear)
+          ? Math.round(src.foundedYear)
+          : undefined,
+      description: sanitizeSummaryText(src.description || ""),
     }))
     .filter((src) => src.outlet && src.url);
 

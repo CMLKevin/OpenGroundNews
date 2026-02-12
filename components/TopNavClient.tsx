@@ -4,10 +4,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LogoLockup } from "@/components/LogoLockup";
+import { DEFAULT_EDITION, EDITIONS } from "@/lib/constants";
 
 const EDITION_KEY = "ogn_edition";
-const DEFAULT_EDITION = "International";
-const EDITIONS = ["International", "United States", "Canada", "United Kingdom", "Europe"] as const;
 const THEME_KEY = "ogn_theme";
 
 type SuggestResponse = {
@@ -180,11 +179,23 @@ export function TopNavClient() {
 
   const navLinks = (
     <>
-      <Link href={hrefWithEdition("/")}>Home</Link>
-      <Link href={hrefWithEdition("/my")}>For You</Link>
-      <Link href={hrefWithEdition("/local")}>Local</Link>
-      <Link href={hrefWithEdition("/blindspot")}>Blindspot</Link>
-      {user?.role === "admin" ? <Link href={hrefWithEdition("/admin")}>Admin</Link> : null}
+      <Link className={pathname === "/" ? "is-active" : ""} href={hrefWithEdition("/")}>
+        Home
+      </Link>
+      <Link className={pathname.startsWith("/my") ? "is-active" : ""} href={hrefWithEdition("/my")}>
+        For You
+      </Link>
+      <Link className={pathname.startsWith("/local") ? "is-active" : ""} href={hrefWithEdition("/local")}>
+        Local
+      </Link>
+      <Link className={pathname.startsWith("/blindspot") ? "is-active" : ""} href={hrefWithEdition("/blindspot")}>
+        Blindspot
+      </Link>
+      {user?.role === "admin" ? (
+        <Link className={pathname.startsWith("/admin") ? "is-active" : ""} href={hrefWithEdition("/admin")}>
+          Admin
+        </Link>
+      ) : null}
     </>
   );
 
@@ -277,7 +288,7 @@ export function TopNavClient() {
                 ) : null}
 
                 {suggest.stories.length === 0 && suggest.topics.length === 0 && suggest.outlets.length === 0 ? (
-                  <p className="story-meta" style={{ margin: 0 }}>
+                  <p className="story-meta u-m0">
                     No suggestions yet.
                   </p>
                 ) : null}
@@ -302,7 +313,7 @@ export function TopNavClient() {
           </svg>
         </button>
 
-        <label className="story-meta nav-desktop-only" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta nav-desktop-only u-grid u-grid-gap-02">
           Edition
           <select
             className="select-control"
@@ -344,10 +355,6 @@ export function TopNavClient() {
             Auto
           </button>
         </div>
-
-        <Link className="btn btn-subscribe nav-desktop-only" href={hrefWithEdition("/subscribe")}>
-          Subscribe
-        </Link>
 
         {user ? (
           <>
@@ -399,7 +406,6 @@ export function TopNavClient() {
               <div className="nav-drawer-title">More</div>
               <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
                 <Link href="/rating-system">Rating system</Link>
-                <Link href="/subscribe">Plans</Link>
                 <Link href="/extension">Extension</Link>
                 <Link href="/notifications">Notifications</Link>
               </div>
@@ -414,7 +420,7 @@ export function TopNavClient() {
 
             <div className="nav-drawer-section">
               <div className="nav-drawer-title">Preferences</div>
-              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+              <label className="story-meta u-grid u-grid-gap-02">
                 Edition
                 <select className="select-control" value={edition} onChange={(e) => updateEdition(e.target.value)}>
                   {EDITIONS.map((item) => (

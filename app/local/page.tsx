@@ -15,7 +15,8 @@ type LocalPageProps = {
 
 export default async function LocalPage({ searchParams }: LocalPageProps) {
   const { location, edition } = await searchParams;
-  const locationLabel = (location?.trim() || "United States").slice(0, 120);
+  const locationLabel = (location?.trim() || "").slice(0, 120);
+  const hasSpecificLocation = Boolean(locationLabel);
   const stories = await listStories({
     view: "local",
     limit: 120,
@@ -46,34 +47,38 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
   const rest = stories.slice(3, 45);
 
   return (
-    <main className="container" style={{ paddingTop: "1rem" }}>
-      <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
+    <main className="container u-pt-1">
+      <section className="panel u-grid u-grid-gap-07">
+        <div className="section-title u-pt-0">
+          <div className="u-flex u-flex-gap-06 u-items-center">
             <span className="topic-avatar" aria-hidden="true">
               {(locationLabel || "Local").slice(0, 2).toUpperCase()}
             </span>
-            <div style={{ display: "grid", gap: "0.15rem" }}>
-              <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Top {locationLabel} News</h1>
+            <div className="u-grid u-grid-gap-015">
+              <h1 className="u-m0 u-font-serif">
+                {hasSpecificLocation ? `Top ${locationLabel} News` : "Set Your Local Feed"}
+              </h1>
               <span className="story-meta">
                 {stories.length} stories • {outletStats.length} publishers
               </span>
             </div>
           </div>
           <Link className="btn" href="/my/manage">
-            Change location
+            {hasSpecificLocation ? "Change location" : "Set location"}
           </Link>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
-          Local stories are filtered by your selected region/city and by local-marked stories from ingestion.
+        <p className="story-meta u-m0">
+          {hasSpecificLocation
+            ? "Local stories are filtered by your selected region/city and by local-marked stories from ingestion."
+            : "Choose your city first for truly local headlines and a weather forecast tailored to your area."}
         </p>
       </section>
 
-      <section className="topic-shell" style={{ marginTop: "1rem", paddingBottom: "2rem" }}>
-        <div style={{ display: "grid", gap: "0.85rem" }}>
+      <section className="topic-shell u-mt-1 u-pb-2">
+        <div className="u-grid u-grid-gap-085">
           <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Top {locationLabel} News</h2>
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">{hasSpecificLocation ? `Top ${locationLabel} News` : "Top Local News"}</h2>
               <span className="story-meta">Featured</span>
             </div>
             <div className="featured-grid">
@@ -84,8 +89,8 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
           </section>
 
           <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Latest</h2>
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Latest</h2>
               <span className="story-meta">{rest.length} shown</span>
             </div>
             <div className="news-list">
@@ -102,14 +107,14 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
           <LocalPublishersList publishers={outletStats} />
 
           <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Discover stories in your city</h2>
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Discover stories in your city</h2>
               <span className="story-meta">Set location</span>
             </div>
-            <p className="story-meta" style={{ margin: 0 }}>
+            <p className="story-meta u-m0">
               Pick a suggested location to enable the 7-day forecast and tune the Local feed.
             </p>
-            <div style={{ marginTop: "0.65rem" }}>
+            <div className="u-mt-065">
               <LocalFeedControls />
             </div>
           </section>

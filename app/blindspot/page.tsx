@@ -54,30 +54,30 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
   };
 
   return (
-    <main className="container" style={{ padding: "1rem 0 2rem" }}>
-      <section className="panel blindspot-hero" style={{ display: "grid", gap: "0.7rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
+    <main className="container u-page-pad">
+      <section className="panel blindspot-hero u-grid u-grid-gap-07">
+        <div className="section-title u-pt-0">
           <BlindspotHeader
             subtitle="Stories that one side barely sees."
             scopeLabel={useInternational ? "International blindspots" : "Edition blindspots"}
           />
         </div>
 
-        <div className="panel" style={{ padding: "0.75rem", display: "grid", gap: "0.6rem" }}>
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>New to Blindspot?</h2>
+        <div className="panel u-p-075 u-grid u-grid-gap-06">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">New to Blindspot?</h2>
             <a className="btn" href="/rating-system">
               Find out more
             </a>
           </div>
-          <p className="story-meta" style={{ margin: 0 }}>
+          <p className="story-meta u-m0">
             A Blindspot is a story with a heavy coverage skew: one side talks about it, the other barely does.
           </p>
         </div>
 
-        <div className="panel" style={{ padding: "0.75rem", display: "grid", gap: "0.6rem" }}>
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>Blindspot Report newsletter</h2>
+        <div className="panel u-p-075 u-grid u-grid-gap-06">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Blindspot Report newsletter</h2>
             <span className="story-meta">Email updates</span>
           </div>
           <NewsletterSignup list="blindspot" />
@@ -105,21 +105,21 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
         </div>
       </section>
 
-      <section className="blindspot-columns" style={{ marginTop: "1rem" }}>
+      <section className="blindspot-columns u-mt-1">
         {showLeft ? (
         <div className="blindspot-col">
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>For the Left</h2>
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">For the Left</h2>
             <span className="story-meta">{forLeft.length}</span>
           </div>
-          <p className="story-meta" style={{ margin: "0 0 0.7rem" }}>
+          <p className="story-meta u-mb-07">
             News stories that had little to no reporting on the Left.
           </p>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.85rem" }}>
+          <div className="grid u-grid-cols-2-gap-085">
             {forLeft.length === 0 ? (
               <section className="panel">
-                <h3 style={{ marginTop: 0 }}>No blindspot stories found for the left.</h3>
-                <p className="story-meta" style={{ margin: 0 }}>
+                <h3 className="u-mt-0">No blindspot stories found for the left.</h3>
+                <p className="story-meta u-m0">
                   Try switching to International blindspots or check back after the next ingestion sync.
                 </p>
               </section>
@@ -132,18 +132,18 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
 
         {showRight ? (
         <div className="blindspot-col">
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>For the Right</h2>
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">For the Right</h2>
             <span className="story-meta">{forRight.length}</span>
           </div>
-          <p className="story-meta" style={{ margin: "0 0 0.7rem" }}>
+          <p className="story-meta u-mb-07">
             News stories that had little to no reporting on the Right.
           </p>
-          <div className="grid" style={{ gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: "0.85rem" }}>
+          <div className="grid u-grid-cols-2-gap-085">
             {forRight.length === 0 ? (
               <section className="panel">
-                <h3 style={{ marginTop: 0 }}>No blindspot stories found for the right.</h3>
-                <p className="story-meta" style={{ margin: 0 }}>
+                <h3 className="u-mt-0">No blindspot stories found for the right.</h3>
+                <p className="story-meta u-m0">
                   Try switching to International blindspots or check back after the next ingestion sync.
                 </p>
               </section>
@@ -156,7 +156,7 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
       </section>
 
       {hasMore ? (
-        <div style={{ display: "flex", justifyContent: "center", marginTop: "1.2rem" }}>
+        <div className="u-flex u-justify-center u-mt-12">
           <a className="btn" href={hrefFor({ page: String(pageNumber + 1) })}>
             More stories
           </a>

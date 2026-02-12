@@ -18,6 +18,7 @@
     "archive:verify": "node scripts/archive_verify_cdp.mjs",
     "archive:extract": "node scripts/archive_extract_cdp.mjs",
     "ingest:groundnews": "node scripts/ingest_groundnews.mjs",
+    "ingest:enrich-outlets": "node scripts/enrich_outlets_from_store.mjs",
     "push:vapid": "node scripts/push_generate_vapid.mjs",
     "parity:checklist": "node scripts/parity/generate_audit_checklist.mjs",
     "parity:smoke": "node scripts/parity/run_parity_smoke.mjs",

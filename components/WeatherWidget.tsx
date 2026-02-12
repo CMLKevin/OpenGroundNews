@@ -67,18 +67,18 @@ export function WeatherWidget() {
   }, [enabled, lat, lon]);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.55rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Weather</h2>
+    <section className="panel u-grid u-grid-gap-055">
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Weather</h2>
         <span className="story-meta">{loading ? "Loading..." : enabled ? "Local conditions" : "Pick a city"}</span>
       </div>
 
       {!enabled ? (
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Select a suggested location to show current conditions.
         </p>
       ) : data?.ok ? (
-        <div style={{ display: "grid", gap: "0.75rem" }}>
+        <div className="u-grid u-grid-gap-075">
           <div className="kpi-strip">
             <div className="kpi">
               <span>Now</span>
@@ -94,7 +94,7 @@ export function WeatherWidget() {
             </div>
             <div className="kpi">
               <span>Sky</span>
-              <strong style={{ fontSize: "1.05rem" }}>{data.current.label}</strong>
+              <strong className="u-text-105">{data.current.label}</strong>
             </div>
           </div>
 
@@ -114,7 +114,7 @@ export function WeatherWidget() {
           ) : null}
         </div>
       ) : (
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Weather unavailable.
         </p>
       )}

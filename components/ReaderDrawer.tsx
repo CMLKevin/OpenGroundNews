@@ -11,6 +11,13 @@ export function ReaderDrawer({ entry }: Props) {
   const [open, setOpen] = useState(false);
 
   const title = useMemo(() => entry.title || "Reader Mode", [entry.title]);
+  const statusLabel = useMemo(() => {
+    if (entry.status === "success") return "Archived";
+    if (entry.status === "fallback") return "Cached version";
+    if (entry.status === "not_found") return "Unavailable";
+    if (entry.status === "blocked") return "Publisher blocked";
+    return "Unavailable";
+  }, [entry.status]);
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -21,14 +28,14 @@ export function ReaderDrawer({ entry }: Props) {
   }, [open]);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Reader Mode</h2>
+    <section className="panel u-grid u-grid-gap-06">
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Reader Mode</h2>
         <span className="story-meta">
-          Status: <strong>{entry.status}</strong>
+          Status: <strong>{statusLabel}</strong>
         </span>
       </div>
-      <p className="story-meta" style={{ margin: 0 }}>
+      <p className="story-meta u-m0">
         {entry.notes}
       </p>
       <div className="chip-row">
@@ -50,40 +57,23 @@ export function ReaderDrawer({ entry }: Props) {
           role="dialog"
           aria-modal="true"
           aria-label="Reader mode"
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 80,
-            background: "rgba(0,0,0,0.55)",
-            display: "grid",
-            placeItems: "center",
-            padding: "1rem",
-          }}
+          className="reader-overlay"
           onMouseDown={(e) => {
             if (e.currentTarget === e.target) setOpen(false);
           }}
         >
-          <div
-            className="panel"
-            style={{
-              width: "min(920px, calc(100% - 1rem))",
-              maxHeight: "min(86vh, 860px)",
-              overflow: "auto",
-              display: "grid",
-              gap: "0.6rem",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "start" }}>
-              <div style={{ display: "grid", gap: "0.2rem" }}>
-                <h3 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>{title}</h3>
-                <div className="story-meta">Reader status: {entry.status}</div>
+          <div className="panel reader-modal">
+            <div className="reader-modal-head">
+              <div className="u-grid u-grid-gap-02">
+                <h3 className="u-m0 u-font-serif">{title}</h3>
+                <div className="story-meta">Reader status: {statusLabel}</div>
               </div>
               <button className="btn" type="button" onClick={() => setOpen(false)} aria-label="Close reader">
                 Close
               </button>
             </div>
             {entry.paragraphs.map((p, idx) => (
-              <p key={`${entry.originalUrl}-${idx}`} style={{ margin: 0, lineHeight: 1.7 }}>
+              <p key={`${entry.originalUrl}-${idx}`} className="reader-modal-paragraph">
                 {p}
               </p>
             ))}
@@ -93,4 +83,3 @@ export function ReaderDrawer({ entry }: Props) {
     </section>
   );
 }
-

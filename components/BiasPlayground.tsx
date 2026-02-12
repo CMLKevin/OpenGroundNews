@@ -32,29 +32,29 @@ export function BiasPlayground() {
   }, [left, center, right]);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.75rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Bias Bar Playground</h2>
+    <section className="panel u-grid u-grid-gap-075">
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Bias Bar Playground</h2>
         <span className="story-meta">Interactive</span>
       </div>
       <BiasBar story={story} showLabels={true} />
 
       <div className="filters-grid">
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Left: {left}%
           <input type="range" min={0} max={100} value={left} onChange={(e) => setLeft(Number(e.target.value))} />
         </label>
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Center: {center}%
           <input type="range" min={0} max={100} value={center} onChange={(e) => setCenter(Number(e.target.value))} />
         </label>
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Right: {right}%
           <input type="range" min={0} max={100} value={right} onChange={(e) => setRight(Number(e.target.value))} />
         </label>
       </div>
 
-      <p className="story-meta" style={{ margin: 0 }}>
+      <p className="story-meta u-m0">
         Sliders do not need to sum to 100. Values are normalized to 100 for display.
       </p>
     </section>

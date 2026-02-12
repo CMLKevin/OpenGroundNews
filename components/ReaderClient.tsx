@@ -49,9 +49,9 @@ export function ReaderClient({ initialUrl }: { initialUrl?: string }) {
   }, []);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.9rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Reader</h1>
+    <section className="panel u-grid u-grid-gap-09">
+      <div className="section-title u-pt-0">
+        <h1 className="u-m0 u-font-serif">Reader</h1>
         <span className="story-meta">Archive-first</span>
       </div>
 
@@ -62,7 +62,7 @@ export function ReaderClient({ initialUrl }: { initialUrl?: string }) {
           value={url}
           onChange={(e) => setUrl(e.target.value)}
         />
-        <div className="chip-row" style={{ justifyContent: "flex-end" }}>
+        <div className="chip-row u-flex u-justify-end">
           <button className="btn" onClick={() => read(false)} disabled={!canRead || busy}>
             {busy ? "Reading..." : "Read"}
           </button>
@@ -73,43 +73,43 @@ export function ReaderClient({ initialUrl }: { initialUrl?: string }) {
       </div>
 
       {error ? (
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           {error}
         </p>
       ) : null}
 
       {entry ? (
-        <article className="panel" style={{ display: "grid", gap: "0.65rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "baseline" }}>
-            <h2 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>{entry.title}</h2>
+        <article className="panel u-grid u-grid-gap-065">
+          <div className="u-flex u-justify-between u-flex-gap-1 u-items-baseline">
+            <h2 className="u-m0 u-font-serif">{entry.title}</h2>
             <span className="story-meta">{entry.status}</span>
           </div>
-          <p className="story-meta" style={{ margin: 0 }}>
+          <p className="story-meta u-m0">
             Source:{" "}
             <a href={entry.originalUrl} target="_blank" rel="noreferrer">
               {entry.originalUrl}
             </a>
           </p>
           {entry.archiveUrl && entry.archiveUrl !== "none" ? (
-            <p className="story-meta" style={{ margin: 0 }}>
+            <p className="story-meta u-m0">
               Archive:{" "}
               <a href={entry.archiveUrl} target="_blank" rel="noreferrer">
                 {entry.archiveUrl}
               </a>
             </p>
           ) : null}
-          <p className="note" style={{ margin: 0 }}>
+          <p className="note u-m0">
             {entry.notes}
           </p>
-          <div style={{ display: "grid", gap: "0.85rem" }}>
+          <div className="u-grid u-grid-gap-085">
             {Array.isArray(entry.paragraphs) && entry.paragraphs.length > 0 ? (
               entry.paragraphs.map((p, idx) => (
-                <p key={idx} style={{ margin: 0, lineHeight: 1.65, fontSize: "1.02rem" }}>
+                <p key={idx} className="u-m0 u-lh-165 u-text-102">
                   {p}
                 </p>
               ))
             ) : (
-              <p style={{ margin: 0 }}>No content.</p>
+              <p className="u-m0">No content.</p>
             )}
           </div>
         </article>

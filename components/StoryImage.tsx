@@ -25,6 +25,8 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
     // Ground News "webMetaImg" endpoints bake bias bars into the image; treat as unusable to avoid
     // duplicating our own bias bars and to fix rounding artifacts in the UI.
     if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) return derivedFallback;
+    // Never render Ground News-hosted placeholder assets directly; they frequently 403 or show GN branding.
+    if (lower.includes("ground.news/images/")) return derivedFallback;
     return clean;
   }, [src, derivedFallback]);
   const [activeSrc, setActiveSrc] = useState(normalizedSrc);

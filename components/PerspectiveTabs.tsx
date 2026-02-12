@@ -40,16 +40,16 @@ export function PerspectiveTabs({ story }: { story: Story }) {
 
   return (
     <section className="panel">
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Perspective Summary</h2>
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Perspective Summary</h2>
       </div>
       {!hasAnyPerspective ? (
-        <p className="story-summary" style={{ fontSize: "0.98rem" }}>
+        <p className="story-summary u-text-098">
           Perspective excerpts are not available for this story yet.
         </p>
       ) : (
         <>
-          <div className="chip-row" style={{ marginBottom: "0.7rem" }}>
+          <div className="chip-row u-mb-07">
             <button
               className={`btn perspective-btn ${active === "left" ? "is-active" : ""}`}
               onClick={() => setActive("left")}
@@ -99,7 +99,7 @@ export function PerspectiveTabs({ story }: { story: Story }) {
               ))}
             </div>
           ) : entries.length === 0 ? (
-            <p className="story-summary" style={{ fontSize: "0.98rem" }}>
+            <p className="story-summary u-text-098">
               No {emptyLabel.toLowerCase()}-bucket excerpts are available for this story yet.
             </p>
           ) : (

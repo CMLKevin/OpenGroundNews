@@ -86,9 +86,9 @@ export function SearchBox({
   }, []);
 
   return (
-    <div className="panel" style={{ display: "grid", gap: "0.6rem" }} ref={wrapRef}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Search</h1>
+    <div className="panel u-grid u-grid-gap-06" ref={wrapRef}>
+      <div className="section-title u-pt-0">
+        <h1 className="u-m0 u-font-serif">Search</h1>
         <span className="story-meta">{loading ? "Loading..." : q.trim() ? "Suggestions" : "Type to search"}</span>
       </div>
 
@@ -127,7 +127,7 @@ export function SearchBox({
           <div className="suggest-pop" role="listbox" aria-label="Search suggestions">
           {suggest.topics.length > 0 ? (
             <div>
-              <div className="story-meta" style={{ marginBottom: "0.35rem" }}>
+              <div className="story-meta u-mb-035">
                 Topics
               </div>
               <div className="chip-row">
@@ -147,7 +147,7 @@ export function SearchBox({
 
           {suggest.outlets.length > 0 ? (
             <div>
-              <div className="story-meta" style={{ marginBottom: "0.35rem" }}>
+              <div className="story-meta u-mb-035">
                 Sources
               </div>
               <div className="chip-row">
@@ -167,7 +167,7 @@ export function SearchBox({
 
           {suggest.stories.length > 0 ? (
             <div>
-              <div className="story-meta" style={{ marginBottom: "0.35rem" }}>
+              <div className="story-meta u-mb-035">
                 Stories
               </div>
               <div className="source-list">

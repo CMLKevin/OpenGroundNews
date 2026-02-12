@@ -17,14 +17,14 @@ export function DailyBriefingList({ stories, title = "Daily Briefing" }: { stori
 
   return (
     <section className="panel">
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>{title}</h2>
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">{title}</h2>
         <span className="story-meta">
           {Math.min(6, stories.length)} stories • {totalArticles} articles • ~{avgReadTime || 1} min read
         </span>
       </div>
       {origAvg != null ? (
-        <p className="story-meta" style={{ margin: "0 0 0.55rem" }}>
+        <p className="story-meta u-mb-055">
           Original reporting: <strong>{origAvg}% of sources are Original Reporting</strong>
         </p>
       ) : null}

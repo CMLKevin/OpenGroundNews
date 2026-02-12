@@ -12,7 +12,6 @@ export const DEFAULT_ROUTES = [
   "/local",
   "/blindspot",
   "/rating-system",
-  "/subscribe",
 ];
 
 export function parseArgs(argv) {

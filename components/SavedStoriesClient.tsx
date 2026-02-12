@@ -80,13 +80,13 @@ export function SavedStoriesClient() {
   }, [missing]);
 
   return (
-    <div style={{ display: "grid", gap: "0.85rem" }}>
+    <div className="u-grid u-grid-gap-085">
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Saved</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Saved</h2>
           <span className="story-meta">{signedIn ? "Account" : "This device"} • {slugs.length}</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Save stories from the story page to build your reading list.
         </p>
       </section>
@@ -95,14 +95,14 @@ export function SavedStoriesClient() {
         <section className="panel">
           <div className="news-list">
             {slugs.map((slug) => (
-              <div key={slug} className="story-list-item is-dense" style={{ borderBottom: "1px solid rgba(166,166,161,0.35)" }}>
-                <div style={{ display: "grid", gap: "0.25rem" }}>
+              <div key={slug} className="story-list-item is-dense">
+                <div className="u-grid u-grid-gap-025">
                   <Link className="rail-link" href={`/story/${encodeURIComponent(slug)}`}>
                     {stories[slug]?.title || slug}
                   </Link>
                   <div className="story-meta">{stories[slug]?.topic || "Saved story"}</div>
                 </div>
-                <div style={{ justifySelf: "end" }}>
+                <div className="u-justify-self-end">
                   <SaveStoryToggle storySlug={slug} />
                 </div>
               </div>
@@ -111,7 +111,7 @@ export function SavedStoriesClient() {
         </section>
       ) : (
         <section className="panel">
-          <p className="story-meta" style={{ margin: 0 }}>
+          <p className="story-meta u-m0">
             No saved stories yet.
           </p>
         </section>
@@ -119,4 +119,3 @@ export function SavedStoriesClient() {
     </div>
   );
 }
-

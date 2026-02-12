@@ -10,6 +10,11 @@ function FooterCol({ title, children }: { title: string; children: React.ReactNo
 }
 
 export function SiteFooter() {
+  const githubUrl = process.env.NEXT_PUBLIC_OGN_GITHUB_URL || "";
+  const xUrl = process.env.NEXT_PUBLIC_OGN_X_URL || "";
+  const supportEmail = process.env.NEXT_PUBLIC_OGN_SUPPORT_EMAIL || "";
+  const hasSocialLinks = Boolean(githubUrl || xUrl || supportEmail);
+
   return (
     <footer className="site-footer" aria-label="Footer">
       <div className="container site-footer-inner">
@@ -18,17 +23,29 @@ export function SiteFooter() {
           <p className="footer-tagline">
             See every side of every story, with open infrastructure and transparent ingestion.
           </p>
-          <div className="footer-social">
-            <a className="footer-social-link" href="https://github.com" target="_blank" rel="noreferrer">
-              GitHub
-            </a>
-            <a className="footer-social-link" href="https://x.com" target="_blank" rel="noreferrer">
-              X
-            </a>
-            <a className="footer-social-link" href="mailto:hello@opengroundnews.local">
-              Email
-            </a>
-          </div>
+          {hasSocialLinks ? (
+            <div className="footer-social">
+              {githubUrl ? (
+                <a className="footer-social-link" href={githubUrl} target="_blank" rel="noreferrer">
+                  GitHub
+                </a>
+              ) : null}
+              {xUrl ? (
+                <a className="footer-social-link" href={xUrl} target="_blank" rel="noreferrer">
+                  X
+                </a>
+              ) : null}
+              {supportEmail ? (
+                <a className="footer-social-link" href={`mailto:${supportEmail}`}>
+                  Email
+                </a>
+              ) : null}
+            </div>
+          ) : (
+            <p className="story-meta u-m0">
+              Community links will appear here once they are configured.
+            </p>
+          )}
         </div>
 
         <div className="footer-grid">
@@ -47,9 +64,8 @@ export function SiteFooter() {
           </FooterCol>
 
           <FooterCol title="Support">
-            <Link href="/subscribe">Subscribe</Link>
             <Link href="/notifications">Notifications</Link>
-            <a href="mailto:hello@opengroundnews.local">Contact</a>
+            {supportEmail ? <a href={`mailto:${supportEmail}`}>Contact</a> : <Link href="/get-started">Get started</Link>}
           </FooterCol>
 
           <FooterCol title="Legal">
@@ -71,4 +87,3 @@ export function SiteFooter() {
     </footer>
   );
 }
-

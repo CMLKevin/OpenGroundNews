@@ -228,6 +228,11 @@ export async function persistStoriesToDb(stories, context = {}) {
           const groundNewsSourceId = String(src.groundNewsSourceId || src.groundnewsSourceId || "").trim();
           const groundNewsSourceSlug = String(src.groundNewsSourceSlug || src.groundnewsSourceSlug || "").trim();
           const groundNewsUrl = String(src.outletProfileUrl || src.groundNewsUrl || "").trim();
+          const websiteUrl = String(src.websiteUrl || "").trim();
+          const country = String(src.country || "").trim();
+          const foundedYearRaw = Number(src.foundedYear);
+          const foundedYear = Number.isFinite(foundedYearRaw) ? Math.max(0, Math.round(foundedYearRaw)) : null;
+          const description = String(src.description || "").trim();
 
           const outletUpdate = {
             name: outletName,
@@ -240,13 +245,21 @@ export async function persistStoriesToDb(stories, context = {}) {
           if (groundNewsSourceId) outletUpdate.groundNewsSourceId = groundNewsSourceId;
           if (groundNewsSourceSlug) outletUpdate.groundNewsSourceSlug = groundNewsSourceSlug;
           if (groundNewsUrl) outletUpdate.groundNewsUrl = groundNewsUrl;
+          if (websiteUrl) outletUpdate.websiteUrl = websiteUrl;
+          if (country) outletUpdate.country = country;
+          if (typeof foundedYear === "number" && foundedYear > 0) outletUpdate.foundedYear = foundedYear;
+          if (description) outletUpdate.description = description;
           if (
             (biasRating !== "unknown" || biasBucket !== "unknown") ||
             factuality !== "unknown" ||
             Boolean(ownership) ||
             Boolean(groundNewsSourceId) ||
             Boolean(groundNewsSourceSlug) ||
-            Boolean(groundNewsUrl)
+            Boolean(groundNewsUrl) ||
+            Boolean(websiteUrl) ||
+            Boolean(country) ||
+            Boolean(foundedYear) ||
+            Boolean(description)
           ) {
             outletUpdate.lastEnrichedAt = updatedAt;
           }
@@ -264,6 +277,10 @@ export async function persistStoriesToDb(stories, context = {}) {
               groundNewsSourceId: groundNewsSourceId || null,
               groundNewsSourceSlug: groundNewsSourceSlug || null,
               groundNewsUrl: groundNewsUrl || null,
+              websiteUrl: websiteUrl || null,
+              country: country || null,
+              foundedYear: foundedYear || null,
+              description: description || null,
               bias: biasBucket !== "unknown" ? biasBucket : undefined,
               biasRating: biasRating !== "unknown" ? biasRating : undefined,
               factuality: factuality !== "unknown" ? factuality : undefined,
@@ -274,7 +291,11 @@ export async function persistStoriesToDb(stories, context = {}) {
                 Boolean(ownership) ||
                 Boolean(groundNewsSourceId) ||
                 Boolean(groundNewsSourceSlug) ||
-                Boolean(groundNewsUrl)
+                Boolean(groundNewsUrl) ||
+                Boolean(websiteUrl) ||
+                Boolean(country) ||
+                Boolean(foundedYear) ||
+                Boolean(description)
                   ? updatedAt
                   : null,
             },

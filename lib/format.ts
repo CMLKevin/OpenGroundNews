@@ -121,8 +121,16 @@ export function estimateReadTimeMinutes(text: string, opts?: { wpm?: number; min
 }
 
 export function storyReadTimeMinutes(story: Story) {
-  const blob = `${story.title} ${story.dek || ""} ${story.summary || ""}`.trim();
-  return estimateReadTimeMinutes(blob);
+  const excerptBlob = (story.sources || [])
+    .slice(0, 12)
+    .map((source) => source.excerpt || "")
+    .join(" ");
+  const blob = `${story.title} ${story.dek || ""} ${story.summary || ""} ${excerptBlob}`.trim();
+  const base = estimateReadTimeMinutes(blob);
+  const sourceCandidate = story.coverage?.totalSources ?? story.sourceCount ?? (story.sources || []).length;
+  const sourceCount = Number.isFinite(sourceCandidate) ? Math.max(0, Math.round(sourceCandidate as number)) : 0;
+  const sourceBoost = sourceCount > 1 ? Math.min(6, Math.floor(Math.log2(sourceCount))) : 0;
+  return Math.max(1, Math.min(30, base + sourceBoost));
 }
 
 function clampInt(value: number) {
@@ -197,6 +205,9 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
       return fallback;
     }
+    if (/(\.|^)ground\.news$/i.test(parsed.hostname) && parsed.pathname.toLowerCase().startsWith("/images/")) {
+      return fallback;
+    }
 
     return parsed.toString();
   } catch {
@@ -230,8 +241,14 @@ function sanitizeAssetUrl(rawUrl?: string): string | undefined {
   if (unwrapped) return sanitizeAssetUrl(unwrapped);
 
   try {
-    const parsed = new URL(value);
+    const repaired = value
+      .replace(/\/\[[^\]]+\]\//g, "/")
+      .replace(/%5B[^\]]*%5D/gi, "");
+    const parsed = new URL(repaired);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+    if (/(\.|^)ground\.news$/i.test(parsed.hostname) && parsed.pathname.toLowerCase().startsWith("/images/")) {
+      return undefined;
+    }
     return parsed.toString();
   } catch {
     return undefined;

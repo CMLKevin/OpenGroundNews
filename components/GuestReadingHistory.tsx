@@ -48,18 +48,26 @@ export function GuestReadingHistory() {
   useEffect(() => {
     let alive = true;
     (async () => {
+      const uncached = slugs.filter((slug) => !titles[slug]);
+      if (uncached.length === 0) return;
       const next: Record<string, string> = {};
-      for (const slug of slugs) {
-        if (titles[slug]) continue;
-        try {
-          const res = await fetch(`/api/stories/${encodeURIComponent(slug)}`, { cache: "no-store" });
-          if (!res.ok) continue;
-          const json = (await res.json()) as any;
-          const title = String(json?.story?.title || "").trim();
-          if (title) next[slug] = title;
-        } catch {
-          // ignore
+      try {
+        const res = await fetch("/api/stories/batch", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          cache: "no-store",
+          body: JSON.stringify({ slugs: uncached }),
+        });
+        if (!res.ok) return;
+        const json = (await res.json()) as any;
+        const rows = Array.isArray(json?.stories) ? json.stories : [];
+        for (const row of rows) {
+          const slug = String(row?.slug || "").trim();
+          const title = String(row?.title || "").trim();
+          if (slug && title) next[slug] = title;
         }
+      } catch {
+        // ignore
       }
       if (!alive) return;
       if (Object.keys(next).length) setTitles((prev) => ({ ...prev, ...next }));
@@ -70,13 +78,13 @@ export function GuestReadingHistory() {
   }, [slugs, titles]);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Reading History</h2>
+    <section className="panel u-grid u-grid-gap-06">
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Reading History</h2>
         <span className="story-meta">{events.length ? "Guest (this device)" : "No reads yet"}</span>
       </div>
       {events.length ? (
-        <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
+        <ul className="rail-list u-list-reset">
           {events.map((ev) => (
             <li key={`${ev.storySlug}-${ev.readAt}`}>
               <Link className="rail-link" href={`/story/${encodeURIComponent(ev.storySlug)}`}>
@@ -95,11 +103,10 @@ export function GuestReadingHistory() {
           ))}
         </ul>
       ) : (
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Open a story to start building your bias dashboard.
         </p>
       )}
     </section>
   );
 }
-

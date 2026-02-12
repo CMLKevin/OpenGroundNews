@@ -143,20 +143,20 @@ export function PushNotificationsPanel() {
   }
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.85rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Notifications</h1>
+    <section className="panel u-grid u-grid-gap-085">
+      <div className="section-title u-pt-0">
+        <h1 className="u-m0 u-font-serif">Notifications</h1>
         <span className="story-meta">
           {permission === "granted" ? "Enabled" : permission === "denied" ? "Blocked" : "Off"}
         </span>
       </div>
 
-      <p style={{ margin: 0, maxWidth: "75ch" }}>
+      <p className="u-m0 u-maxw-75ch">
         Turn on notifications to get Daily Briefing reminders, Blindspot alerts, and spikes from your followed topics and
         sources.
       </p>
 
-      <div className="kpi-strip" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
+      <div className="kpi-strip u-grid-cols-3">
         <div className="kpi">
           <span>Service Worker</span>
           <strong>{support.sw ? "Supported" : "No"}</strong>
@@ -181,9 +181,9 @@ export function PushNotificationsPanel() {
       </div>
 
       {prefs ? (
-        <div className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>Alert Types</h2>
+        <div className="panel u-grid u-grid-gap-06">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Alert Types</h2>
             <span className="story-meta">Account</span>
           </div>
           <label className="toggle-row">
@@ -198,18 +198,18 @@ export function PushNotificationsPanel() {
             <input type="checkbox" checked={prefs.notifyFollowed} onChange={() => togglePref("notifyFollowed")} />
             <span>Followed topics and sources</span>
           </label>
-          <p className="story-meta" style={{ margin: 0 }}>
+          <p className="story-meta u-m0">
             Tip: enabling an alert type doesn’t automatically enable push on every device. Click “Enable on this device”
             on each browser you use.
           </p>
         </div>
       ) : (
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           Sign in to manage your notification preferences.
         </p>
       )}
 
-      {status ? <p className="note" style={{ margin: 0 }}>{status}</p> : null}
+      {status ? <p className="note u-m0">{status}</p> : null}
     </section>
   );
 }

@@ -10,7 +10,7 @@ type Story = { slug: string; title: string };
 type StoriesResponse = { stories?: Story[]; count?: number };
 
 export function DailyLocalNewsWidget() {
-  const [location, setLocation] = useState<string>("United States");
+  const [location, setLocation] = useState<string>("");
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -24,6 +24,11 @@ export function DailyLocalNewsWidget() {
   }, []);
 
   useEffect(() => {
+    if (!location.trim()) {
+      setStories([]);
+      setLoading(false);
+      return;
+    }
     let alive = true;
     (async () => {
       try {
@@ -45,18 +50,18 @@ export function DailyLocalNewsWidget() {
   }, [location]);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Daily Local News</h2>
-        <Link className="story-meta" href={`/local?location=${encodeURIComponent(location)}`}>
+    <section className="panel u-grid u-grid-gap-06">
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Daily Local News</h2>
+        <Link className="story-meta" href={location ? `/local?location=${encodeURIComponent(location)}` : "/local"}>
           open
         </Link>
       </div>
 
-      <div className="story-meta">{loading ? "Loading..." : location}</div>
+      <div className="story-meta">{loading ? "Loading..." : location || "No city selected"}</div>
 
       {stories.length > 0 ? (
-        <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
+        <ul className="rail-list u-list-reset">
           {stories.slice(0, 5).map((s) => (
             <li key={s.slug}>
               <Link className="rail-link" href={`/story/${encodeURIComponent(s.slug)}`}>
@@ -66,9 +71,16 @@ export function DailyLocalNewsWidget() {
           ))}
         </ul>
       ) : (
-        <p className="story-meta" style={{ margin: 0 }}>
-          No local-marked stories found. Pick a city in Local settings to improve matching.
-        </p>
+        <div className="u-grid u-grid-gap-05">
+          <p className="story-meta u-m0">
+            {location
+              ? "No local-marked stories found for this city yet. Try another nearby city."
+              : "Set up your city to unlock local headlines and weather."}
+          </p>
+          <Link className="btn" href="/local">
+            Set up Local
+          </Link>
+        </div>
       )}
     </section>
   );

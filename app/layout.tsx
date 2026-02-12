@@ -1,18 +1,36 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import "@fontsource-variable/bricolage-grotesque";
-import "@fontsource-variable/newsreader";
+import { Bricolage_Grotesque, Newsreader } from "next/font/google";
 import { TopNav } from "@/components/TopNav";
+import { TopNavSkeleton } from "@/components/TopNavSkeleton";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { SiteFooter } from "@/components/SiteFooter";
 import "@/app/globals.css";
 import { cookies } from "next/headers";
 
+const bricolage = Bricolage_Grotesque({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-brand-sans",
+});
+
+const newsreader = Newsreader({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-brand-serif",
+});
+
 export const metadata: Metadata = {
   title: "OpenGroundNews",
   description: "Open-source Ground News alternative with perspective-aware aggregation.",
   icons: {
-    icon: "/images/story-fallback.svg",
+    icon: [
+      { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    shortcut: ["/favicon-32x32.png"],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
   },
 };
 
@@ -36,10 +54,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "auto" ? (cookieTheme as any) : "dark";
 
   return (
-    <html lang="en" data-theme={initialTheme} suppressHydrationWarning>
+    <html lang="en" data-theme={initialTheme} suppressHydrationWarning className={`${bricolage.variable} ${newsreader.variable}`}>
       <body>
         <ThemeBootScript initialTheme={initialTheme} />
-        <Suspense fallback={<header className="topbar" />}>
+        <Suspense fallback={<TopNavSkeleton />}>
           <TopNav />
         </Suspense>
         {children}

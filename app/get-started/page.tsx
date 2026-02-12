@@ -1,6 +1,7 @@
 import { GetStartedWizard } from "@/components/GetStartedWizard";
 import { listStories } from "@/lib/store";
 import { outletSlug } from "@/lib/lookup";
+import { canonicalTopicSlug } from "@/lib/topics";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function GetStartedPage() {
   const suggestedTopics = uniqBy(
     stories
       .flatMap((s) => s.tags)
-      .map((tag) => ({ slug: tag.toLowerCase().replace(/\s+/g, "-"), label: tag })),
+      .map((tag) => ({ slug: canonicalTopicSlug(tag) || "top-stories", label: tag })),
     (t) => t.slug,
   ).slice(0, 24);
 
@@ -34,8 +35,8 @@ export default async function GetStartedPage() {
   ).slice(0, 24);
 
   return (
-    <main className="container" style={{ padding: "1rem 0 2rem" }}>
-      <section className="hero" style={{ paddingTop: "0.7rem" }}>
+    <main className="container u-page-pad">
+      <section className="hero u-pt-07">
         <div className="hero-panel">
           <h1>Build your perspective-aware feed</h1>
           <p>
@@ -44,7 +45,7 @@ export default async function GetStartedPage() {
           </p>
         </div>
         <div className="hero-panel">
-          <p className="note" style={{ margin: 0 }}>
+          <p className="note u-m0">
             This wizard stores preferences locally. If you sign in, it also syncs follows and prefs to your account.
           </p>
         </div>
@@ -54,4 +55,3 @@ export default async function GetStartedPage() {
     </main>
   );
 }
-

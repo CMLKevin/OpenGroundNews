@@ -11,6 +11,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -18,6 +19,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
 
   async function submit() {
     setError(null);
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("Passwords do not match");
+      return;
+    }
     setLoading(true);
     try {
       const endpoint = mode === "signup" ? "/api/auth/signup" : "/api/auth/login";
@@ -41,54 +46,85 @@ export function AuthForm({ mode }: { mode: Mode }) {
   }
 
   return (
-    <section className="panel auth-shell" style={{ display: "grid", gap: "0.8rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <div style={{ display: "grid", gap: "0.1rem" }}>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>{mode === "signup" ? "Create account" : "Sign in"}</h1>
+    <section className="panel auth-shell u-grid u-grid-gap-08">
+      <div className="section-title u-pt-0">
+        <div className="u-grid u-grid-gap-01">
+          <h1 className="u-m0 u-font-serif">{mode === "signup" ? "Create account" : "Sign in"}</h1>
           <span className="story-meta">{mode === "signup" ? "Sync follows and reading history" : "Welcome back"}</span>
         </div>
       </div>
 
-      <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
-        Email
-        <input className="input-control" value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
-      </label>
-      <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
-        Password
-        <input
-          className="input-control"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          type="password"
-          autoComplete={mode === "signup" ? "new-password" : "current-password"}
-          placeholder={mode === "signup" ? "At least 10 characters" : ""}
-        />
-      </label>
-      {mode === "login" ? (
-        <Link className="story-meta" href="/forgot-password" style={{ width: "fit-content" }}>
-          Forgot password?
-        </Link>
-      ) : null}
-      {error ? (
-        <p className="note" style={{ margin: 0 }}>
-          {error}
-        </p>
-      ) : null}
-      <div className="chip-row">
-        <button className="btn" type="button" onClick={submit} disabled={loading}>
-          {loading ? "Working..." : mode === "signup" ? "Create account" : "Sign in"}
-        </button>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+        className="u-grid u-grid-gap-08"
+      >
+        <label className="story-meta u-grid u-grid-gap-02">
+          Email
+          <input
+            className="input-control"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            type="email"
+            autoComplete="email"
+            required
+          />
+        </label>
+        <label className="story-meta u-grid u-grid-gap-02">
+          Password
+          <input
+            className="input-control"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            type="password"
+            autoComplete={mode === "signup" ? "new-password" : "current-password"}
+            placeholder={mode === "signup" ? "At least 10 characters" : ""}
+            required
+            minLength={10}
+          />
+        </label>
         {mode === "signup" ? (
-          <Link className="btn" href={`/login${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
-            I already have an account
+          <label className="story-meta u-grid u-grid-gap-02">
+            Confirm password
+            <input
+              className="input-control"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={10}
+            />
+          </label>
+        ) : null}
+        {mode === "login" ? (
+          <Link className="story-meta u-w-fit" href="/forgot-password">
+            Forgot password?
           </Link>
-        ) : (
-          <Link className="btn" href={`/signup${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
-            Create account
-          </Link>
-        )}
-      </div>
-      <p className="story-meta" style={{ margin: 0 }}>
+        ) : null}
+        {error ? (
+          <p className="note u-m0">
+            {error}
+          </p>
+        ) : null}
+        <div className="chip-row">
+          <button className="btn" type="submit" disabled={loading}>
+            {loading ? "Working..." : mode === "signup" ? "Create account" : "Sign in"}
+          </button>
+          {mode === "signup" ? (
+            <Link className="btn" href={`/login${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
+              I already have an account
+            </Link>
+          ) : (
+            <Link className="btn" href={`/signup${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
+              Create account
+            </Link>
+          )}
+        </div>
+      </form>
+      <p className="story-meta u-m0">
         By continuing, you agree to the Terms and acknowledge the Privacy Policy. Passwords are stored using scrypt hashing.
         {" "}
         <Link href="/terms">Terms</Link> • <Link href="/privacy">Privacy</Link>

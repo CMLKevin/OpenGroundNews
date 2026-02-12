@@ -2,6 +2,10 @@ import Link from "next/link";
 import { StoryCard } from "@/components/StoryCard";
 import { SearchBox } from "@/components/SearchBox";
 import { searchStories } from "@/lib/search";
+import { SearchFilters } from "@/components/SearchFilters";
+import { db } from "@/lib/db";
+import { topicDisplayName } from "@/lib/topics";
+import { topicSlug } from "@/lib/lookup";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +28,44 @@ export default async function SearchPage({ searchParams }: Props) {
     time: timeFilter as any,
   });
   const shownArticleCount = result.stories.reduce((acc, s) => acc + (s.coverage?.totalSources ?? s.sourceCount ?? 0), 0);
+  const discoveryStories = query
+    ? []
+    : await db.story
+        .findMany({
+          orderBy: { updatedAt: "desc" },
+          include: { tags: true, sources: { include: { outlet: true } } },
+          take: 6,
+        })
+        .then((rows) =>
+          rows.map((row) => ({
+            id: row.id,
+            slug: row.slug,
+            title: row.title,
+            topic: row.topic,
+          })),
+        )
+        .catch(() => []);
+  const discoveryTopics = query
+    ? []
+    : await db.storyTag
+        .groupBy({
+          by: ["tag"],
+          _count: { tag: true },
+          orderBy: { _count: { tag: "desc" } },
+          take: 12,
+        })
+        .then((rows) => rows.map((row) => ({ tag: topicDisplayName(row.tag), count: row._count.tag })))
+        .catch(() => []);
+  const outletProfiles =
+    activeTab === "sources" && result.facets.outlets.length > 0
+      ? await db.outlet
+          .findMany({
+            where: { slug: { in: result.facets.outlets.map((o) => o.slug) } },
+            select: { slug: true, name: true, biasRating: true, bias: true, factuality: true, description: true },
+          })
+          .catch(() => [])
+      : [];
+  const outletBySlug = new Map(outletProfiles.map((outlet) => [outlet.slug, outlet]));
 
   function buildHref(next: Record<string, string | undefined>) {
     const sp = new URLSearchParams();
@@ -40,11 +82,11 @@ export default async function SearchPage({ searchParams }: Props) {
   }
 
   return (
-    <main className="container" style={{ padding: "1rem 0 2rem" }}>
+    <main className="container u-page-pad">
       <SearchBox initialQuery={query} edition={edition?.trim() || undefined} bias={biasFilter} time={timeFilter} tab={activeTab} />
 
-      <section className="panel" style={{ marginTop: "1rem", display: "grid", gap: "0.65rem" }}>
-          <div className="chip-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+      <section className="panel u-mt-1 u-grid u-grid-gap-065">
+          <div className="chip-row u-flex u-justify-between u-items-center">
           <div className="chip-row">
             <Link className={`pill ${activeTab === "stories" ? "perspective-btn is-active" : ""}`} href={buildHref({ tab: "stories" })}>
               Stories
@@ -61,41 +103,22 @@ export default async function SearchPage({ searchParams }: Props) {
           </span>
         </div>
 
-        <form action="/search" method="get" className="filters-grid">
-          <input type="hidden" name="q" value={query} />
-          {edition ? <input type="hidden" name="edition" value={edition} /> : null}
-          <input type="hidden" name="tab" value={activeTab} />
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
-            Time
-            <select className="select-control" name="time" defaultValue={timeFilter}>
-              <option value="all">All time</option>
-              <option value="24h">Last 24h</option>
-              <option value="7d">Last 7 days</option>
-              <option value="30d">Last 30 days</option>
-            </select>
-          </label>
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
-            Bias (dominant)
-            <select className="select-control" name="bias" defaultValue={biasFilter}>
-              <option value="all">All</option>
-              <option value="left">Leaning Left</option>
-              <option value="center">Center</option>
-              <option value="right">Leaning Right</option>
-            </select>
-          </label>
-          <button className="btn" type="submit" style={{ alignSelf: "end" }}>
-            Apply
-          </button>
-        </form>
+        <SearchFilters
+          query={query}
+          edition={edition}
+          activeTab={activeTab}
+          timeFilter={timeFilter as "all" | "24h" | "7d" | "30d"}
+          biasFilter={biasFilter as "all" | "left" | "center" | "right"}
+        />
       </section>
 
       {query ? (
         <>
           {activeTab === "stories" ? (
             <>
-              <section className="panel" style={{ marginTop: "1rem" }}>
-                <div className="section-title" style={{ paddingTop: 0 }}>
-                  <h2 style={{ margin: 0 }}>Quick filters</h2>
+              <section className="panel u-mt-1">
+                <div className="section-title u-pt-0">
+                  <h2 className="u-m0">Quick filters</h2>
                   <span className="story-meta">From results</span>
                 </div>
                 <div className="chip-row">
@@ -111,7 +134,7 @@ export default async function SearchPage({ searchParams }: Props) {
                   ))}
                 </div>
               </section>
-              <section className="grid" style={{ marginTop: "1rem" }}>
+              <section className="grid u-mt-1">
                 {result.stories.map((story) => (
                   <StoryCard key={story.id} story={story} />
                 ))}
@@ -120,46 +143,107 @@ export default async function SearchPage({ searchParams }: Props) {
           ) : null}
 
           {activeTab === "topics" ? (
-            <section className="panel" style={{ marginTop: "1rem" }}>
-              <div className="section-title" style={{ paddingTop: 0 }}>
-                <h2 style={{ margin: 0 }}>Topics</h2>
+            <section className="panel u-mt-1">
+              <div className="section-title u-pt-0">
+                <h2 className="u-m0">Topics</h2>
                 <span className="story-meta">Top matches</span>
               </div>
-              <div className="chip-row">
-                {result.facets.topics.length ? (
-                  result.facets.topics.map((t) => (
-                    <Link key={t.slug} className="pill" href={`/interest/${t.slug}`}>
-                      {t.label} ({t.count})
-                    </Link>
-                  ))
-                ) : (
-                  <span className="story-meta">No topic matches.</span>
-                )}
-              </div>
+              {result.facets.topics.length ? (
+                <div className="u-grid u-grid-gap-07">
+                  {result.facets.topics.map((t) => {
+                    const previewStories = result.stories.filter((story) => story.topic === t.label || story.tags.includes(t.label)).slice(0, 3);
+                    return (
+                      <article key={t.slug} className="panel u-p-075 u-grid u-grid-gap-05">
+                        <div className="section-title u-pt-0">
+                          <Link className="pill perspective-btn is-active" href={`/interest/${t.slug}`}>
+                            {topicDisplayName(t.label)} ({t.count})
+                          </Link>
+                        </div>
+                        <ul className="rail-list u-list-reset u-m0">
+                          {previewStories.length > 0 ? (
+                            previewStories.map((story) => (
+                              <li key={story.id}>
+                                <Link className="rail-link" href={`/story/${story.slug}`}>
+                                  {story.title}
+                                </Link>
+                              </li>
+                            ))
+                          ) : (
+                            <li className="story-meta">No story previews in current filters.</li>
+                          )}
+                        </ul>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span className="story-meta">No topic matches.</span>
+              )}
             </section>
           ) : null}
 
           {activeTab === "sources" ? (
-            <section className="panel" style={{ marginTop: "1rem" }}>
-              <div className="section-title" style={{ paddingTop: 0 }}>
-                <h2 style={{ margin: 0 }}>Sources</h2>
+            <section className="panel u-mt-1">
+              <div className="section-title u-pt-0">
+                <h2 className="u-m0">Sources</h2>
                 <span className="story-meta">Top matches</span>
               </div>
-              <div className="chip-row">
-                {result.facets.outlets.length ? (
-                  result.facets.outlets.map((o) => (
-                    <Link key={o.slug} className="pill" href={`/source/${o.slug}`}>
-                      {o.label} ({o.count})
-                    </Link>
-                  ))
-                ) : (
-                  <span className="story-meta">No source matches.</span>
-                )}
-              </div>
+              {result.facets.outlets.length ? (
+                <div className="u-grid u-grid-gap-07">
+                  {result.facets.outlets.map((o) => {
+                    const profile = outletBySlug.get(o.slug);
+                    const bias = String(profile?.biasRating || profile?.bias || "unknown").replace(/_/g, "-");
+                    const factuality = String(profile?.factuality || "unknown").replace(/_/g, "-");
+                    return (
+                      <article key={o.slug} className="panel u-p-075 u-grid u-grid-gap-035">
+                        <div className="section-title u-pt-0">
+                          <Link className="rail-link" href={`/source/${o.slug}`}>
+                            {o.label}
+                          </Link>
+                          <span className="story-meta">{o.count} matches</span>
+                        </div>
+                        <div className="chip-row">
+                          <span className="chip">Bias: {bias}</span>
+                          <span className="chip">Factuality: {factuality}</span>
+                        </div>
+                        <p className="story-meta u-m0">
+                          {profile?.description || "Outlet profile available on source page."}
+                        </p>
+                      </article>
+                    );
+                  })}
+                </div>
+              ) : (
+                <span className="story-meta">No source matches.</span>
+              )}
             </section>
           ) : null}
         </>
-      ) : null}
+      ) : (
+        <section className="panel u-mt-1 u-grid u-grid-gap-075">
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Discover</h2>
+            <span className="story-meta">Trending topics and recent stories</span>
+          </div>
+          <div className="chip-row">
+            {discoveryTopics.map((topic) => (
+              <Link key={topic.tag} className="pill" href={`/interest/${encodeURIComponent(topicSlug(topic.tag))}`}>
+                {topic.tag} ({topic.count})
+              </Link>
+            ))}
+          </div>
+          <ul className="rail-list u-list-reset">
+            {discoveryStories.map((story) => (
+              <li key={story.id}>
+                <Link className="rail-link" href={`/story/${story.slug}`}>
+                  {story.title}
+                </Link>
+                <div className="story-meta">{topicDisplayName(story.topic)}</div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </main>
   );
 }

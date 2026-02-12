@@ -37,8 +37,6 @@ export async function UtilityBar() {
         <div className="utility-right">
           <Link href="/rating-system">Methodology</Link>
           <span className="utility-dot">•</span>
-          <Link href="/subscribe">Plans</Link>
-          <span className="utility-dot">•</span>
           <Link href="/get-started">Get started</Link>
           <span className="utility-dot">•</span>
           <Link href="/extension">Extension</Link>

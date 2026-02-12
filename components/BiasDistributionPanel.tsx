@@ -74,10 +74,10 @@ export function BiasDistributionPanel({ story }: Props) {
   if (!hasBiasData) {
     return (
       <section className="panel bias-dist-panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Bias Distribution</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Bias Distribution</h2>
         </div>
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           Bias distribution data is not available for this story yet.
         </p>
       </section>
@@ -99,8 +99,8 @@ export function BiasDistributionPanel({ story }: Props) {
 
   return (
     <section className="panel bias-dist-panel">
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Bias Distribution</h2>
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Bias Distribution</h2>
       </div>
       <p className="bias-dist-lead">
         • {dominant.value}% of the sources lean {dominant.side}

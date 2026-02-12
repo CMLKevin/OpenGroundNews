@@ -5,7 +5,7 @@ export const dynamic = "force-dynamic";
 
 export default function ResetPasswordPage() {
   return (
-    <main className="container" style={{ padding: "1rem 0 2rem" }}>
+    <main className="container u-page-pad">
       <Suspense fallback={<section className="panel" />}>
         <ResetPasswordForm />
       </Suspense>

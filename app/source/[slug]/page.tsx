@@ -60,28 +60,49 @@ export default async function SourcePage({ params, searchParams }: Props) {
     .sort((a, b) => +new Date(b as string) - +new Date(a as string))[0] as string | undefined;
 
   const biasRatingLabel = String(outlet?.biasRating || "unknown").replace(/_/g, "-");
+  const inferredBias = (() => {
+    const ranked = [
+      { key: "left", value: biasCounts.left },
+      { key: "center", value: biasCounts.center },
+      { key: "right", value: biasCounts.right },
+    ].sort((a, b) => b.value - a.value);
+    return ranked[0]?.value > 0 ? ranked[0].key : "unknown";
+  })();
+  const displayBiasRating = biasRatingLabel === "unknown" ? inferredBias : biasRatingLabel;
   const factualityLabel = String(outlet?.factuality || "unknown").replace(/_/g, "-");
+  const websiteFromSample =
+    outlet?.websiteUrl ||
+    samples
+      .map((source) => {
+        try {
+          const url = new URL(source.url);
+          return `${url.protocol}//${url.hostname}`;
+        } catch {
+          return "";
+        }
+      })
+      .find(Boolean);
   const ownershipLabel = (outlet?.ownership || "").trim() || "Unlabeled";
 
   return (
-    <main className="container" style={{ padding: "1rem 0 2rem" }}>
+    <main className="container u-page-pad">
       <nav className="breadcrumbs" aria-label="Breadcrumb">
         <Link href="/" className="breadcrumb-link">Home</Link>
         <span className="breadcrumb-sep" aria-hidden="true">/</span>
         <span className="breadcrumb-current">Source</span>
       </nav>
 
-      <section className="panel" style={{ display: "grid", gap: "0.8rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <div style={{ display: "flex", gap: "0.65rem", alignItems: "center" }}>
+      <section className="panel u-grid u-grid-gap-08">
+        <div className="section-title u-pt-0">
+          <div className="u-flex u-flex-gap-065 u-items-center">
             <span className="topic-avatar" aria-hidden="true">
               {outlet?.logoUrl ? (
-                <img src={String(outlet.logoUrl)} alt={displayOutlet} style={{ width: 28, height: 28, borderRadius: 999, objectFit: "cover" }} />
+                <img src={String(outlet.logoUrl)} alt={displayOutlet} className="u-avatar-28" />
               ) : (
                 displayOutlet.slice(0, 2).toUpperCase()
               )}
             </span>
-            <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.55rem, 4vw, 2.2rem)" }}>
+            <h1 className="topic-page-title">
               {displayOutlet}
             </h1>
           </div>
@@ -94,13 +115,16 @@ export default async function SourcePage({ params, searchParams }: Props) {
           <div className="source-profile-row">
             <div className="source-profile-label">Bias rating</div>
             <div className="source-profile-value">
-              <span className="bias-pill">{biasRatingLabel}</span>
+              <span className="bias-pill">{displayBiasRating}</span>
+              {displayBiasRating !== biasRatingLabel ? <span className="story-meta">inferred from source cards</span> : null}
             </div>
           </div>
           <div className="source-profile-row">
             <div className="source-profile-label">Factuality</div>
             <div className="source-profile-value">
-              <span className="bias-pill">{factualityLabel === "unknown" ? "not-rated" : factualityLabel}</span>
+              <span className="bias-pill" title={factualityLabel === "unknown" ? "This outlet has not been assessed yet." : undefined}>
+                {factualityLabel === "unknown" ? "not-rated" : factualityLabel}
+              </span>
             </div>
           </div>
           <div className="source-profile-row">
@@ -110,9 +134,9 @@ export default async function SourcePage({ params, searchParams }: Props) {
           <div className="source-profile-row">
             <div className="source-profile-label">Website</div>
             <div className="source-profile-value">
-              {outlet?.websiteUrl ? (
-                <a href={String(outlet.websiteUrl)} target="_blank" rel="noreferrer">
-                  {String(outlet.websiteUrl)}
+              {websiteFromSample ? (
+                <a href={String(websiteFromSample)} target="_blank" rel="noreferrer">
+                  {String(websiteFromSample)}
                 </a>
               ) : (
                 <span className="story-meta">Unknown</span>
@@ -145,21 +169,21 @@ export default async function SourcePage({ params, searchParams }: Props) {
         </div>
       </section>
 
-      <section className="panel" style={{ marginTop: "1rem", display: "grid", gap: "0.6rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>About this source</h2>
+      <section className="panel u-mt-1 u-grid u-grid-gap-06">
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">About this source</h2>
           <span className="story-meta">{outlet?.lastEnrichedAt ? `Enriched ${prettyDate(outlet.lastEnrichedAt.toISOString())}` : "Not enriched yet"}</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           {outlet?.description
             ? outlet.description
-            : "Description unavailable. Run outlet enrichment to populate ownership, factuality, and profile metadata."}
+            : "Description unavailable. This profile will be enriched as more source metadata is collected."}
         </p>
       </section>
 
-      <section className="panel" style={{ marginTop: "1rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Coverage Samples</h2>
+      <section className="panel u-mt-1">
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Coverage Samples</h2>
           <span className="story-meta">{Math.min(samples.length, 30)} shown</span>
         </div>
         <div className="source-list">
@@ -172,7 +196,7 @@ export default async function SourcePage({ params, searchParams }: Props) {
                   ) : (
                     <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>
                   )}
-                  <div style={{ display: "grid", gap: "0.08rem" }}>
+                  <div className="u-grid u-grid-gap-008">
                     <strong>{src.outlet}</strong>
                     <span className="story-meta">{src.publishedAt ? prettyDate(src.publishedAt) : "Unknown date"}</span>
                   </div>
@@ -183,7 +207,7 @@ export default async function SourcePage({ params, searchParams }: Props) {
                 </div>
               </div>
               <p className="story-summary source-excerpt">{src.excerpt}</p>
-              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <div className="u-flex u-flex-gap-05 u-wrap">
                 <a className="btn" href={src.url} target="_blank" rel="noreferrer">
                   Open Original
                 </a>
@@ -193,7 +217,7 @@ export default async function SourcePage({ params, searchParams }: Props) {
         </div>
       </section>
 
-      <section className="grid" style={{ marginTop: "1rem" }}>
+      <section className="grid u-mt-1">
         {stories.slice(0, 30).map((story) => (
           <StoryCard key={story.id} story={story} />
         ))}

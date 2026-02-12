@@ -73,12 +73,18 @@ export function SummaryFeedbackLink({ storySlug, url }: { storySlug: string; url
               <div className="feedback-dialog-title">Summary feedback</div>
               <div className="story-meta">Help us catch mistakes and improve extraction.</div>
             </div>
-            <button className="btn" value="cancel">
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                dialogRef.current?.close();
+              }}
+            >
               Close
             </button>
           </div>
 
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+          <label className="story-meta u-grid u-grid-gap-02">
             What looks wrong?
             <textarea
               className="input-control"
@@ -89,7 +95,7 @@ export function SummaryFeedbackLink({ storySlug, url }: { storySlug: string; url
             />
           </label>
 
-          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+          <label className="story-meta u-grid u-grid-gap-02">
             Email (optional)
             <input
               className="input-control"
@@ -102,12 +108,12 @@ export function SummaryFeedbackLink({ storySlug, url }: { storySlug: string; url
           </label>
 
           {error ? (
-            <p className="note" style={{ margin: 0 }}>
+            <p className="note u-m0">
               {error}
             </p>
           ) : null}
 
-          <div className="chip-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <div className="chip-row u-flex u-justify-between u-items-center">
             <span className="story-meta">
               {status === "sent" ? "Thanks, sent." : status === "submitting" ? "Sending..." : ""}
             </span>
@@ -120,4 +126,3 @@ export function SummaryFeedbackLink({ storySlug, url }: { storySlug: string; url
     </div>
   );
 }
-

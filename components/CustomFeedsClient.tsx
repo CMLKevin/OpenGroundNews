@@ -105,13 +105,13 @@ export function CustomFeedsClient() {
   if (!signedIn) {
     return (
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Custom Feeds</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Custom Feeds</h2>
           <span className="story-meta">Sign in required</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Custom feeds are stored in your account.{" "}
-          <Link href="/login?next=/my/custom-feeds" style={{ fontWeight: 800 }}>
+          <Link href="/login?next=/my/custom-feeds" className="u-font-800">
             Sign in
           </Link>
           .
@@ -121,32 +121,32 @@ export function CustomFeedsClient() {
   }
 
   return (
-    <div style={{ display: "grid", gap: "0.85rem" }}>
+    <div className="u-grid u-grid-gap-085">
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Custom Feeds</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Custom Feeds</h2>
           <span className="story-meta">{feeds.length} saved</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Build feeds from topic and source sets. These rules power a dedicated feed view and notifications later.
         </p>
       </section>
 
-      <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Create feed</h2>
+      <section className="panel u-grid u-grid-gap-07">
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Create feed</h2>
           <span className="story-meta">Rules</span>
         </div>
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Name
           <input className="input-control" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Climate & Energy" />
         </label>
-        <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+        <label className="story-meta u-grid u-grid-gap-02">
           Description (optional)
           <input className="input-control" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Short description" />
         </label>
 
-        <div className="panel" style={{ padding: "0.7rem", display: "grid", gap: "0.55rem" }}>
+        <div className="panel u-p-07 u-grid u-grid-gap-055">
           <div className="story-meta">Topics (from your follows)</div>
           <div className="chip-row">
             {follows.topics.length ? (
@@ -171,7 +171,7 @@ export function CustomFeedsClient() {
           </div>
         </div>
 
-        <div className="panel" style={{ padding: "0.7rem", display: "grid", gap: "0.55rem" }}>
+        <div className="panel u-p-07 u-grid u-grid-gap-055">
           <div className="story-meta">Sources (from your follows)</div>
           <div className="chip-row">
             {follows.outlets.length ? (
@@ -197,12 +197,12 @@ export function CustomFeedsClient() {
         </div>
 
         {error ? (
-          <p className="note" style={{ margin: 0 }}>
+          <p className="note u-m0">
             {error}
           </p>
         ) : null}
 
-        <div className="chip-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+        <div className="chip-row u-flex u-justify-between u-items-center">
           <span className="story-meta">
             {topics.size} topics • {outlets.size} sources
           </span>
@@ -214,8 +214,8 @@ export function CustomFeedsClient() {
 
       {feeds.length ? (
         <section className="panel">
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2 style={{ margin: 0 }}>Your feeds</h2>
+          <div className="section-title u-pt-0">
+            <h2 className="u-m0">Your feeds</h2>
             <span className="story-meta">Manage</span>
           </div>
           <div className="source-list">
@@ -224,7 +224,7 @@ export function CustomFeedsClient() {
                 <div className="source-head">
                   <div className="source-outlet">
                     <span className="source-logo source-logo-fallback">{f.name.slice(0, 2).toUpperCase()}</span>
-                    <div style={{ display: "grid", gap: "0.08rem" }}>
+                    <div className="u-grid u-grid-gap-008">
                       <strong>{f.name}</strong>
                       <span className="story-meta">{f.description || "No description"}</span>
                     </div>

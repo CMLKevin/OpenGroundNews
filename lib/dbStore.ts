@@ -2,6 +2,30 @@ import { db } from "@/lib/db";
 import type { ArchiveEntry, SourceArticle, StoreShape, Story } from "@/lib/types";
 import { outletSlug, storyHasTopicSlug } from "@/lib/lookup";
 import { normalizeStory } from "@/lib/format";
+import { inferTopicSlugFromText, topicMatchesSlug } from "@/lib/topics";
+
+const CACHE_TTL_MS = Number(process.env.OGN_STORE_CACHE_TTL_MS || 45_000);
+
+type CacheEntry<T> = {
+  value: T;
+  expiresAt: number;
+};
+
+const storeCache = new Map<string, CacheEntry<any>>();
+
+function cacheGet<T>(key: string): T | null {
+  const item = storeCache.get(key);
+  if (!item) return null;
+  if (Date.now() >= item.expiresAt) {
+    storeCache.delete(key);
+    return null;
+  }
+  return item.value as T;
+}
+
+function cacheSet<T>(key: string, value: T, ttlMs = CACHE_TTL_MS) {
+  storeCache.set(key, { value, expiresAt: Date.now() + Math.max(5_000, ttlMs) });
+}
 
 function toStory(row: any): Story {
   const tags = (row.tags || []).map((t: any) => t.tag);
@@ -57,6 +81,9 @@ function toStory(row: any): Story {
 }
 
 export async function readStore(): Promise<StoreShape> {
+  const cached = cacheGet<StoreShape>("readStore");
+  if (cached) return cached;
+
   const stories = await db.story.findMany({
     orderBy: { updatedAt: "desc" },
     include: {
@@ -67,7 +94,7 @@ export async function readStore(): Promise<StoreShape> {
   });
 
   // Archive cache is DB-backed now; we only keep a minimal surface in this shim.
-  return {
+  const store = {
     stories: stories.map(toStory),
     archiveCache: {},
     ingestion: {
@@ -78,6 +105,8 @@ export async function readStore(): Promise<StoreShape> {
       notes: "",
     },
   };
+  cacheSet("readStore", store);
+  return store;
 }
 
 export async function listStories(params?: {
@@ -87,6 +116,16 @@ export async function listStories(params?: {
   edition?: string;
   location?: string;
 }): Promise<Story[]> {
+  const cacheKey = `listStories:${JSON.stringify({
+    topic: params?.topic || "",
+    view: params?.view || "all",
+    limit: params?.limit ?? 500,
+    edition: params?.edition || "",
+    location: params?.location || "",
+  })}`;
+  const cached = cacheGet<Story[]>(cacheKey);
+  if (cached) return cached;
+
   const where: any = {};
   if (params?.view === "blindspot") where.isBlindspot = true;
   if (params?.view === "local") where.isLocal = true;
@@ -109,7 +148,12 @@ export async function listStories(params?: {
 
   if (params?.topic) {
     const needle = params.topic.trim().toLowerCase();
-    stories = stories.filter((s) => s.topic.toLowerCase() === needle);
+    stories = stories.filter((story) => {
+      if (topicMatchesSlug(story.topic, needle)) return true;
+      if (story.tags.some((tag) => topicMatchesSlug(tag, needle))) return true;
+      const text = `${story.title} ${story.dek || ""} ${story.summary || ""} ${(story.tags || []).join(" ")}`;
+      return inferTopicSlugFromText(text, story.topic) === needle;
+    });
   }
 
   // Tag filtering in old store was slug-based via storyHasTopicSlug; preserve it where needed.
@@ -123,12 +167,23 @@ export async function listStories(params?: {
     });
   }
 
+  cacheSet(cacheKey, stories);
   return stories;
 }
 
 export async function listStoriesByTopicSlug(slug: string, params?: { limit?: number; edition?: string }): Promise<Story[]> {
   const base = await listStories({ view: "all", limit: 2000, edition: params?.edition });
-  const filtered = base.filter((story) => storyHasTopicSlug(story, slug));
+  const needle = (slug || "").trim().toLowerCase();
+  let filtered = base.filter((story) => storyHasTopicSlug(story, needle));
+
+  // Fallback: if canonical topic tags are sparse in the dataset, infer topic from title/dek/summary text
+  // so high-traffic hubs like US News/World/Science do not end up empty.
+  if (filtered.length === 0 && needle) {
+    filtered = base.filter((story) => {
+      const text = `${story.title} ${story.dek || ""} ${story.summary || ""} ${(story.tags || []).join(" ")}`;
+      return inferTopicSlugFromText(text, story.topic) === needle;
+    });
+  }
   return filtered.slice(0, params?.limit ?? 2000);
 }
 

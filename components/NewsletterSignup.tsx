@@ -30,7 +30,7 @@ export function NewsletterSignup({ list = "blindspot" }: { list?: string }) {
 
   return (
     <div className="newsletter">
-      <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+      <label className="story-meta u-grid u-grid-gap-02">
         Email
         <input
           className="input-control"

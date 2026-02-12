@@ -1,6 +1,8 @@
 import { Story } from "@/lib/types";
 import { readStore } from "@/lib/store";
 import { outletSlug, topicSlug } from "@/lib/lookup";
+import { db } from "@/lib/db";
+import { normalizeStory } from "@/lib/format";
 
 function normalize(value: string) {
   return (value || "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -60,6 +62,108 @@ function storyScore(story: Story, tokens: string[], q: string): number {
   return score;
 }
 
+function toStoryFromDbRow(row: any): Story {
+  const story: Story = {
+    id: row.id,
+    slug: row.slug,
+    canonicalUrl: row.canonicalUrl || undefined,
+    title: row.title,
+    dek: row.dek || undefined,
+    author: row.author || undefined,
+    summary: row.summary,
+    topic: row.topic,
+    location: row.location,
+    tags: (row.tags || []).map((t: any) => t.tag),
+    imageUrl: row.imageUrl,
+    publishedAt: new Date(row.publishedAt).toISOString(),
+    updatedAt: new Date(row.updatedAt).toISOString(),
+    sourceCount: row.sourceCount,
+    originalReportingPct: typeof row.originalReportingPct === "number" ? row.originalReportingPct : undefined,
+    bias: {
+      left: row.biasLeft,
+      center: row.biasCenter,
+      right: row.biasRight,
+    },
+    blindspot: Boolean(row.isBlindspot),
+    local: Boolean(row.isLocal),
+    trending: Boolean(row.isTrending),
+    sources: (row.sources || []).map((s: any) => ({
+      id: s.id,
+      outlet: s.outlet?.name || "Unknown outlet",
+      url: s.url,
+      excerpt: s.excerpt || "",
+      logoUrl: s.outlet?.logoUrl || undefined,
+      bias: s.outlet?.bias || "unknown",
+      biasRating: (s.outlet?.biasRating || "unknown").replace(/_/g, "-"),
+      factuality: (s.outlet?.factuality || "unknown").replace(/_/g, "-"),
+      ownership: s.outlet?.ownership || "Unlabeled",
+      publishedAt: s.publishedAt ? new Date(s.publishedAt).toISOString() : undefined,
+      repostedBy: typeof s.repostedBy === "number" ? s.repostedBy : undefined,
+      paywall: s.paywall || undefined,
+      locality: s.locality || undefined,
+    })),
+    coverage: row.coverageTotal
+      ? {
+          totalSources: row.coverageTotal ?? undefined,
+          leaningLeft: row.coverageLeft ?? undefined,
+          center: row.coverageCenter ?? undefined,
+          leaningRight: row.coverageRight ?? undefined,
+        }
+      : undefined,
+  };
+  return normalizeStory(story);
+}
+
+async function queryStoriesFromDb(params: {
+  q: string;
+  edition?: string;
+  time?: "all" | "24h" | "7d" | "30d";
+}) {
+  const query = params.q.trim();
+  if (!query) return [];
+
+  const where: any = {
+    OR: [
+      { title: { contains: query, mode: "insensitive" } },
+      { summary: { contains: query, mode: "insensitive" } },
+      { topic: { contains: query, mode: "insensitive" } },
+      { tags: { some: { tag: { contains: query, mode: "insensitive" } } } },
+      { sources: { some: { outlet: { name: { contains: query, mode: "insensitive" } } } } },
+    ],
+  };
+
+  if (params.edition && params.edition.toLowerCase() !== "all") {
+    where.location = params.edition;
+  }
+
+  if (params.time && params.time !== "all") {
+    const now = Date.now();
+    const windowMs =
+      params.time === "24h"
+        ? 24 * 60 * 60 * 1000
+        : params.time === "7d"
+          ? 7 * 24 * 60 * 60 * 1000
+          : params.time === "30d"
+            ? 30 * 24 * 60 * 60 * 1000
+            : 0;
+    if (windowMs > 0) {
+      where.publishedAt = { gte: new Date(now - windowMs) };
+    }
+  }
+
+  const rows = await db.story.findMany({
+    where,
+    include: {
+      tags: true,
+      sources: { include: { outlet: true } },
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 600,
+  });
+
+  return rows.map(toStoryFromDbRow);
+}
+
 export async function searchStories(params: {
   q: string;
   edition?: string;
@@ -70,34 +174,6 @@ export async function searchStories(params: {
   const q = (params.q || "").trim();
   const limit = Math.max(1, Math.min(200, params.limit ?? 60));
   const tokens = tokenize(q);
-  const store = await readStore();
-
-  let stories = store.stories;
-  if (params.edition && params.edition.toLowerCase() !== "all") {
-    const edition = params.edition.trim().toLowerCase();
-    stories = stories.filter((story) => story.location.trim().toLowerCase() === edition);
-  }
-
-  if (params.time && params.time !== "all") {
-    const now = Date.now();
-    const windowMs =
-      params.time === "24h" ? 24 * 60 * 60 * 1000 :
-      params.time === "7d" ? 7 * 24 * 60 * 60 * 1000 :
-      params.time === "30d" ? 30 * 24 * 60 * 60 * 1000 :
-      0;
-    if (windowMs > 0) {
-      const cutoff = now - windowMs;
-      stories = stories.filter((s) => {
-        const ts = Date.parse(s.publishedAt || s.updatedAt || "");
-        return Number.isFinite(ts) && ts >= cutoff;
-      });
-    }
-  }
-
-  if (params.bias && params.bias !== "all") {
-    const b = params.bias;
-    stories = stories.filter((s) => dominantBiasBucket(s) === b);
-  }
 
   if (!q) {
     return {
@@ -106,6 +182,41 @@ export async function searchStories(params: {
       stories: [] as Story[],
       facets: { topics: [], outlets: [] } as const,
     };
+  }
+
+  let stories: Story[] = [];
+  try {
+    stories = await queryStoriesFromDb({ q, edition: params.edition, time: params.time });
+  } catch {
+    const store = await readStore();
+    stories = store.stories;
+    if (params.edition && params.edition.toLowerCase() !== "all") {
+      const edition = params.edition.trim().toLowerCase();
+      stories = stories.filter((story) => story.location.trim().toLowerCase() === edition);
+    }
+    if (params.time && params.time !== "all") {
+      const now = Date.now();
+      const windowMs =
+        params.time === "24h"
+          ? 24 * 60 * 60 * 1000
+          : params.time === "7d"
+            ? 7 * 24 * 60 * 60 * 1000
+            : params.time === "30d"
+              ? 30 * 24 * 60 * 60 * 1000
+              : 0;
+      if (windowMs > 0) {
+        const cutoff = now - windowMs;
+        stories = stories.filter((s) => {
+          const ts = Date.parse(s.publishedAt || s.updatedAt || "");
+          return Number.isFinite(ts) && ts >= cutoff;
+        });
+      }
+    }
+  }
+
+  if (params.bias && params.bias !== "all") {
+    const b = params.bias;
+    stories = stories.filter((s) => dominantBiasBucket(s) === b);
   }
 
   const scored = stories

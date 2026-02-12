@@ -64,37 +64,19 @@ export default async function StoryPage({ params, searchParams }: Props) {
   if (!story) return notFound();
 
   const displayTotalSources = story.coverage?.totalSources ?? story.sourceCount;
-  let coverageLeft = story.coverage?.leaningLeft;
-  let coverageCenter = story.coverage?.center;
-  let coverageRight = story.coverage?.leaningRight;
-  if (
-    (coverageLeft == null || coverageCenter == null || coverageRight == null) &&
-    Number.isFinite(displayTotalSources) &&
-    displayTotalSources > 0
-  ) {
-    const rawLeft = Math.round((story.bias.left / 100) * displayTotalSources);
-    const rawCenter = Math.round((story.bias.center / 100) * displayTotalSources);
-    const rawRight = Math.round((story.bias.right / 100) * displayTotalSources);
-    const sum = rawLeft + rawCenter + rawRight;
-    const diff = Math.round(displayTotalSources - sum);
-    const buckets: Array<{ key: "left" | "center" | "right"; pct: number; value: number }> = [
-      { key: "left" as const, pct: story.bias.left, value: rawLeft },
-      { key: "center" as const, pct: story.bias.center, value: rawCenter },
-      { key: "right" as const, pct: story.bias.right, value: rawRight },
-    ];
-    buckets.sort((a, b) => b.pct - a.pct);
-
-    const adjustKey: "left" | "center" | "right" = buckets[0]?.key ?? "center";
-    const adjusted: Record<"left" | "center" | "right", number> = { left: rawLeft, center: rawCenter, right: rawRight };
-    adjusted[adjustKey] = Math.max(0, adjusted[adjustKey] + diff);
-    coverageLeft = adjusted.left;
-    coverageCenter = adjusted.center;
-    coverageRight = adjusted.right;
-  } else {
-    coverageLeft = coverageLeft ?? 0;
-    coverageCenter = coverageCenter ?? 0;
-    coverageRight = coverageRight ?? 0;
-  }
+  const hasCoverageCounts =
+    typeof story.coverage?.leaningLeft === "number" &&
+    typeof story.coverage?.center === "number" &&
+    typeof story.coverage?.leaningRight === "number";
+  const coverageLeft = hasCoverageCounts
+    ? Math.max(0, Math.round(story.coverage?.leaningLeft || 0))
+    : Math.max(0, Math.round((story.bias.left / 100) * Math.max(1, displayTotalSources)));
+  const coverageCenter = hasCoverageCounts
+    ? Math.max(0, Math.round(story.coverage?.center || 0))
+    : Math.max(0, Math.round((story.bias.center / 100) * Math.max(1, displayTotalSources)));
+  const coverageRight = hasCoverageCounts
+    ? Math.max(0, Math.round(story.coverage?.leaningRight || 0))
+    : Math.max(0, Math.round((story.bias.right / 100) * Math.max(1, displayTotalSources)));
   const dailyBriefing = (await listStories({ view: "all", limit: 8 })).filter((item) => item.slug !== story.slug).slice(0, 6);
   const reader = source ? await readArchiveForUrl(source) : null;
   const site = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3000";
@@ -104,29 +86,21 @@ export default async function StoryPage({ params, searchParams }: Props) {
   return (
     <main className="container">
       <section className="story-shell">
-        <article className="panel" style={{ display: "grid", gap: "0.85rem" }}>
+        <article className="panel u-grid u-grid-gap-085">
           <ReadingTracker storySlug={story.slug} bias={story.bias} />
           <div className="story-meta-row">
             <div className="story-meta">
               {story.topic} • {story.location} • Published {prettyDate(story.publishedAt)} • Updated {prettyDate(story.updatedAt)}
             </div>
-            <div style={{ display: "flex", gap: "0.55rem", alignItems: "center" }}>
+            <div className="u-flex u-flex-gap-055 u-items-center">
               <SaveStoryToggle storySlug={story.slug} />
               <ShareBar title={story.title} url={shareUrl} />
             </div>
           </div>
-          <h1
-            style={{
-              margin: 0,
-              fontFamily: "var(--font-serif)",
-              fontSize: "clamp(1.7rem, 4vw, 2.625rem)",
-              fontWeight: 800,
-              lineHeight: 1.13,
-            }}
-          >
+          <h1 className="story-headline">
             {story.title}
           </h1>
-          {story.dek ? <p className="story-summary" style={{ fontSize: "1.02rem", fontWeight: 600 }}>{story.dek}</p> : null}
+          {story.dek ? <p className="story-summary story-dek">{story.dek}</p> : null}
           {story.author ? <div className="story-meta">By {story.author}</div> : null}
           <StoryImage
             src={story.imageUrl}
@@ -147,12 +121,18 @@ export default async function StoryPage({ params, searchParams }: Props) {
             {story.trending ? <span className="story-stat-pill">Trending</span> : null}
             {story.local ? <span className="story-stat-pill">Local perspective</span> : null}
             {story.canonicalUrl ? (
-              <a className="btn btn-external" href={story.canonicalUrl} target="_blank" rel="noreferrer">
-                View on Ground News
+              <a
+                className="btn btn-external"
+                href={story.canonicalUrl}
+                target="_blank"
+                rel="noreferrer"
+                title="Opens the source Ground News coverage page in a new tab"
+              >
+                Open Ground News source
               </a>
             ) : null}
           </div>
-          <p className="story-summary" style={{ fontSize: "0.98rem" }}>
+          <p className="story-summary u-text-098">
             {story.summary}
           </p>
           <SummaryFeedbackLink storySlug={story.slug} url={shareUrl} />
@@ -164,17 +144,17 @@ export default async function StoryPage({ params, searchParams }: Props) {
           <TimelinePanel story={story} />
 
           {story.podcastReferences?.length ? (
-            <section className="panel" style={{ background: "var(--bg-panel)", display: "grid", gap: "0.5rem" }}>
-              <div className="section-title" style={{ paddingTop: 0 }}>
-                <h2 style={{ margin: 0 }}>Podcasts & Opinions</h2>
+            <section className="panel u-grid u-grid-gap-05">
+              <div className="section-title u-pt-0">
+                <h2 className="u-m0">Podcasts & Opinions</h2>
               </div>
               <PodcastCards entries={story.podcastReferences} />
             </section>
           ) : null}
 
-          <section className="panel" style={{ background: "var(--bg-panel)" }}>
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Related Topics</h2>
+          <section className="panel">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Related Topics</h2>
             </div>
             <div className="chip-row">
               {story.tags.map((tag) => (
@@ -192,8 +172,8 @@ export default async function StoryPage({ params, searchParams }: Props) {
 
         <aside className="feed-rail">
           <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>At a Glance</h2>
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">At a Glance</h2>
             </div>
             <div className="kpi-strip">
               <div className="kpi">
@@ -202,7 +182,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
               </div>
               <div className="kpi">
                 <span>Last Updated</span>
-                <strong style={{ fontSize: "0.96rem" }}>{prettyDate(story.updatedAt)}</strong>
+                <strong className="u-text-096">{prettyDate(story.updatedAt)}</strong>
               </div>
               <div className="kpi">
                 <span>Left</span>
@@ -217,14 +197,11 @@ export default async function StoryPage({ params, searchParams }: Props) {
                 <strong>{coverageRight}</strong>
               </div>
             </div>
-            <div style={{ marginTop: "0.65rem" }}>
-              <BiasBar story={story} showLabels={true} />
-            </div>
           </section>
 
           <BiasDistributionPanel story={story} />
           <BrokeTheNewsPanel sources={story.sources} />
-          <DailyBriefingList stories={dailyBriefing} title="Daily Briefing" />
+          <DailyBriefingList stories={dailyBriefing} title="More Stories" />
           <SimilarTopicsPanel story={story} />
         </aside>
       </section>

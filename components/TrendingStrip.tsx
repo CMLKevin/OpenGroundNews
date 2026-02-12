@@ -13,7 +13,20 @@ export function TrendingStrip({ tags }: Props) {
   const scrollerRef = useRef<HTMLElement | null>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
 
-  const normalized = useMemo(() => tags.map((t) => t.trim()).filter(Boolean).slice(0, 16), [tags]);
+  const normalized = useMemo(() => {
+    const seen = new Set<string>();
+    const unique: string[] = [];
+    for (const rawTag of tags) {
+      const tag = rawTag.trim();
+      if (!tag) continue;
+      const slug = slugify(tag);
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+      unique.push(tag);
+      if (unique.length >= 16) break;
+    }
+    return unique;
+  }, [tags]);
 
   useEffect(() => {
     const el = scrollerRef.current;
@@ -56,7 +69,7 @@ export function TrendingStrip({ tags }: Props) {
       {normalized.map((tag) => {
         const slug = slugify(tag);
         return (
-          <span className="trending-item" key={tag}>
+          <span className="trending-item" key={slug}>
             <Link className="trending-link" href={`/interest/${slug}`}>
               {tag}
             </Link>

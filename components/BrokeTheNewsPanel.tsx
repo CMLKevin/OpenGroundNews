@@ -25,11 +25,11 @@ export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
   if (!earliest) {
     return (
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Broke the news</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Broke the news</h2>
           <span className="story-meta">Unavailable</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           We don’t have publish timestamps for the scraped coverage sample yet.
         </p>
       </section>
@@ -38,11 +38,11 @@ export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
 
   return (
     <section className="panel">
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Broke the news</h2>
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Broke the news</h2>
         <span className="story-meta">{prettyDate(String(earliest.publishedAt))}</span>
       </div>
-      <ul className="topic-list" style={{ gap: "0.52rem" }}>
+      <ul className="topic-list u-gap-052">
         {top.map((src) => (
           <li key={src.id} className="topic-item">
             <span className="topic-avatar" aria-hidden="true">
@@ -50,13 +50,13 @@ export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
                 <img
                   src={src.logoUrl}
                   alt={src.outlet}
-                  style={{ width: 24, height: 24, borderRadius: 999, objectFit: "cover" }}
+                  className="u-avatar-24"
                 />
               ) : (
                 pickInitials(src.outlet)
               )}
             </span>
-            <Link href={`/source/${encodeURIComponent(outletSlug(src.outlet))}`} style={{ textDecoration: "none" }}>
+            <Link href={`/source/${encodeURIComponent(outletSlug(src.outlet))}`} className="u-no-underline">
               {src.outlet}
             </Link>
             <span className="story-meta">{src.publishedAt ? prettyDate(String(src.publishedAt)) : "—"}</span>
@@ -66,4 +66,3 @@ export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
     </section>
   );
 }
-

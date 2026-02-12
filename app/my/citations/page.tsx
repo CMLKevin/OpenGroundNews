@@ -35,29 +35,29 @@ export default async function CitationsPage() {
   const stories = Array.from(byStory.values());
 
   return (
-    <div style={{ display: "grid", gap: "0.85rem" }}>
+    <div className="u-grid u-grid-gap-085">
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Citations</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Citations</h2>
           <span className="story-meta">Account</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Citations list the source articles behind each story you read recently.
         </p>
       </section>
 
       {stories.length ? (
         stories.map((s) => (
-          <section key={s.slug} className="panel" style={{ display: "grid", gap: "0.6rem" }}>
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h3 style={{ margin: 0 }}>
-                <Link href={`/story/${encodeURIComponent(s.slug)}`} style={{ textDecoration: "none" }}>
+          <section key={s.slug} className="panel u-grid u-grid-gap-06">
+            <div className="section-title u-pt-0">
+              <h3 className="u-m0">
+                <Link href={`/story/${encodeURIComponent(s.slug)}`} className="u-no-underline">
                   {s.title}
                 </Link>
               </h3>
               <span className="story-meta">Read {prettyDate(s.readAt.toISOString())} • {s.sources.length} sources</span>
             </div>
-            <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
+            <ul className="rail-list u-list-reset">
               {s.sources.slice(0, 10).map((src) => (
                 <li key={src.id}>
                   <a className="rail-link" href={src.url} target="_blank" rel="noreferrer">
@@ -73,7 +73,7 @@ export default async function CitationsPage() {
         ))
       ) : (
         <section className="panel">
-          <p className="story-meta" style={{ margin: 0 }}>
+          <p className="story-meta u-m0">
             No citations yet. Read a story to populate this page.
           </p>
         </section>

@@ -6,9 +6,9 @@ export function BlindspotWidget({ stories }: { stories: Story[] }) {
   const visible = stories.slice(0, 4);
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
-      <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Blindspot</h2>
+    <section className="panel u-grid u-grid-gap-07">
+      <div className="section-title u-pt-0">
+        <h2 className="u-m0">Blindspot</h2>
         <Link href="/blindspot" className="story-meta">
           open
         </Link>
@@ -20,7 +20,7 @@ export function BlindspotWidget({ stories }: { stories: Story[] }) {
           ))}
         </div>
       ) : (
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           No blindspot candidates in the current sample.
         </p>
       )}

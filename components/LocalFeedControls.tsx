@@ -116,8 +116,8 @@ export function LocalFeedControls() {
   }, [location, canGeocode]);
 
   return (
-    <div className="panel" style={{ marginBottom: "1rem", display: "grid", gap: "0.6rem" }}>
-      <h2 style={{ margin: 0 }}>Local Feed Settings</h2>
+    <div className="local-feed-controls u-mb-1 u-grid u-grid-gap-06">
+      <h2 className="u-m0">Local Feed Settings</h2>
       <label className="story-meta">
         Region / City
         <input
@@ -130,9 +130,9 @@ export function LocalFeedControls() {
       </label>
       {loading ? <div className="story-meta">Searching locations...</div> : null}
       {results.length > 0 ? (
-        <div className="panel" style={{ padding: "0.6rem", display: "grid", gap: "0.45rem" }}>
+        <div className="local-feed-suggestions u-p-06 u-grid u-grid-gap-045">
           <div className="story-meta">Suggestions</div>
-          <div style={{ display: "grid", gap: "0.35rem" }}>
+          <div className="u-grid u-grid-gap-035">
             {results.slice(0, 6).map((result) => {
               const label = labelForResult(result);
               const rLat = Number(result.latitude);
@@ -172,7 +172,7 @@ export function LocalFeedControls() {
           </div>
         </div>
       ) : null}
-      <div style={{ display: "flex", gap: "0.5rem" }}>
+      <div className="u-flex u-flex-gap-05">
         <button
           className="btn"
           onClick={() => {

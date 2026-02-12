@@ -2,13 +2,13 @@ import { BiasPlayground } from "@/components/BiasPlayground";
 import { db } from "@/lib/db";
 
 const RATING_ROWS = [
-  { key: "far-left", label: "Far Left", color: "#802727" },
-  { key: "left", label: "Left", color: "#995252" },
-  { key: "lean-left", label: "Lean Left", color: "#C09393" },
-  { key: "center", label: "Center", color: "#DADBD6" },
-  { key: "lean-right", label: "Lean Right", color: "#90A4C3" },
-  { key: "right", label: "Right", color: "#4D6D9E" },
-  { key: "far-right", label: "Far Right", color: "#204986" },
+  { key: "far-left", label: "Far Left" },
+  { key: "left", label: "Left" },
+  { key: "lean-left", label: "Lean Left" },
+  { key: "center", label: "Center" },
+  { key: "lean-right", label: "Lean Right" },
+  { key: "right", label: "Right" },
+  { key: "far-right", label: "Far Right" },
 ] as const;
 
 async function loadExamples() {
@@ -43,13 +43,13 @@ async function loadExamples() {
 export default async function RatingSystemPage() {
   const examples = await loadExamples();
   return (
-    <main className="container" style={{ padding: "1.1rem 0 2rem" }}>
-      <section className="panel" style={{ display: "grid", gap: "0.75rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Rating System</h1>
+    <main className="container u-page-pad-compact">
+      <section className="panel u-grid u-grid-gap-075">
+        <div className="section-title u-pt-0">
+          <h1 className="u-m0 u-font-serif">Rating System</h1>
           <span className="story-meta">Methodology</span>
         </div>
-        <p style={{ margin: 0, maxWidth: "75ch" }}>
+        <p className="u-m0 u-maxw-75ch">
           OpenGroundNews mirrors the Ground News-style media bias spectrum and shows you how story coverage changes
           across the political landscape. Ratings are designed to be auditable: we store per-source metadata and compute
           distributions from tracked source cards.
@@ -57,50 +57,40 @@ export default async function RatingSystemPage() {
         <div className="kpi-strip">
           <div className="kpi">
             <span>Bias spectrum</span>
-            <strong style={{ fontSize: "1rem" }}>7-category rating</strong>
+            <strong className="u-text-1">7-category rating</strong>
           </div>
           <div className="kpi">
             <span>Story coverage</span>
-            <strong style={{ fontSize: "1rem" }}>Left / Center / Right</strong>
+            <strong className="u-text-1">Left / Center / Right</strong>
           </div>
           <div className="kpi">
             <span>Factuality</span>
-            <strong style={{ fontSize: "1rem" }}>Very high .. very low</strong>
+            <strong className="u-text-1">Very high .. very low</strong>
           </div>
           <div className="kpi">
             <span>Ownership</span>
-            <strong style={{ fontSize: "1rem" }}>Publisher entity</strong>
+            <strong className="u-text-1">Publisher entity</strong>
           </div>
         </div>
-        <p className="note" style={{ margin: 0 }}>
+        <p className="note u-m0">
           Sources without reliable metadata are labeled <code>unknown</code>. We avoid guessing bias from domain names.
         </p>
       </section>
 
-      <section className="panel" style={{ marginTop: "1rem", display: "grid", gap: "0.75rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Bias Categories</h2>
+      <section className="panel u-mt-1 u-grid u-grid-gap-075">
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Bias Categories</h2>
         </div>
-        <div style={{ display: "grid", gap: "0.65rem" }}>
+        <div className="u-grid u-grid-gap-065">
           {RATING_ROWS.map((r) => {
             const outletExamples = examples.get(r.key) || [];
             return (
-              <div key={r.key} style={{ display: "grid", gap: "0.25rem" }}>
-                <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 14,
-                      height: 14,
-                      borderRadius: 3,
-                      background: r.color,
-                      border: "1px solid rgba(166,166,161,0.65)",
-                      flex: "0 0 auto",
-                    }}
-                  />
+              <div key={r.key} className="u-grid u-grid-gap-025">
+                <div className="u-flex u-flex-gap-06 u-items-center">
+                  <span aria-hidden="true" className={`rating-swatch rating-swatch-${r.key}`} />
                   <strong>{r.label}</strong>
                 </div>
-                <div className="story-meta" style={{ marginLeft: "1.6rem" }}>
+                <div className="story-meta u-ml-16">
                   {outletExamples.length ? (
                     <>
                       Examples:{" "}
@@ -121,15 +111,15 @@ export default async function RatingSystemPage() {
         </div>
       </section>
 
-      <section className="panel" style={{ marginTop: "1rem", display: "grid", gap: "0.75rem" }}>
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>How Ratings Are Assigned</h2>
+      <section className="panel u-mt-1 u-grid u-grid-gap-075">
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">How Ratings Are Assigned</h2>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           Bias ratings, factuality ratings, and ownership labels are sourced from the Ground News metadata layer when
           available. When a signal is missing or ambiguous, we keep it as <code>unknown</code> rather than guessing.
         </p>
-        <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.35rem" }}>
+        <ul className="u-m0 u-pl-12 u-grid u-grid-gap-035">
           <li>
             <strong>Bias spectrum</strong>: Far Left .. Far Right (7 categories)
           </li>
@@ -142,7 +132,7 @@ export default async function RatingSystemPage() {
         </ul>
       </section>
 
-      <div style={{ marginTop: "1rem" }}>
+      <div className="u-mt-1">
         <BiasPlayground />
       </div>
     </main>

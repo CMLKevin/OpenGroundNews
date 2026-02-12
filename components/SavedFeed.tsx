@@ -62,13 +62,13 @@ export function SavedFeed({ initialStories }: Props) {
   }, [followedTopics, followedOutlets, initialStories]);
 
   return (
-    <div style={{ display: "grid", gap: "0.9rem" }}>
+    <div className="u-grid u-grid-gap-09">
       <section className="panel">
-        <div className="section-title" style={{ paddingTop: 0 }}>
-          <h2 style={{ margin: 0 }}>Saved Preferences</h2>
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">Saved Preferences</h2>
           <span className="story-meta">{filtered.length} matching stories</span>
         </div>
-        <p className="story-meta" style={{ margin: 0 }}>
+        <p className="story-meta u-m0">
           {cloud ? "Synced to your account." : "Stored on this device."}
         </p>
         <div className="chip-row">
@@ -84,7 +84,7 @@ export function SavedFeed({ initialStories }: Props) {
           ))}
         </div>
         {followedTopics.length === 0 && followedOutlets.length === 0 ? (
-          <p className="note" style={{ marginTop: "0.7rem" }}>
+          <p className="note u-mt-07">
             Follow topics and sources from story pages to populate your personalized feed.
           </p>
         ) : null}
