@@ -1,8 +1,8 @@
-import Image from "next/image";
 import Link from "next/link";
 import { Story } from "@/lib/types";
 import { biasLabel, prettyDate } from "@/lib/format";
 import { BiasBar } from "@/components/BiasBar";
+import { StoryImage } from "@/components/StoryImage";
 
 export function StoryCard({ story }: { story: Story }) {
   const chips = [
@@ -13,7 +13,7 @@ export function StoryCard({ story }: { story: Story }) {
 
   return (
     <article className="story-card">
-      <Image
+      <StoryImage
         className="story-cover"
         src={story.imageUrl}
         alt={story.title}

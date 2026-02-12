@@ -1,12 +1,12 @@
-import Image from "next/image";
 import Link from "next/link";
 import { StoryCard } from "@/components/StoryCard";
 import { BiasBar } from "@/components/BiasBar";
+import { StoryImage } from "@/components/StoryImage";
 import { prettyDate } from "@/lib/format";
 import { getDashboardStats, listStories } from "@/lib/store";
 
 type HomeProps = {
-  searchParams: Promise<{ q?: string; edition?: string }>;
+  searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -23,13 +23,16 @@ function scoreTags(stories: Awaited<ReturnType<typeof listStories>>) {
 }
 
 export default async function HomePage({ searchParams }: HomeProps) {
-  const { q, edition } = await searchParams;
+  const { q, edition, view, bias, tag } = await searchParams;
   const [stories, stats] = await Promise.all([
     listStories({ view: "all", limit: 48, edition: edition?.trim() || undefined }),
     getDashboardStats(),
   ]);
 
   const query = (q ?? "").trim().toLowerCase();
+  const normalizedView = (view ?? "all").trim().toLowerCase();
+  const normalizedBias = (bias ?? "all").trim().toLowerCase();
+  const normalizedTag = (tag ?? "").trim().toLowerCase();
   const filtered =
     query.length === 0
       ? stories
@@ -39,12 +42,27 @@ export default async function HomePage({ searchParams }: HomeProps) {
             .join(" ")}`.toLowerCase();
           return haystack.includes(query);
         });
+  const viewFiltered = filtered.filter((story) => {
+    if (normalizedView === "blindspot") return story.blindspot;
+    if (normalizedView === "local") return story.local;
+    if (normalizedView === "trending") return story.trending;
+    return true;
+  });
+  const biasFiltered = viewFiltered.filter((story) => {
+    if (normalizedBias === "left") return story.bias.left > story.bias.center && story.bias.left > story.bias.right;
+    if (normalizedBias === "center") return story.bias.center >= story.bias.left && story.bias.center >= story.bias.right;
+    if (normalizedBias === "right") return story.bias.right > story.bias.center && story.bias.right > story.bias.left;
+    return true;
+  });
+  const tagged = normalizedTag
+    ? biasFiltered.filter((story) => story.tags.some((storyTag) => storyTag.toLowerCase().includes(normalizedTag)))
+    : biasFiltered;
 
-  const leadStory = filtered[0] ?? null;
-  const gridStories = filtered.slice(1, 25);
-  const topStories = filtered.slice(0, 6);
-  const blindspotStories = filtered.filter((s) => s.blindspot).slice(0, 6);
-  const trendingTags = scoreTags(filtered);
+  const leadStory = tagged[0] ?? null;
+  const gridStories = tagged.slice(1, 25);
+  const topStories = tagged.slice(0, 6);
+  const blindspotStories = tagged.filter((s) => s.blindspot).slice(0, 6);
+  const trendingTags = scoreTags(tagged);
 
   return (
     <main className="container">
@@ -108,15 +126,20 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
       {query ? (
         <p className="note" style={{ marginBottom: "1rem" }}>
-          Showing {filtered.length} result(s) for <strong>{q}</strong>
+          Showing {tagged.length} result(s) for <strong>{q}</strong>
         </p>
       ) : null}
 
       <section className="feed-shell">
         <div className="feed-main">
+          <div className="section-title" style={{ paddingTop: 0.1 }}>
+            <h2 style={{ margin: 0 }}>Latest Stories</h2>
+            <span className="story-meta">{tagged.length} stories</span>
+          </div>
+
           {leadStory ? (
             <article className="lead-story">
-              <Image
+              <StoryImage
                 src={leadStory.imageUrl}
                 alt={leadStory.title}
                 width={1280}
@@ -152,14 +175,56 @@ export default async function HomePage({ searchParams }: HomeProps) {
         <aside className="feed-rail">
           <section className="panel" style={{ background: "#fff" }}>
             <div className="section-title" style={{ paddingTop: 0 }}>
+              <h2>Feed Filters</h2>
+              <Link href={edition ? `/?edition=${encodeURIComponent(edition)}` : "/"} className="story-meta">
+                Reset
+              </Link>
+            </div>
+            <form action="/" method="get" className="filters-grid">
+              {edition ? <input type="hidden" name="edition" value={edition} /> : null}
+              {q ? <input type="hidden" name="q" value={q} /> : null}
+              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+                View
+                <select className="select-control" name="view" defaultValue={normalizedView}>
+                  <option value="all">All</option>
+                  <option value="trending">Trending</option>
+                  <option value="blindspot">Blindspot</option>
+                  <option value="local">Local</option>
+                </select>
+              </label>
+              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+                Bias
+                <select className="select-control" name="bias" defaultValue={normalizedBias}>
+                  <option value="all">All</option>
+                  <option value="left">Left-leaning coverage</option>
+                  <option value="center">Center-leaning coverage</option>
+                  <option value="right">Right-leaning coverage</option>
+                </select>
+              </label>
+              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+                Topic
+                <input className="select-control" name="tag" defaultValue={tag ?? ""} placeholder="e.g. Israel-Gaza" />
+              </label>
+              <button className="btn reset-btn" type="submit">
+                Apply
+              </button>
+            </form>
+          </section>
+
+          <section className="panel" style={{ background: "#fff" }}>
+            <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Daily Briefing</h2>
               <span className="story-meta">Top 6</span>
             </div>
-            <ol className="rail-list">
+            <ol className="rail-list rail-list-rich">
               {topStories.map((story) => (
                 <li key={story.id}>
-                  <Link href={`/story/${story.slug}`} className="rail-link">
-                    {story.title}
+                  <Link href={`/story/${story.slug}`} className="rail-rich-link">
+                    <StoryImage src={story.imageUrl} alt={story.title} width={86} height={54} className="rail-thumb" unoptimized />
+                    <span>
+                      <span className="rail-link">{story.title}</span>
+                      <span className="story-meta">{story.sourceCount} sources • {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R</span>
+                    </span>
                   </Link>
                 </li>
               ))}

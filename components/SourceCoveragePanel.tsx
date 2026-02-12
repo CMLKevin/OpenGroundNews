@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { compactHost } from "@/lib/format";
+import { compactHost, prettyDate } from "@/lib/format";
 import { SourceArticle } from "@/lib/types";
 
 type Props = {
   storySlug: string;
   sources: SourceArticle[];
+  totalSourceCount?: number;
 };
 
 type SortMode = "latest" | "alphabetical" | "bias" | "factuality";
@@ -28,7 +29,12 @@ const biasWeight: Record<string, number> = {
   unknown: 0,
 };
 
-export function SourceCoveragePanel({ storySlug, sources }: Props) {
+function normalizeOwnership(value?: string) {
+  const clean = (value || "").trim();
+  return clean || "Unlabeled";
+}
+
+export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Props) {
   const [sortMode, setSortMode] = useState<SortMode>("latest");
   const [biasFilter, setBiasFilter] = useState<string>("all");
   const [factFilter, setFactFilter] = useState<string>("all");
@@ -36,7 +42,7 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
   const [paywallFilter, setPaywallFilter] = useState<string>("all");
 
   const ownershipOptions = useMemo(
-    () => Array.from(new Set(sources.map((s) => s.ownership || "Unlabeled"))).sort((a, b) => a.localeCompare(b)),
+    () => Array.from(new Set(sources.map((s) => normalizeOwnership(s.ownership)))).sort((a, b) => a.localeCompare(b)),
     [sources],
   );
 
@@ -44,7 +50,7 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
     const base = sources.filter((s) => {
       if (biasFilter !== "all" && s.bias !== biasFilter) return false;
       if (factFilter !== "all" && s.factuality !== factFilter) return false;
-      if (ownershipFilter !== "all" && s.ownership !== ownershipFilter) return false;
+      if (ownershipFilter !== "all" && normalizeOwnership(s.ownership) !== ownershipFilter) return false;
       if (paywallFilter !== "all" && (s.paywall ?? "unknown") !== paywallFilter) return false;
       return true;
     });
@@ -62,11 +68,35 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
     });
   }, [sources, sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter]);
 
+  const biasCounts = useMemo(() => {
+    const left = sources.filter((s) => s.bias === "left").length;
+    const center = sources.filter((s) => s.bias === "center").length;
+    const right = sources.filter((s) => s.bias === "right").length;
+    return { all: sources.length, left, center, right };
+  }, [sources]);
+
   return (
     <section className="panel" style={{ display: "grid", gap: "0.8rem", background: "#fff" }}>
       <div className="section-title" style={{ paddingTop: 0 }}>
         <h2 style={{ margin: 0 }}>Full Coverage Sources</h2>
-        <span className="story-meta">{filtered.length} shown / {sources.length} total</span>
+        <span className="story-meta">
+          {filtered.length} shown / {Math.max(totalSourceCount ?? sources.length, sources.length)} total
+        </span>
+      </div>
+
+      <div className="chip-row" style={{ gap: "0.35rem" }}>
+        <button className={`btn ${biasFilter === "all" ? "perspective-btn is-active" : ""}`} onClick={() => setBiasFilter("all")}>
+          All {biasCounts.all}
+        </button>
+        <button className={`btn ${biasFilter === "left" ? "perspective-btn is-active" : ""}`} onClick={() => setBiasFilter("left")}>
+          Left {biasCounts.left}
+        </button>
+        <button className={`btn ${biasFilter === "center" ? "perspective-btn is-active" : ""}`} onClick={() => setBiasFilter("center")}>
+          Center {biasCounts.center}
+        </button>
+        <button className={`btn ${biasFilter === "right" ? "perspective-btn is-active" : ""}`} onClick={() => setBiasFilter("right")}>
+          Right {biasCounts.right}
+        </button>
       </div>
 
       <div className="filters-grid">
@@ -141,21 +171,37 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
         </button>
       </div>
 
+      {(totalSourceCount ?? sources.length) > sources.length ? (
+        <p className="note" style={{ margin: 0 }}>
+          Showing a scraped sample of {sources.length} source cards out of {(totalSourceCount ?? sources.length)} total
+          coverage sources.
+        </p>
+      ) : null}
+
       <div className="source-list">
         {filtered.map((src) => {
           const href = `/story/${storySlug}?source=${encodeURIComponent(src.url)}`;
           return (
             <article key={src.id} className="source-item">
               <div className="source-head">
-                <strong>{src.outlet}</strong>
-                <div className="chip-row">
+                <div className="source-outlet">
+                  {src.logoUrl ? <img src={src.logoUrl} alt={src.outlet} className="source-logo" /> : <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>}
+                  <div style={{ display: "grid", gap: "0.08rem" }}>
+                    <strong>{src.outlet}</strong>
+                    <span className="story-meta">
+                      {src.publishedAt ? `${prettyDate(src.publishedAt)} • ` : ""}
+                      {src.locality ?? "unknown locality"}
+                    </span>
+                  </div>
+                </div>
+                <div className="chip-row source-chip-row">
                   <span className="chip">{src.bias}</span>
                   <span className="chip">{src.factuality}</span>
                 </div>
               </div>
-              <p className="story-summary">{src.excerpt}</p>
+              <p className="story-summary source-excerpt">{src.excerpt}</p>
               <div className="story-meta">
-                Ownership: {src.ownership || "Unlabeled"} • Paywall: {src.paywall ?? "unknown"}
+                Ownership: {normalizeOwnership(src.ownership)} • Paywall: {src.paywall ?? "unknown"}
               </div>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 <Link className="btn" href={href}>

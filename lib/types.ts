@@ -7,6 +7,7 @@ export type SourceArticle = {
   outlet: string;
   url: string;
   excerpt: string;
+  logoUrl?: string;
   bias: BiasBucket;
   factuality: FactualityBucket;
   ownership: string;
@@ -15,11 +16,20 @@ export type SourceArticle = {
   locality?: "local" | "national" | "international";
 };
 
+export type CoverageTotals = {
+  totalSources?: number;
+  leaningLeft?: number;
+  center?: number;
+  leaningRight?: number;
+};
+
 export type Story = {
   id: string;
   slug: string;
   canonicalUrl?: string;
   title: string;
+  dek?: string;
+  author?: string;
   summary: string;
   topic: string;
   location: string;
@@ -37,6 +47,10 @@ export type Story = {
   local: boolean;
   trending: boolean;
   sources: SourceArticle[];
+  coverage?: CoverageTotals;
+  readerLinks?: string[];
+  timelineHeaders?: string[];
+  podcastReferences?: string[];
 };
 
 export type ArchiveEntry = {

@@ -5,23 +5,17 @@ import { Story } from "@/lib/types";
 
 type Perspective = "left" | "center" | "right";
 
-function buildPerspectiveText(story: Story, perspective: Perspective) {
-  const matching = story.sources
+function buildPerspectiveEntries(story: Story, perspective: Perspective) {
+  return story.sources
     .filter((source) => source.bias === perspective && source.excerpt.trim().length > 0)
     .slice(0, 3);
-
-  if (matching.length === 0) {
-    const label = perspective === "left" ? "Left" : perspective === "center" ? "Center" : "Right";
-    return `No ${label.toLowerCase()}-bucket excerpts are available for this story yet.`;
-  }
-
-  return matching.map((source) => `${source.outlet}: ${source.excerpt}`).join(" ");
 }
 
 export function PerspectiveTabs({ story }: { story: Story }) {
   const [active, setActive] = useState<Perspective>("center");
 
-  const text = useMemo(() => buildPerspectiveText(story, active), [story, active]);
+  const entries = useMemo(() => buildPerspectiveEntries(story, active), [story, active]);
+  const emptyLabel = active === "left" ? "Left" : active === "center" ? "Center" : "Right";
 
   return (
     <section className="panel" style={{ background: "#fff" }}>
@@ -51,7 +45,19 @@ export function PerspectiveTabs({ story }: { story: Story }) {
           Right View
         </button>
       </div>
-      <p className="story-summary" style={{ fontSize: "0.98rem" }}>{text}</p>
+      {entries.length === 0 ? (
+        <p className="story-summary" style={{ fontSize: "0.98rem" }}>
+          No {emptyLabel.toLowerCase()}-bucket excerpts are available for this story yet.
+        </p>
+      ) : (
+        <ul className="perspective-list">
+          {entries.map((source) => (
+            <li key={source.id}>
+              <strong>{source.outlet}:</strong> {source.excerpt}
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }

@@ -98,10 +98,6 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
     const parsed = new URL(value);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return fallback;
 
-    // Ground News image CDN often includes embedded bias overlays.
-    if (/^web-api-cdn\.ground\.news$/i.test(parsed.hostname)) {
-      return fallback;
-    }
     // Ignore tiny flag/icon assets that are not story art.
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
       return fallback;
@@ -110,6 +106,30 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
     return parsed.toString();
   } catch {
     return fallback;
+  }
+}
+
+function sanitizeAssetUrl(rawUrl?: string): string | undefined {
+  if (!rawUrl || !rawUrl.trim()) return undefined;
+  let value = rawUrl.trim();
+  if (value.startsWith("//")) value = `https:${value}`;
+  if (value.startsWith("/_next/image")) {
+    try {
+      const parsed = new URL(`https://ground.news${value}`);
+      const nested = parsed.searchParams.get("url");
+      if (nested) return sanitizeAssetUrl(decodeURIComponent(nested));
+      return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
+    return parsed.toString();
+  } catch {
+    return undefined;
   }
 }
 
@@ -148,9 +168,16 @@ export function isPlaceholderExcerpt(value: string): boolean {
 
 export function normalizeStory(story: Story): Story {
   const normalizedSources: SourceArticle[] = (Array.isArray(story.sources) ? story.sources : []).map((source) => {
-    if (!isPlaceholderExcerpt(source.excerpt)) return source;
+    const normalizedLogo = sanitizeAssetUrl(source.logoUrl);
+    if (!isPlaceholderExcerpt(source.excerpt)) {
+      return {
+        ...source,
+        logoUrl: normalizedLogo,
+      };
+    }
     return {
       ...source,
+      logoUrl: normalizedLogo,
       excerpt: "Excerpt unavailable from publisher metadata.",
       bias: "unknown" as const,
       factuality: "unknown" as const,
@@ -182,15 +209,48 @@ export function normalizeStory(story: Story): Story {
       : derivedBias;
 
   const normalizedSlug = UUID_SLUG_PATTERN.test(story.slug) ? slugify(story.title) : story.slug;
-  const tags = sanitizeStoryTags(Array.isArray(story.tags) ? story.tags : []);
+  const outletNames = new Set(
+    normalizedSources.map((source) => source.outlet.trim().toLowerCase()).filter(Boolean),
+  );
+  const tags = sanitizeStoryTags(
+    (Array.isArray(story.tags) ? story.tags : []).filter((tag) => !outletNames.has(tag.trim().toLowerCase())),
+  );
+  const coverage = story.coverage ?? {};
+  const safeCoverage = {
+    totalSources: typeof coverage.totalSources === "number" && Number.isFinite(coverage.totalSources) ? Math.max(0, Math.round(coverage.totalSources)) : undefined,
+    leaningLeft: typeof coverage.leaningLeft === "number" && Number.isFinite(coverage.leaningLeft) ? Math.max(0, Math.round(coverage.leaningLeft)) : undefined,
+    center: typeof coverage.center === "number" && Number.isFinite(coverage.center) ? Math.max(0, Math.round(coverage.center)) : undefined,
+    leaningRight: typeof coverage.leaningRight === "number" && Number.isFinite(coverage.leaningRight) ? Math.max(0, Math.round(coverage.leaningRight)) : undefined,
+  };
+  const readerLinks = Array.isArray(story.readerLinks)
+    ? Array.from(new Set(story.readerLinks.map((url) => (url || "").trim()).filter(Boolean))).slice(0, 12)
+    : [];
+  const timelineHeaders = Array.isArray(story.timelineHeaders)
+    ? Array.from(new Set(story.timelineHeaders.map((item) => item.trim()).filter(Boolean))).slice(0, 12)
+    : [];
+  const podcastReferences = Array.isArray(story.podcastReferences)
+    ? Array.from(new Set(story.podcastReferences.map((item) => item.trim()).filter(Boolean))).slice(0, 12)
+    : [];
+  const cleanDek = (story.dek || "").trim();
+  const cleanAuthor = (story.author || "").trim();
 
   return {
     ...story,
     slug: normalizedSlug,
+    dek: cleanDek || undefined,
+    author: cleanAuthor || undefined,
     bias: normalizedBias,
-    sourceCount: normalizedSources.length,
+    sourceCount: Math.max(
+      normalizedSources.length,
+      typeof safeCoverage.totalSources === "number" ? safeCoverage.totalSources : 0,
+      Number.isFinite(story.sourceCount) ? Math.max(0, Math.round(story.sourceCount)) : 0,
+    ),
     imageUrl: sanitizeStoryImageUrl(story.imageUrl),
     sources: normalizedSources,
     tags: tags.length > 0 ? tags : ["News"],
+    coverage: safeCoverage,
+    readerLinks,
+    timelineHeaders,
+    podcastReferences,
   };
 }

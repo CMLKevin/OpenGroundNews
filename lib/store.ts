@@ -38,6 +38,7 @@ async function sleep(ms: number) {
 async function withStoreFileLock<T>(run: () => Promise<T>): Promise<T> {
   const start = Date.now();
   let lockHandle: fs.FileHandle | null = null;
+  await fs.mkdir(path.dirname(STORE_LOCK_PATH), { recursive: true });
 
   while (!lockHandle) {
     try {
