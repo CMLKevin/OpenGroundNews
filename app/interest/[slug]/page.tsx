@@ -93,6 +93,28 @@ export default async function InterestPage({ params, searchParams }: Props) {
     .sort((a, b) => b.count - a.count || a.outlet.localeCompare(b.outlet))
     .slice(0, 18);
 
+  const sourceCards = stories.flatMap((s) => s.sources || []);
+  const factualityCounts = {
+    "very-high": sourceCards.filter((s) => s.factuality === "very-high").length,
+    high: sourceCards.filter((s) => s.factuality === "high").length,
+    mixed: sourceCards.filter((s) => s.factuality === "mixed").length,
+    low: sourceCards.filter((s) => s.factuality === "low").length,
+    "very-low": sourceCards.filter((s) => s.factuality === "very-low").length,
+    unknown: sourceCards.filter((s) => s.factuality === "unknown").length,
+  };
+
+  const ownerCounts = Array.from(
+    sourceCards
+      .map((s) => (s.ownership || "Unlabeled").trim() || "Unlabeled")
+      .reduce((acc, owner) => {
+        acc.set(owner, (acc.get(owner) ?? 0) + 1);
+        return acc;
+      }, new Map<string, number>())
+      .entries(),
+  )
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 10);
+
   return (
     <main className="container" style={{ padding: "1rem 0 2rem" }}>
       <section className="panel" style={{ display: "grid", gap: "0.75rem" }}>
@@ -144,6 +166,88 @@ export default async function InterestPage({ params, searchParams }: Props) {
                 </li>
               ))}
             </ul>
+          </section>
+
+          <section className="panel">
+            <div className="section-title" style={{ paddingTop: 0 }}>
+              <h2 style={{ margin: 0 }}>Media Bias Ratings</h2>
+              <span className="story-meta">Source cards</span>
+            </div>
+            <div className="kpi-strip">
+              <div className="kpi">
+                <span>Left</span>
+                <strong>{sourceCards.filter((s) => s.bias === "left").length}</strong>
+              </div>
+              <div className="kpi">
+                <span>Center</span>
+                <strong>{sourceCards.filter((s) => s.bias === "center").length}</strong>
+              </div>
+              <div className="kpi">
+                <span>Right</span>
+                <strong>{sourceCards.filter((s) => s.bias === "right").length}</strong>
+              </div>
+              <div className="kpi">
+                <span>Untracked</span>
+                <strong>{sourceCards.filter((s) => s.bias === "unknown").length}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title" style={{ paddingTop: 0 }}>
+              <h2 style={{ margin: 0 }}>Factuality</h2>
+              <span className="story-meta">Distribution</span>
+            </div>
+            <div className="kpi-strip">
+              <div className="kpi">
+                <span>Very high</span>
+                <strong>{factualityCounts["very-high"]}</strong>
+              </div>
+              <div className="kpi">
+                <span>High</span>
+                <strong>{factualityCounts.high}</strong>
+              </div>
+              <div className="kpi">
+                <span>Mixed</span>
+                <strong>{factualityCounts.mixed}</strong>
+              </div>
+              <div className="kpi">
+                <span>Low</span>
+                <strong>{factualityCounts.low}</strong>
+              </div>
+              <div className="kpi">
+                <span>Very low</span>
+                <strong>{factualityCounts["very-low"]}</strong>
+              </div>
+              <div className="kpi">
+                <span>Unknown</span>
+                <strong>{factualityCounts.unknown}</strong>
+              </div>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="section-title" style={{ paddingTop: 0 }}>
+              <h2 style={{ margin: 0 }}>Ownership</h2>
+              <span className="story-meta">Top</span>
+            </div>
+            {ownerCounts.length > 0 ? (
+              <ul className="topic-list">
+                {ownerCounts.map(([owner, count]) => (
+                  <li key={owner} className="topic-item">
+                    <span className="topic-avatar" aria-hidden="true">
+                      {initials(owner)}
+                    </span>
+                    <span style={{ textDecoration: "none" }}>{owner}</span>
+                    <span className="story-meta">{count}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="story-meta" style={{ margin: 0 }}>
+                Ownership metadata unavailable for this topic sample.
+              </p>
+            )}
           </section>
 
           <section className="panel">

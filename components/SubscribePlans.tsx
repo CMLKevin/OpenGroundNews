@@ -5,10 +5,8 @@ import { useEffect, useState } from "react";
 
 type User = { id: string; email: string; role: "user" | "admin" };
 
-export function SubscribePlans({ stripeEnabled }: { stripeEnabled: boolean }) {
+export function SubscribePlans() {
   const [user, setUser] = useState<User | null>(null);
-  const [busy, setBusy] = useState<null | "monthly" | "yearly">(null);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -28,45 +26,21 @@ export function SubscribePlans({ stripeEnabled }: { stripeEnabled: boolean }) {
     };
   }, []);
 
-  async function checkout(plan: "monthly" | "yearly") {
-    setError(null);
-    setBusy(plan);
-    try {
-      const res = await fetch("/api/stripe/checkout", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ plan }),
-      });
-      const data = (await res.json()) as { ok: boolean; url?: string; error?: string };
-      if (!data.ok || !data.url) {
-        setError(data.error || "Unable to start checkout");
-        return;
-      }
-      window.location.href = data.url;
-    } catch {
-      setError("Unable to start checkout");
-    } finally {
-      setBusy(null);
-    }
-  }
-
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
+    <section className="panel" style={{ display: "grid", gap: "0.85rem" }}>
       <div className="section-title" style={{ paddingTop: 0 }}>
         <h2 style={{ margin: 0 }}>Plans</h2>
-        <span className="story-meta">{stripeEnabled ? "Stripe Checkout" : "Stripe not configured"}</span>
+        <span className="story-meta">Subscriptions are not enabled</span>
       </div>
 
-      {!stripeEnabled ? (
-        <p className="note" style={{ margin: 0 }}>
-          To enable payments, set <code>STRIPE_SECRET_KEY</code>, <code>STRIPE_WEBHOOK_SECRET</code>,{" "}
-          <code>STRIPE_PRICE_MONTHLY</code>, and <code>STRIPE_PRICE_YEARLY</code>.
-        </p>
-      ) : null}
+      <p className="note" style={{ margin: 0 }}>
+        OpenGroundNews is currently in parity build-out mode. Pricing cards are here to match the Ground News UX, but
+        checkout is intentionally disabled.
+      </p>
 
       {!user ? (
         <p className="story-meta" style={{ margin: 0 }}>
-          You need an account to subscribe.{" "}
+          Create an account to save your preferences across devices.{" "}
           <Link href="/login?next=/subscribe" style={{ fontWeight: 700 }}>
             Sign in
           </Link>
@@ -78,40 +52,80 @@ export function SubscribePlans({ stripeEnabled }: { stripeEnabled: boolean }) {
         </p>
       )}
 
-      {error ? (
-        <p className="note" style={{ margin: 0 }}>
-          {error}
-        </p>
-      ) : null}
+      <div className="plans-grid">
+        <article className="plan-card plan-card-1">
+          <div className="plan-head">
+            <div>
+              <div className="plan-badge">Essential</div>
+              <h3 className="plan-title">Vantage</h3>
+            </div>
+            <div className="plan-price">
+              <strong>$0</strong>
+              <span>for now</span>
+            </div>
+          </div>
+          <ul className="plan-list">
+            <li>Daily Briefing + Bias distribution</li>
+            <li>Blindspot feed + Local feed</li>
+            <li>Reader mode with archive fallback</li>
+          </ul>
+          <div className="plan-actions">
+            <Link className="btn" href="/get-started">
+              Get started
+            </Link>
+          </div>
+        </article>
 
-      <div className="kpi-strip">
-        <div className="kpi">
-          <span>Monthly</span>
-          <strong>$5</strong>
-        </div>
-        <div className="kpi">
-          <span>Yearly</span>
-          <strong>$50</strong>
-        </div>
-        <div className="kpi">
-          <span>Includes</span>
-          <strong style={{ fontSize: "1rem" }}>Cloud-synced follows</strong>
-        </div>
-        <div className="kpi">
-          <span>Supports</span>
-          <strong style={{ fontSize: "1rem" }}>Open infra</strong>
-        </div>
+        <article className="plan-card plan-card-2">
+          <div className="plan-head">
+            <div>
+              <div className="plan-badge plan-badge-gold">Most popular</div>
+              <h3 className="plan-title">Premium</h3>
+            </div>
+            <div className="plan-price">
+              <strong>$0</strong>
+              <span>parity build</span>
+            </div>
+          </div>
+          <ul className="plan-list">
+            <li>My News Bias dashboard</li>
+            <li>Reading history + personalized feed</li>
+            <li>Richer search + suggestions</li>
+          </ul>
+          <div className="plan-actions">
+            <a className="btn" href="https://github.com" target="_blank" rel="noreferrer">
+              Support on GitHub
+            </a>
+          </div>
+        </article>
+
+        <article className="plan-card plan-card-3">
+          <div className="plan-head">
+            <div>
+              <div className="plan-badge">For teams</div>
+              <h3 className="plan-title">Pro</h3>
+            </div>
+            <div className="plan-price">
+              <strong>$0</strong>
+              <span>planned</span>
+            </div>
+          </div>
+          <ul className="plan-list">
+            <li>Advanced outlet metadata panels</li>
+            <li>Exports + editorial tooling</li>
+            <li>Deployment + ops guides</li>
+          </ul>
+          <div className="plan-actions">
+            <a className="btn" href="mailto:hello@opengroundnews.local">
+              Contact
+            </a>
+          </div>
+        </article>
       </div>
 
-      <div className="chip-row">
-        <button className="btn" type="button" disabled={!stripeEnabled || !user || busy != null} onClick={() => checkout("monthly")}>
-          {busy === "monthly" ? "Redirecting..." : "Subscribe monthly"}
-        </button>
-        <button className="btn" type="button" disabled={!stripeEnabled || !user || busy != null} onClick={() => checkout("yearly")}>
-          {busy === "yearly" ? "Redirecting..." : "Subscribe yearly"}
-        </button>
-      </div>
+      <p className="story-meta" style={{ margin: 0 }}>
+        Want updates? Join the waitlist from the Blindspot page newsletter CTA.
+      </p>
     </section>
   );
 }
-

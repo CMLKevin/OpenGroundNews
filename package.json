@@ -8,23 +8,41 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:import-json": "node scripts/db_import_json.mjs",
     "groundnews:scrape": "node scripts/groundnews_scrape_cdp.mjs",
     "archive:verify": "node scripts/archive_verify_cdp.mjs",
     "archive:extract": "node scripts/archive_extract_cdp.mjs",
-    "ingest:groundnews": "node scripts/sync_groundnews_pipeline.mjs"
+    "ingest:groundnews": "node scripts/ingest_groundnews.mjs",
+    "push:vapid": "node scripts/push_generate_vapid.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^7.4.0",
+    "@prisma/client": "^7.4.0",
+    "@types/web-push": "^3.6.4",
     "cheerio": "^1.1.2",
     "next": "^16.0.0",
+    "pg": "^8.18.0",
     "playwright-core": "^1.58.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "stripe": "^18.5.0"
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@types/node": "^25.2.3",
+    "@types/pg": "^8.16.0",
     "@types/react": "^19.2.13",
     "@types/react-dom": "^19.2.3",
-    "typescript": "^5.9.3"
+    "@types/uuid": "^10.0.0",
+    "@vitest/coverage-v8": "^4.0.18",
+    "prisma": "^7.4.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
   }
 }

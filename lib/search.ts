@@ -6,6 +6,15 @@ function normalize(value: string) {
   return (value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function dominantBiasBucket(story: Story): "left" | "center" | "right" {
+  const l = Number(story.bias?.left || 0) || 0;
+  const c = Number(story.bias?.center || 0) || 0;
+  const r = Number(story.bias?.right || 0) || 0;
+  if (l >= c && l >= r) return "left";
+  if (c >= l && c >= r) return "center";
+  return "right";
+}
+
 function tokenize(query: string): string[] {
   return normalize(query)
     .split(/[^a-z0-9]+/g)
@@ -51,7 +60,13 @@ function storyScore(story: Story, tokens: string[], q: string): number {
   return score;
 }
 
-export async function searchStories(params: { q: string; edition?: string; limit?: number }) {
+export async function searchStories(params: {
+  q: string;
+  edition?: string;
+  limit?: number;
+  bias?: "all" | "left" | "center" | "right";
+  time?: "all" | "24h" | "7d" | "30d";
+}) {
   const q = (params.q || "").trim();
   const limit = Math.max(1, Math.min(200, params.limit ?? 60));
   const tokens = tokenize(q);
@@ -61,6 +76,27 @@ export async function searchStories(params: { q: string; edition?: string; limit
   if (params.edition && params.edition.toLowerCase() !== "all") {
     const edition = params.edition.trim().toLowerCase();
     stories = stories.filter((story) => story.location.trim().toLowerCase() === edition);
+  }
+
+  if (params.time && params.time !== "all") {
+    const now = Date.now();
+    const windowMs =
+      params.time === "24h" ? 24 * 60 * 60 * 1000 :
+      params.time === "7d" ? 7 * 24 * 60 * 60 * 1000 :
+      params.time === "30d" ? 30 * 24 * 60 * 60 * 1000 :
+      0;
+    if (windowMs > 0) {
+      const cutoff = now - windowMs;
+      stories = stories.filter((s) => {
+        const ts = Date.parse(s.publishedAt || s.updatedAt || "");
+        return Number.isFinite(ts) && ts >= cutoff;
+      });
+    }
+  }
+
+  if (params.bias && params.bias !== "all") {
+    const b = params.bias;
+    stories = stories.filter((s) => dominantBiasBucket(s) === b);
   }
 
   if (!q) {
@@ -105,4 +141,3 @@ export async function searchStories(params: { q: string; edition?: string; limit
     },
   };
 }
-

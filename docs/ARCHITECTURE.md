@@ -1,18 +1,18 @@
 # Architecture
 
 ## Overview
-OpenGroundNews is a Next.js application backed by a JSON datastore and remote-browser ingestion scripts.
+OpenGroundNews is a Next.js application backed by Postgres (Prisma) and remote-browser ingestion scripts.
 
 ## Core Components
 1. Web app (`app/` + `components/`)
-2. Data/store layer (`lib/store.ts`, `data/store.json`)
-3. Archive reader service (`lib/archive.ts`)
+2. Data/store layer (`lib/store.ts` -> Prisma-backed)
+3. Archive reader service (`lib/archive.ts`, cached in DB)
 4. Browser Use CDP integration (`scripts/lib/browser_use_cdp.mjs`)
 5. Ingestion scripts (`scripts/*.mjs`)
 
 ## Data Flow
 1. `groundnews_scrape_cdp.mjs` discovers story URLs from Ground News routes.
-2. `sync_groundnews_pipeline.mjs` enriches stories and updates `data/store.json`.
+2. `sync_groundnews_pipeline.mjs` enriches stories and persists to Postgres via Prisma.
 3. UI routes fetch from APIs and render perspective-aware cards/details.
 4. On source click, `/api/archive/read` attempts archive-first extraction.
 5. If archive retrieval is blocked/unavailable, fallback extraction parses source HTML directly.

@@ -173,6 +173,33 @@ export function LocalFeedControls() {
         </button>
         <button
           className="btn"
+          type="button"
+          onClick={() => {
+            if (!navigator.geolocation) return;
+            navigator.geolocation.getCurrentPosition(
+              (pos) => {
+                const nextLat = pos.coords.latitude;
+                const nextLon = pos.coords.longitude;
+                if (!Number.isFinite(nextLat) || !Number.isFinite(nextLon)) return;
+                setLat(nextLat);
+                setLon(nextLon);
+                window.localStorage.setItem(KEY_LAT, String(nextLat));
+                window.localStorage.setItem(KEY_LON, String(nextLon));
+                const label = location.trim() || "Current location";
+                updateQuery(label, { lat: nextLat, lon: nextLon });
+              },
+              () => {
+                // ignore
+              },
+              { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 },
+            );
+          }}
+        >
+          Use my location
+        </button>
+        <button
+          className="btn"
+          type="button"
           onClick={() => {
             setLocation(DEFAULT_LOCATION);
             window.localStorage.setItem(KEY, DEFAULT_LOCATION);
@@ -186,13 +213,7 @@ export function LocalFeedControls() {
           Reset
         </button>
       </div>
-      {lat != null && lon != null ? (
-        <div className="story-meta">
-          Coordinates: {lat.toFixed(3)}, {lon.toFixed(3)}
-        </div>
-      ) : (
-        <div className="story-meta">Tip: pick a suggestion to enable weather.</div>
-      )}
+      <div className="story-meta">{lat != null && lon != null ? "Weather enabled for your saved city." : "Tip: pick a suggestion to enable weather."}</div>
     </div>
   );
 }

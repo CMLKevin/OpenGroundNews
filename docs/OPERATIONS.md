@@ -4,6 +4,7 @@
 Required:
 - `BROWSER_USE_API_KEY`
 - `OGN_API_KEY` (or `OPEN_GROUND_NEWS_API_KEY`) for protected write APIs
+- `DATABASE_URL` for Prisma + Postgres (app runtime + ingestion persistence)
 
 Optional:
 - Rotation and session controls (see `docs/ROTATION_STRATEGIES.md`)

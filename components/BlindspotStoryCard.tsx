@@ -25,6 +25,18 @@ export function BlindspotStoryCard({ story }: { story: Story }) {
         <h3 className="story-title">
           <Link href={`/story/${story.slug}`}>{story.title}</Link>
         </h3>
+        <div className="blindspot-breakdown" aria-label="Coverage breakdown">
+          <div className="blindspot-breakdown-bar">
+            <span className="seg seg-left" style={{ width: `${story.bias.left}%` }} />
+            <span className="seg seg-center" style={{ width: `${story.bias.center}%` }} />
+            <span className="seg seg-right" style={{ width: `${story.bias.right}%` }} />
+          </div>
+          <div className="blindspot-breakdown-meta">
+            <span className="bias-meta-left">{story.bias.left}% L</span>
+            <span className="bias-meta-center">{story.bias.center}% C</span>
+            <span className="bias-meta-right">{story.bias.right}% R</span>
+          </div>
+        </div>
         <p className="story-summary">{story.summary}</p>
         <div className="story-card-footer">
           <span className="pill">{sourceCountLabel(story)}</span>
@@ -34,4 +46,3 @@ export function BlindspotStoryCard({ story }: { story: Story }) {
     </article>
   );
 }
-

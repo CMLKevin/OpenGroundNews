@@ -8,9 +8,6 @@ type Props = {
 
 export default async function SubscribePage({ searchParams }: Props) {
   const { success, canceled } = await searchParams;
-  const stripeEnabled = Boolean(
-    process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_MONTHLY && process.env.STRIPE_PRICE_YEARLY,
-  );
 
   return (
     <main className="container" style={{ padding: "1.1rem 0 2rem" }}>
@@ -18,45 +15,32 @@ export default async function SubscribePage({ searchParams }: Props) {
         <div className="hero-panel">
           <h1>Support OpenGroundNews</h1>
           <p>
-            OpenGroundNews is built to stay open. If you monetize, consider metered access features, API plans, and
-            editorial tooling tiers rather than hard paywalls on public-interest reading.
+            OpenGroundNews is building full Ground News-style feature parity, but with open infrastructure and
+            transparent ingestion. Plans are presented in the familiar 3-tier layout, but payments are intentionally
+            disabled for now.
           </p>
         </div>
         <div className="hero-panel">
-          <div className="kpi-strip">
-            <div className="kpi">
-              <span>Community</span>
-              <strong>Open</strong>
-            </div>
-            <div className="kpi">
-              <span>Reader API</span>
-              <strong>Ready</strong>
-            </div>
-            <div className="kpi">
-              <span>Ingestion</span>
-              <strong>CDP</strong>
-            </div>
-            <div className="kpi">
-              <span>Archive</span>
-              <strong>Fallback</strong>
-            </div>
-          </div>
+          <p className="note" style={{ margin: 0 }}>
+            If you want to help: run ingestion regularly, report scraper regressions, and share problematic article URLs
+            so we can improve the archive and fallback extractors.
+          </p>
         </div>
       </section>
 
       {success ? (
         <p className="note" style={{ marginTop: "1rem" }}>
-          Subscription checkout completed. It may take a moment for your account to update.
+          Payments are disabled. This message is kept for link compatibility.
         </p>
       ) : null}
       {canceled ? (
         <p className="note" style={{ marginTop: "1rem" }}>
-          Checkout canceled.
+          Payments are disabled. This message is kept for link compatibility.
         </p>
       ) : null}
 
       <div style={{ marginTop: "1rem" }}>
-        <SubscribePlans stripeEnabled={stripeEnabled} />
+        <SubscribePlans />
       </div>
     </main>
   );

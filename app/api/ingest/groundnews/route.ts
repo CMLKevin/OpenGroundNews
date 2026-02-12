@@ -1,20 +1,27 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { isAuthorizedApiRequest, sanitizeServerErrorMessage } from "@/lib/security";
+import { getUserBySessionToken } from "@/lib/authStore";
 
 const execFileAsync = promisify(execFile);
 
 export const dynamic = "force-dynamic";
 
-export async function POST(request: Request) {
+export async function POST(request: NextRequest) {
   const auth = isAuthorizedApiRequest(request);
   if (!auth.ok) {
     return NextResponse.json({ ok: false, error: auth.reason }, { status: auth.status });
   }
 
-  const scriptPath = path.join(process.cwd(), "scripts", "sync_groundnews_pipeline.mjs");
+  const token = request.cookies.get("ogn_session")?.value || "";
+  const user = token ? await getUserBySessionToken(token) : null;
+  if (!user || user.role !== "admin") {
+    return NextResponse.json({ ok: false, error: "Admin session required" }, { status: 401 });
+  }
+
+  const scriptPath = path.join(process.cwd(), "scripts", "ingest_groundnews.mjs");
 
   try {
     const { stdout } = await execFileAsync("node", [scriptPath], {

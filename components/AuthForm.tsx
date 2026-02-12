@@ -41,11 +41,27 @@ export function AuthForm({ mode }: { mode: Mode }) {
   }
 
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
+    <section className="panel auth-shell" style={{ display: "grid", gap: "0.8rem" }}>
       <div className="section-title" style={{ paddingTop: 0 }}>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>{mode === "signup" ? "Create Account" : "Sign In"}</h1>
-        <span className="story-meta">{mode === "signup" ? "Cloud-synced follows" : "Welcome back"}</span>
+        <div style={{ display: "grid", gap: "0.1rem" }}>
+          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>{mode === "signup" ? "Create account" : "Sign in"}</h1>
+          <span className="story-meta">{mode === "signup" ? "Sync follows and reading history" : "Welcome back"}</span>
+        </div>
       </div>
+
+      <div className="auth-oauth-row">
+        <button className="btn" type="button" disabled aria-disabled="true">
+          Continue with Google (coming soon)
+        </button>
+        <button className="btn" type="button" disabled aria-disabled="true">
+          Continue with Apple (coming soon)
+        </button>
+      </div>
+
+      <div className="auth-divider">
+        <span>or</span>
+      </div>
+
       <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
         Email
         <input className="input-control" value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
@@ -81,9 +97,8 @@ export function AuthForm({ mode }: { mode: Mode }) {
         )}
       </div>
       <p className="story-meta" style={{ margin: 0 }}>
-        Your follows sync to this server only. For production, wire a proper database and secret management.
+        Your account enables cloud-synced follows and bias tracking. Passwords are stored using scrypt hashing.
       </p>
     </section>
   );
 }
-
