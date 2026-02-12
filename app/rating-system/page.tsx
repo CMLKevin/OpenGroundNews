@@ -3,28 +3,57 @@ import { BiasPlayground } from "@/components/BiasPlayground";
 export default function RatingSystemPage() {
   return (
     <main className="container" style={{ padding: "1.1rem 0 2rem" }}>
-      <section className="panel" style={{ display: "grid", gap: "0.7rem" }}>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>OpenGroundNews Rating System</h1>
-        <p style={{ margin: 0 }}>
-          Ratings are transparent and reproducible. Each source article receives a bias bucket and factuality label,
-          then story-level distribution is computed from source aggregation.
+      <section className="panel" style={{ display: "grid", gap: "0.75rem" }}>
+        <div className="section-title" style={{ paddingTop: 0 }}>
+          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Rating System</h1>
+          <span className="story-meta">Methodology</span>
+        </div>
+        <p style={{ margin: 0, maxWidth: "75ch" }}>
+          OpenGroundNews organizes coverage into left/center/right buckets and presents a transparent distribution of
+          sources for each story. Ratings are designed to be auditable: we store per-source metadata and compute story
+          distributions from the source cards.
+        </p>
+        <div className="kpi-strip">
+          <div className="kpi">
+            <span>Bias buckets</span>
+            <strong style={{ fontSize: "1rem" }}>Left / Center / Right</strong>
+          </div>
+          <div className="kpi">
+            <span>Factuality</span>
+            <strong style={{ fontSize: "1rem" }}>Very high .. very low</strong>
+          </div>
+          <div className="kpi">
+            <span>Ownership</span>
+            <strong style={{ fontSize: "1rem" }}>Publisher entity</strong>
+          </div>
+          <div className="kpi">
+            <span>Untracked</span>
+            <strong style={{ fontSize: "1rem" }}>Shown explicitly</strong>
+          </div>
+        </div>
+        <p className="note" style={{ margin: 0 }}>
+          Sources without reliable metadata are labeled <code>unknown</code>. We avoid guessing bias from domain names.
+        </p>
+      </section>
+
+      <section className="panel" style={{ marginTop: "1rem", display: "grid", gap: "0.75rem" }}>
+        <div className="section-title" style={{ paddingTop: 0 }}>
+          <h2 style={{ margin: 0 }}>How Bias Bars Work</h2>
+        </div>
+        <p className="story-meta" style={{ margin: 0 }}>
+          Each story aggregates multiple source cards. The bar visualizes the percentage of tracked sources by bucket.
         </p>
         <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.35rem" }}>
           <li>
-            <strong>Bias buckets:</strong> <code>left</code>, <code>center</code>, <code>right</code>
+            <strong>Left / Center / Right</strong>: computed from tracked source cards
           </li>
           <li>
-            <strong>Factuality:</strong> <code>very-high</code>, <code>high</code>, <code>mixed</code>, <code>low</code>,{" "}
-            <code>very-low</code>, <code>unknown</code>
+            <strong>Total sources</strong>: may exceed tracked cards when Ground News reports a larger coverage set
           </li>
           <li>
-            <strong>Ownership:</strong> Organization label tracked per outlet
+            <strong>Blindspot</strong>: flagged when coverage is heavily skewed to one side
           </li>
         </ul>
-        <p className="note" style={{ margin: 0 }}>
-          Sources without reliable metadata are labeled <code>unknown</code> instead of inferring values from domain
-          names.
-        </p>
       </section>
 
       <div style={{ marginTop: "1rem" }}>

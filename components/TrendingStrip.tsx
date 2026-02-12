@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { slugify } from "@/lib/format";
+import { FollowToggle } from "@/components/FollowToggle";
 
 type Props = {
   tags: string[];
@@ -43,12 +44,17 @@ export function TrendingStrip({ tags }: Props) {
       className={`trending-strip ${isOverflowing ? "is-overflowing" : ""}`}
       aria-label="Trending topics"
     >
-      {normalized.map((tag) => (
-        <Link className="trending-item" key={tag} href={`/interest/${slugify(tag)}`}>
-          {tag}
-        </Link>
-      ))}
+      {normalized.map((tag) => {
+        const slug = slugify(tag);
+        return (
+          <span className="trending-item" key={tag}>
+            <Link className="trending-link" href={`/interest/${slug}`}>
+              {tag}
+            </Link>
+            <FollowToggle kind="topic" slug={slug} label={tag} variant="icon" />
+          </span>
+        );
+      })}
     </section>
   );
 }
-

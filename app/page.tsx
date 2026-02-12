@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { StoryCard } from "@/components/StoryCard";
-import { BiasBar } from "@/components/BiasBar";
-import { StoryImage } from "@/components/StoryImage";
 import { TrendingStrip } from "@/components/TrendingStrip";
-import { prettyDate, sourceCountLabel } from "@/lib/format";
-import { getDashboardStats, listStories } from "@/lib/store";
+import { DailyBriefingList } from "@/components/DailyBriefingList";
+import { HeroLeadStoryCard } from "@/components/HeroLeadStoryCard";
+import { MyNewsBiasWidget } from "@/components/MyNewsBiasWidget";
+import { DailyLocalNewsWidget } from "@/components/DailyLocalNewsWidget";
+import { sourceCountLabel } from "@/lib/format";
+import { listStories } from "@/lib/store";
 import { getCurrentUser } from "@/lib/authStore";
 
 type HomeProps = {
@@ -29,9 +31,8 @@ export default async function HomePage({ searchParams }: HomeProps) {
   const pageNumber = Math.max(1, Number(page || 1) || 1);
   const PAGE_SIZE = 24;
 
-  const [stories, stats, currentUser] = await Promise.all([
+  const [stories, currentUser] = await Promise.all([
     listStories({ view: "all", limit: 500, edition: edition?.trim() || undefined }),
-    getDashboardStats(),
     getCurrentUser(),
   ]);
   const isAdmin = currentUser?.role === "admin";
@@ -89,56 +90,60 @@ export default async function HomePage({ searchParams }: HomeProps) {
     <main className="container">
       <TrendingStrip tags={trendingTags} />
 
-      <section className="hero">
-        <div className="hero-panel">
-          <h1>Compare framing. Track bias. Read deeper.</h1>
-          <p>
-            OpenGroundNews is an open-source, perspective-aware news platform. It aggregates source coverage, computes
-            left/center/right distributions, and provides archive-first reader mode with resilient fallback extraction.
-          </p>
-          <div className="chip-row" style={{ marginTop: "0.7rem" }}>
-            <span className="chip">Remote CDP ingestion</span>
-            <span className="chip">Blindspot tracking</span>
-            <span className="chip">Source-level filters</span>
-            <span className="chip">Archive-first reader</span>
-          </div>
+      <section className="home-hero-grid">
+        <div className="home-hero-left">
+          <DailyBriefingList stories={topStories} />
         </div>
 
-        <div className="hero-panel">
-          <div className="section-title" style={{ paddingTop: 0 }}>
-            <h2>Pipeline Snapshot</h2>
-            {isAdmin ? (
-              <Link className="btn" href="/admin">
-                Admin
-              </Link>
-            ) : null}
-          </div>
-          <div className="kpi-strip">
-            <div className="kpi">
-              <span>Stories</span>
-              <strong>{stats.storyCount}</strong>
-            </div>
-            <div className="kpi">
-              <span>Source articles</span>
-              <strong>{stats.sourceArticleCount}</strong>
-            </div>
-            <div className="kpi">
-              <span>Unique outlets</span>
-              <strong>{stats.uniqueOutletCount}</strong>
-            </div>
-            <div className="kpi">
-              <span>Archive cache</span>
-              <strong>{stats.archiveCacheCount}</strong>
-            </div>
-            <div className="kpi">
-              <span>Last sync</span>
-              <strong style={{ fontSize: "0.96rem" }}>{stats.ingestion.lastRunAt ? "Active" : "Pending"}</strong>
-            </div>
-          </div>
-          <p className="note" style={{ marginTop: "0.7rem" }}>
-            Sync with <code>npm run ingest:groundnews</code> every 5-10 minutes for freshness.
-          </p>
+        <div className="home-hero-center">
+          {leadStory ? <HeroLeadStoryCard story={leadStory} /> : null}
+          {!leadStory ? (
+            <section className="panel">
+              <div className="section-title" style={{ paddingTop: 0 }}>
+                <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Top story</h1>
+              </div>
+              <p className="story-meta" style={{ margin: 0 }}>
+                No stories available yet. Run ingestion from admin once your Browser Use key is configured.
+              </p>
+              {isAdmin ? (
+                <Link className="btn" href="/admin" style={{ marginTop: "0.7rem", display: "inline-flex" }}>
+                  Open admin
+                </Link>
+              ) : null}
+            </section>
+          ) : null}
         </div>
+
+        <aside className="home-hero-right">
+          <MyNewsBiasWidget />
+          <DailyLocalNewsWidget />
+          <section className="panel">
+            <div className="section-title" style={{ paddingTop: 0 }}>
+              <h2 style={{ margin: 0 }}>Blindspot</h2>
+              <Link href="/blindspot" className="story-meta">
+                open
+              </Link>
+            </div>
+            {blindspotStories.length > 0 ? (
+              <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
+                {blindspotStories.slice(0, 4).map((story) => (
+                  <li key={story.id}>
+                    <Link href={`/story/${story.slug}`} className="rail-link">
+                      {story.title}
+                    </Link>
+                    <div className="story-meta">
+                      {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="story-meta" style={{ margin: 0 }}>
+                No blindspot candidates in the current sample.
+              </p>
+            )}
+          </section>
+        </aside>
       </section>
 
       {query ? (
@@ -148,35 +153,8 @@ export default async function HomePage({ searchParams }: HomeProps) {
       ) : null}
 
       <section className="feed-shell">
-        <aside className="feed-rail">
-          <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2>Daily Briefing</h2>
-              <span className="story-meta">Top 6</span>
-            </div>
-            <ol className="rail-list rail-list-rich">
-              {topStories.map((story) => (
-                <li key={story.id}>
-                  <Link href={`/story/${story.slug}`} className="rail-rich-link">
-                    <StoryImage
-                      src={story.imageUrl}
-                      alt={story.title}
-                      width={86}
-                      height={54}
-                      className="rail-thumb"
-                      unoptimized
-                    />
-                    <span>
-                      <span className="rail-link">{story.title}</span>
-                      <span className="story-meta">
-                        {sourceCountLabel(story)} • {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R
-                      </span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </section>
+        <aside className="feed-rail feed-rail-left">
+          <DailyBriefingList stories={topStories} />
 
           <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
@@ -222,33 +200,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
             </section>
           ) : null}
 
-          {leadStory ? (
-            <article className="lead-story">
-              <StoryImage
-                src={leadStory.imageUrl}
-                alt={leadStory.title}
-                width={1280}
-                height={640}
-                className="lead-image"
-                unoptimized
-              />
-              <div className="lead-content">
-                <div className="story-meta">
-                  {leadStory.topic} • {leadStory.location} • Updated {prettyDate(leadStory.updatedAt)}
-                </div>
-                <h2 className="lead-title">
-                  <Link href={`/story/${leadStory.slug}`}>{leadStory.title}</Link>
-                </h2>
-                <BiasBar story={leadStory} showLabels={true} />
-                <p className="story-summary">{leadStory.summary}</p>
-                <div style={{ display: "flex", gap: "0.45rem", flexWrap: "wrap" }}>
-                  <span className="pill">{sourceCountLabel(leadStory)}</span>
-                  {leadStory.blindspot ? <span className="pill">Blindspot candidate</span> : null}
-                  {leadStory.trending ? <span className="pill">Trending</span> : null}
-                </div>
-              </div>
-            </article>
-          ) : null}
+          {/* Lead story is rendered in the homepage hero for parity; keep feed focused on the grid. */}
 
           <div className="grid">
             {gridStories.map((story) => (
@@ -265,7 +217,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
           ) : null}
         </div>
 
-        <aside className="feed-rail">
+        <aside className="feed-rail feed-rail-right">
           <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Feed Filters</h2>

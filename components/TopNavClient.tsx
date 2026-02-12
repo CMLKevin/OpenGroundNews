@@ -1,0 +1,436 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { LogoLockup } from "@/components/LogoLockup";
+
+const EDITION_KEY = "ogn_edition";
+const DEFAULT_EDITION = "International";
+const EDITIONS = ["International", "United States", "Canada", "United Kingdom", "Europe"] as const;
+const THEME_KEY = "ogn_theme";
+
+type SuggestResponse = {
+  ok: boolean;
+  q: string;
+  stories: Array<{ slug: string; title: string; topic: string; location: string }>;
+  topics: Array<{ slug: string; label: string; count: number }>;
+  outlets: Array<{ slug: string; label: string }>;
+};
+
+function initials(email: string) {
+  const handle = (email || "").split("@")[0] || "?";
+  return handle.slice(0, 2).toUpperCase();
+}
+
+export function TopNavClient() {
+  const [edition, setEdition] = useState(DEFAULT_EDITION);
+  const [theme, setTheme] = useState<"dark" | "light" | "auto">("auto");
+  const [user, setUser] = useState<null | { id: string; email: string; role: "user" | "admin" }>(null);
+
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [suggest, setSuggest] = useState<SuggestResponse | null>(null);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
+
+  const suggestAbort = useRef<AbortController | null>(null);
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  useEffect(() => {
+    const fromQuery = searchParams.get("edition");
+    if (fromQuery && EDITIONS.includes(fromQuery as (typeof EDITIONS)[number])) {
+      setEdition(fromQuery);
+      window.localStorage.setItem(EDITION_KEY, fromQuery);
+      return;
+    }
+    const saved = window.localStorage.getItem(EDITION_KEY);
+    if (saved && EDITIONS.includes(saved as (typeof EDITIONS)[number])) {
+      setEdition(saved);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    try {
+      const cookieMatch = document.cookie.match(/(?:^|; )ogn_theme=([^;]+)/);
+      const cookieTheme = cookieMatch ? decodeURIComponent(cookieMatch[1] || "") : "";
+      const fromCookie = cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "auto" ? cookieTheme : "";
+      const saved = window.localStorage.getItem(THEME_KEY) as any;
+      const fromLocal = saved === "light" || saved === "dark" || saved === "auto" ? saved : "";
+
+      const next = (fromCookie || fromLocal || "auto") as "light" | "dark" | "auto";
+      setTheme(next);
+      document.documentElement.dataset.theme = next;
+
+      // One-time sync: if cookie missing but localStorage has a value, persist it to cookie for SSR alignment next load.
+      if (!fromCookie && fromLocal) {
+        document.cookie = `ogn_theme=${encodeURIComponent(fromLocal)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      }
+    } catch {
+      setTheme("auto");
+      document.documentElement.dataset.theme = "auto";
+    }
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = (await res.json()) as { ok: boolean; user: any };
+        if (!alive) return;
+        setUser(data?.user || null);
+      } catch {
+        if (!alive) return;
+        setUser(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        setSuggestOpen(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  function hrefWithEdition(target: string) {
+    const params = new URLSearchParams();
+    if (edition) params.set("edition", edition);
+    return params.toString() ? `${target}?${params.toString()}` : target;
+  }
+
+  function updateEdition(nextEdition: string) {
+    setEdition(nextEdition);
+    window.localStorage.setItem(EDITION_KEY, nextEdition);
+
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("edition", nextEdition);
+    router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+  }
+
+  function applyTheme(next: "dark" | "light" | "auto") {
+    setTheme(next);
+    try {
+      window.localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // ignore
+    }
+    document.cookie = `ogn_theme=${encodeURIComponent(next)}; Path=/; Max-Age=31536000; SameSite=Lax`;
+    document.documentElement.dataset.theme = next;
+  }
+
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      router.refresh();
+    }
+  }
+
+  const searchActionUrl = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set("edition", edition);
+    if (q.trim()) params.set("q", q.trim());
+    return `/search?${params.toString()}`;
+  }, [edition, q]);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      setSuggest(null);
+      setSuggestOpen(false);
+      return;
+    }
+
+    const handle = window.setTimeout(async () => {
+      try {
+        suggestAbort.current?.abort();
+        const controller = new AbortController();
+        suggestAbort.current = controller;
+        setLoadingSuggest(true);
+        const res = await fetch(`/api/search/suggest?q=${encodeURIComponent(query)}`, {
+          cache: "no-store",
+          signal: controller.signal,
+        });
+        const json = (await res.json()) as SuggestResponse;
+        setSuggest(json);
+        setSuggestOpen(true);
+      } catch {
+        setSuggest(null);
+        setSuggestOpen(false);
+      } finally {
+        setLoadingSuggest(false);
+      }
+    }, 150);
+
+    return () => window.clearTimeout(handle);
+  }, [q]);
+
+  const navLinks = (
+    <>
+      <Link href={hrefWithEdition("/")}>Home</Link>
+      <Link href={hrefWithEdition("/my")}>For You</Link>
+      <Link href={hrefWithEdition("/local")}>Local</Link>
+      <Link href={hrefWithEdition("/blindspot")}>Blindspot</Link>
+      {user?.role === "admin" ? <Link href={hrefWithEdition("/admin")}>Admin</Link> : null}
+    </>
+  );
+
+  return (
+    <div className="container topbar-main">
+      <Link href="/" className="logo" aria-label="OpenGroundNews home">
+        <LogoLockup />
+      </Link>
+
+      <div className="nav-center">
+        <nav className="navlinks" aria-label="Primary">
+          {navLinks}
+        </nav>
+
+        <div className="searchwrap" role="search">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search stories, topics, outlets"
+            className="input-control"
+            type="search"
+            aria-label="Search stories, topics, outlets"
+            onFocus={() => {
+              if (suggest) setSuggestOpen(true);
+            }}
+          />
+          <Link className="btn" href={searchActionUrl} onClick={() => setSuggestOpen(false)}>
+            Search
+          </Link>
+
+          {suggestOpen && suggest ? (
+            <div className="suggest-pop" role="listbox" aria-label="Search suggestions">
+              <div className="suggest-head">
+                <span className="story-meta">Suggestions</span>
+                <span className="story-meta">{loadingSuggest ? "Loading..." : ""}</span>
+              </div>
+
+              {suggest.stories.length > 0 ? (
+                <div className="suggest-section">
+                  <div className="suggest-title">Stories</div>
+                  {suggest.stories.map((s) => (
+                    <Link
+                      key={s.slug}
+                      className="suggest-item"
+                      href={`/story/${encodeURIComponent(s.slug)}`}
+                      onClick={() => setSuggestOpen(false)}
+                    >
+                      <span className="suggest-item-main">{s.title}</span>
+                      <span className="suggest-item-sub">{s.topic} • {s.location}</span>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+
+              {suggest.topics.length > 0 ? (
+                <div className="suggest-section">
+                  <div className="suggest-title">Topics</div>
+                  <div className="chip-row">
+                    {suggest.topics.map((t) => (
+                      <Link
+                        key={t.slug}
+                        className="pill"
+                        href={`/interest/${encodeURIComponent(t.slug)}`}
+                        onClick={() => setSuggestOpen(false)}
+                      >
+                        {t.label} ({t.count})
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {suggest.outlets.length > 0 ? (
+                <div className="suggest-section">
+                  <div className="suggest-title">Sources</div>
+                  <div className="chip-row">
+                    {suggest.outlets.map((o) => (
+                      <Link
+                        key={o.slug}
+                        className="pill"
+                        href={`/source/${encodeURIComponent(o.slug)}`}
+                        onClick={() => setSuggestOpen(false)}
+                      >
+                        {o.label}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {suggest.stories.length === 0 && suggest.topics.length === 0 && suggest.outlets.length === 0 ? (
+                <p className="story-meta" style={{ margin: 0 }}>
+                  No suggestions yet.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="nav-actions">
+        <button
+          className="btn nav-hamburger"
+          type="button"
+          aria-label="Open menu"
+          onClick={() => setMenuOpen(true)}
+        >
+          Menu
+        </button>
+
+        <label className="story-meta nav-desktop-only" style={{ display: "grid", gap: "0.2rem" }}>
+          Edition
+          <select
+            className="select-control"
+            value={edition}
+            onChange={(e) => updateEdition(e.target.value)}
+            aria-label="Edition"
+          >
+            {EDITIONS.map((item) => (
+              <option key={item} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="story-meta nav-desktop-only" style={{ display: "grid", gap: "0.2rem" }}>
+          Theme
+          <select
+            className="select-control"
+            value={theme}
+            onChange={(e) => applyTheme(e.target.value as any)}
+            aria-label="Theme"
+          >
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+            <option value="auto">Auto</option>
+          </select>
+        </label>
+
+        {user ? (
+          <>
+            <Link className="avatar-chip nav-desktop-only" href={hrefWithEdition("/my")} aria-label="Open profile">
+              <span className="avatar-circle" aria-hidden="true">
+                {initials(user.email)}
+              </span>
+            </Link>
+            <button className="btn nav-desktop-only" type="button" onClick={logout} aria-label="Sign out">
+              Sign out
+            </button>
+          </>
+        ) : (
+          <Link
+            className="btn nav-desktop-only"
+            href={`/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`}
+          >
+            Sign in
+          </Link>
+        )}
+      </div>
+
+      {menuOpen ? (
+        <div
+          className="nav-drawer-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation menu"
+          onMouseDown={(e) => {
+            if (e.currentTarget === e.target) setMenuOpen(false);
+          }}
+        >
+          <aside className="nav-drawer">
+            <div className="nav-drawer-head">
+              <strong>OpenGroundNews</strong>
+              <button className="btn" type="button" onClick={() => setMenuOpen(false)} aria-label="Close menu">
+                Close
+              </button>
+            </div>
+
+            <div className="nav-drawer-section">
+              <div className="nav-drawer-title">Navigation</div>
+              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
+                {navLinks}
+              </div>
+            </div>
+
+            <div className="nav-drawer-section">
+              <div className="nav-drawer-title">More</div>
+              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
+                <Link href="/rating-system">Rating system</Link>
+                <Link href="/subscribe">Plans</Link>
+                <Link href="/extension">Extension</Link>
+                <Link href="/notifications">Notifications</Link>
+              </div>
+            </div>
+
+            <div className="nav-drawer-section">
+              <div className="nav-drawer-title">Search</div>
+              <Link className="btn" href={searchActionUrl} onClick={() => setMenuOpen(false)}>
+                Search for “{q.trim() || "..." }”
+              </Link>
+            </div>
+
+            <div className="nav-drawer-section">
+              <div className="nav-drawer-title">Preferences</div>
+              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+                Edition
+                <select className="select-control" value={edition} onChange={(e) => updateEdition(e.target.value)}>
+                  {EDITIONS.map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+                Theme
+                <select className="select-control" value={theme} onChange={(e) => applyTheme(e.target.value as any)}>
+                  <option value="dark">Dark</option>
+                  <option value="light">Light</option>
+                  <option value="auto">Auto</option>
+                </select>
+              </label>
+            </div>
+
+            <div className="nav-drawer-section">
+              <div className="nav-drawer-title">Account</div>
+              {user ? (
+                <>
+                  <div className="story-meta">Signed in as {user.email}</div>
+                  <button className="btn" type="button" onClick={() => { setMenuOpen(false); logout(); }}>
+                    Sign out
+                  </button>
+                </>
+              ) : (
+                <Link
+                  className="btn"
+                  href={`/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`}
+                  onClick={() => setMenuOpen(false)}
+                >
+                  Sign in
+                </Link>
+              )}
+            </div>
+          </aside>
+        </div>
+      ) : null}
+    </div>
+  );
+}

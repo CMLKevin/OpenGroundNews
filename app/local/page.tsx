@@ -39,7 +39,10 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
   return (
     <main className="container" style={{ paddingTop: "1rem" }}>
       <div className="section-title">
-        <h2>Local Lens Feed</h2>
+        <div style={{ display: "grid", gap: "0.15rem" }}>
+          <h2 style={{ margin: 0 }}>Local</h2>
+          <span className="story-meta">Daily Local News</span>
+        </div>
       </div>
       <LocalFeedControls />
       <p className="note">

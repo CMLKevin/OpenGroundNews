@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "OpenGroundNews",
+  "version": "0.1.0",
+  "description": "Open the current page in OpenGroundNews Reader or search for coverage.",
+  "action": {
+    "default_title": "OpenGroundNews",
+    "default_popup": "popup.html"
+  },
+  "options_page": "options.html",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": ["<all_urls>"]
+}
+

@@ -8,6 +8,7 @@ import * as cheerio from "cheerio";
 import { chromium } from "playwright-core";
 import { runGroundNewsScrape } from "./groundnews_scrape_cdp.mjs";
 import { createBrowserSession, stopBrowserSession, requireApiKey } from "./lib/browser_use_cdp.mjs";
+import { persistIngestionRun, persistStoriesToDb } from "./lib/gn/persist_db.mjs";
 
 const STORE_PATH = path.join(process.cwd(), "data", "store.json");
 const STORE_LOCK_PATH = path.join(process.cwd(), "data", "store.lock");
@@ -2450,6 +2451,7 @@ function normalizeStoryRecordForStore(story) {
 
 export async function runGroundNewsIngestion(opts = {}) {
   requireApiKey();
+  const startedAt = new Date().toISOString();
   const options = {
     ...parseArgs([]),
     ...opts,
@@ -2522,6 +2524,25 @@ export async function runGroundNewsIngestion(opts = {}) {
         console.log("front-page discovery returned 0 links; falling back to route scrape links");
       }
       console.log(`article links selected for enrichment: ${links.length}`);
+    }
+
+    // Data-quality gate: if we repeatedly fail to discover any links, record a failed run and stop.
+    if (links.length === 0) {
+      await persistIngestionRun({
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "error",
+        mode: "groundnews-frontpage-individual-article-pipeline",
+        routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+        uniqueStoryLinks: 0,
+        ingestedStories: 0,
+        errors: {
+          reason: "No story links discovered",
+          scrapeUniqueStoryLinkCount: scrape.uniqueStoryLinkCount,
+          scrapeRouteCount: scrape.routeCount,
+        },
+      }).catch(() => {});
+      throw new Error("Ingestion failed: no story links discovered.");
     }
 
     if (refreshExisting > 0) {
@@ -2643,6 +2664,24 @@ export async function runGroundNewsIngestion(opts = {}) {
     await writeStoreAtomic(store);
     return store;
   });
+
+  // Persist to DB for the actual app runtime.
+  if (process.env.DATABASE_URL) {
+    await persistStoriesToDb(merged.stories, { disconnect: false });
+  }
+  await persistIngestionRun({
+    startedAt,
+    finishedAt: new Date().toISOString(),
+    status: "ok",
+    mode: "groundnews-frontpage-individual-article-pipeline",
+    routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+    uniqueStoryLinks: links.length,
+    ingestedStories: stories.length,
+    errors: {
+      homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
+      auditEnabled: Boolean(auditState.enabled),
+    },
+  }).catch(() => {});
 
   return {
     ok: true,

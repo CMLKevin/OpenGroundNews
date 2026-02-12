@@ -38,6 +38,7 @@ export type Story = {
   publishedAt: string;
   updatedAt: string;
   sourceCount: number;
+  originalReportingPct?: number;
   bias: {
     left: number;
     center: number;

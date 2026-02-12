@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { Bricolage_Grotesque, Newsreader } from "next/font/google";
 import { TopNav } from "@/components/TopNav";
 import "@/app/globals.css";
+import { cookies } from "next/headers";
 
 const sans = Bricolage_Grotesque({
   subsets: ["latin"],
@@ -22,29 +23,29 @@ export const metadata: Metadata = {
   },
 };
 
-function ThemeBootScript() {
+function ThemeBootScript({ initialTheme }: { initialTheme: "light" | "dark" | "auto" }) {
   // Set `data-theme` early to avoid a flash of the wrong theme.
-  // Default: dark (to match Ground News), with persisted local override.
+  // IMPORTANT: do not resolve `auto` to light/dark here; CSS handles it to prevent hydration mismatch.
   const code = `
 (() => {
   try {
-    const key = "ogn_theme";
-    const saved = window.localStorage.getItem(key);
-    const theme = saved === "light" || saved === "dark" ? saved : "dark";
-    document.documentElement.dataset.theme = theme;
-  } catch {
-    document.documentElement.dataset.theme = "dark";
-  }
+    var pref = ${JSON.stringify(initialTheme)};
+    document.documentElement.dataset.theme = pref;
+  } catch {}
 })();`.trim();
-
   return <script dangerouslySetInnerHTML={{ __html: code }} />;
 }
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const cookieStore = await cookies();
+  const cookieTheme = cookieStore.get("ogn_theme")?.value || "";
+  const initialTheme: "light" | "dark" | "auto" =
+    cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "auto" ? (cookieTheme as any) : "auto";
+
   return (
-    <html lang="en" data-theme="dark">
+    <html lang="en" data-theme={initialTheme} suppressHydrationWarning>
       <body className={`${sans.variable} ${serif.variable}`}>
-        <ThemeBootScript />
+        <ThemeBootScript initialTheme={initialTheme} />
         <Suspense fallback={<header className="topbar" />}>
           <TopNav />
         </Suspense>

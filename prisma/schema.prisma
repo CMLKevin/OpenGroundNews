@@ -1,0 +1,255 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  user
+  admin
+}
+
+enum FollowKind {
+  topic
+  outlet
+}
+
+enum BiasBucket {
+  left
+  center
+  right
+  unknown
+}
+
+enum FactualityBucket {
+  very_high
+  high
+  mixed
+  low
+  very_low
+  unknown
+}
+
+enum ArchiveStatus {
+  success
+  blocked
+  not_found
+  fallback
+  error
+}
+
+enum IngestionStatus {
+  ok
+  error
+}
+
+enum ThemePreference {
+  light
+  dark
+  auto
+}
+
+model User {
+  id           String    @id
+  email        String    @unique
+  role         UserRole  @default(user)
+  createdAt    DateTime  @default(now())
+  passwordSalt String?
+  passwordHash String?
+
+  sessions     Session[]
+  prefs        UserPrefs?
+  follows      Follow[]
+  reading      ReadingEvent[]
+  pushSubscriptions PushSubscription[]
+}
+
+model Session {
+  token     String   @id
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model UserPrefs {
+  userId     String          @id
+  edition    String          @default("International")
+  localLabel String?
+  localLat   Float?
+  localLon   Float?
+  theme      ThemePreference @default(dark)
+  notifyDailyBriefing Boolean @default(false)
+  notifyBlindspot     Boolean @default(false)
+  notifyFollowed      Boolean @default(false)
+  updatedAt  DateTime        @updatedAt
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Follow {
+  id        String     @id
+  userId    String
+  kind      FollowKind
+  slug      String
+  createdAt DateTime   @default(now())
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, slug])
+  @@index([userId])
+  @@index([kind, slug])
+}
+
+model ReadingEvent {
+  id              String   @id
+  userId          String
+  storyId         String
+  readAt          DateTime @default(now())
+  dwellMs         Int?
+  sourceOutletSlug String?
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story           Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([storyId, readAt])
+}
+
+model Story {
+  id           String   @id
+  slug         String   @unique
+  canonicalUrl String?
+  title        String
+  dek          String?
+  author       String?
+  summary      String
+  topic        String
+  location     String
+  imageUrl     String
+  publishedAt  DateTime
+  updatedAt    DateTime
+  sourceCount  Int
+
+  biasLeft     Int
+  biasCenter   Int
+  biasRight    Int
+
+  // Nullable because GN does not always provide this signal; we persist when available.
+  originalReportingPct Int?
+
+  isBlindspot  Boolean  @default(false)
+  isLocal      Boolean  @default(false)
+  isTrending   Boolean  @default(false)
+
+  coverageTotal  Int?
+  coverageLeft   Int?
+  coverageCenter Int?
+  coverageRight  Int?
+
+  tags         StoryTag[]
+  sources       SourceArticle[]
+  reading       ReadingEvent[]
+
+  @@index([updatedAt])
+  @@index([topic])
+  @@index([location])
+}
+
+model PushSubscription {
+  id        String   @id
+  userId    String
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model StoryTag {
+  id      String @id
+  storyId String
+  tag     String
+
+  story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, tag])
+  @@index([tag])
+}
+
+model Outlet {
+  id             String           @id
+  slug           String           @unique
+  name           String
+  logoUrl        String?
+  bias           BiasBucket       @default(unknown)
+  factuality     FactualityBucket @default(unknown)
+  ownership      String?          // Optional; "Unlabeled" can be rendered in UI.
+  lastEnrichedAt DateTime?
+
+  sources        SourceArticle[]
+
+  @@index([bias])
+  @@index([factuality])
+}
+
+model SourceArticle {
+  id          String           @id
+  storyId     String
+  outletId    String
+  url         String
+  excerpt     String
+  publishedAt DateTime?
+  paywall     String?
+  locality    String?
+
+  story       Story            @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  outlet      Outlet           @relation(fields: [outletId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+  @@index([outletId])
+  @@index([url])
+}
+
+model ArchiveEntry {
+  id          String        @id
+  originalUrl String        @unique
+  status      ArchiveStatus
+  archiveUrl  String
+  title       String
+  notes       String
+  paragraphs  Json
+  checkedAt   DateTime
+}
+
+model IngestionRun {
+  id               String         @id
+  startedAt        DateTime       @default(now())
+  finishedAt       DateTime?
+  status           IngestionStatus
+  routeCount       Int
+  uniqueStoryLinks Int
+  ingestedStories  Int
+  errors           Json?
+}
+
+model NewsletterSignup {
+  id        String   @id
+  list      String
+  email     String
+  createdAt DateTime @default(now())
+
+  @@index([list])
+  @@index([email])
+}

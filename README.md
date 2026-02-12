@@ -26,7 +26,7 @@ It provides:
 ## 1) Project Status
 - Framework: Next.js App Router
 - Runtime: Node.js + TypeScript
-- Storage: JSON-backed datastore (`/Users/kevinlin/OpenGroundNews/data/store.json`)
+- Storage: Postgres + Prisma (required for app runtime + ingestion)
 - Browser automation: Playwright Core connected to Browser Use Cloud CDP sessions
 - Current state: fully runnable web app + ingestion + archive fallback flow
 
@@ -38,14 +38,17 @@ It provides:
 - Ratings explainer (`/rating-system`)
 - Subscribe/info surface (`/subscribe`)
 - Admin panel (`/admin`) with ingestion controls and status
+- Notifications setup (`/notifications`) via Web Push (requires VAPID keys)
+- Browser extension surface (`/extension`) + MV3 extension in `extension/`
+- Archive-first reader page (`/reader`) (requires sign-in)
 - JSON APIs for stories, story detail, archive-read, and ingestion trigger
 
 ## 3) Architecture
 High-level flow:
 1. Browser Use Cloud creates remote browser sessions
 2. Playwright CDP scripts scrape Ground News routes and discover story links
-3. Ingestion script enriches stories and stores normalized data in `data/store.json`
-4. App server renders feeds/details from the store
+3. Ingestion script enriches stories and upserts normalized data into Postgres
+4. App server renders feeds/details from the database
 5. Reader API tries archive hosts first; if blocked/unavailable, falls back to direct extraction
 
 See full details in docs:
@@ -72,6 +75,11 @@ npm run start
 ### Required
 - `BROWSER_USE_API_KEY`: Browser Use Cloud API key
 - `OGN_API_KEY` (or `OPEN_GROUND_NEWS_API_KEY`): required for protected write APIs (`POST /api/ingest/groundnews`, `POST /api/archive/read`)
+- `DATABASE_URL`: Postgres connection string for Prisma (required for app runtime + ingestion)
+
+### Optional (notifications)
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`: enables Web Push notifications
+  - Generate keys: `npm run push:vapid`
 
 ### Optional browser session controls
 - `BROWSER_USE_TIMEOUT_MINUTES`: session timeout passed to Browser Use `/api/v2/browsers`
@@ -153,12 +161,18 @@ PORT=3001 ./restart.sh prod
   - Body: `{ "url": "https://...", "force": true|false }`
 - `POST /api/ingest/groundnews`
   - Header: `x-ogn-api-key: <key>`
+- `POST /api/reader`
+  - Session: requires `ogn_session`
+  - Body: `{ "url": "https://...", "force": true|false }`
+- `GET /api/push/public-key`
+- `POST /api/push/subscribe` (session required; stores subscription)
+- `POST /api/push/unsubscribe` (session required)
 
 See detailed request/response notes in:
 - `/Users/kevinlin/OpenGroundNews/docs/API.md`
 
 ## 9) Data Layout
-- Store file: `/Users/kevinlin/OpenGroundNews/data/store.json`
+- Primary store: Postgres (see `prisma/schema.prisma`)
 - Runtime outputs: `/Users/kevinlin/OpenGroundNews/output/browser_use/`
 - Main pipeline scripts:
   - `/Users/kevinlin/OpenGroundNews/scripts/groundnews_scrape_cdp.mjs`

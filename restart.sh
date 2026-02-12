@@ -12,6 +12,76 @@ LOG_FILE="$RUN_DIR/opengroundnews-${MODE}.log"
 
 mkdir -p "$RUN_DIR"
 
+load_dotenv() {
+  local env_file="$1"
+  if [[ -f "$env_file" ]]; then
+    # .env files are generally POSIX-style KEY=VALUE, which bash can source.
+    # We avoid printing values to logs (may contain secrets).
+    set -a
+    # shellcheck disable=SC1090
+    source "$env_file"
+    set +a
+  fi
+}
+
+ensure_local_postgres() {
+  local pg_port="${OGN_PG_PORT:-54329}"
+  local pg_db="${OGN_PG_DB:-ogn_dev}"
+  local pg_data_dir="$ROOT_DIR/output/local-postgres/data"
+  local pg_log_file="$ROOT_DIR/output/local-postgres/logfile"
+  local pg_user
+  pg_user="$(id -un)"
+
+  mkdir -p "$(dirname "$pg_data_dir")"
+  mkdir -p "$(dirname "$pg_log_file")"
+
+  if ! command -v pg_ctl >/dev/null 2>&1 || ! command -v initdb >/dev/null 2>&1; then
+    echo "Postgres tools not found (pg_ctl/initdb). Install Postgres (e.g. via Homebrew) or set DATABASE_URL in .env.local."
+    return 1
+  fi
+
+  if [[ ! -f "$pg_data_dir/PG_VERSION" ]]; then
+    echo "Initializing local Postgres cluster at $pg_data_dir"
+    initdb -D "$pg_data_dir" >/dev/null
+  fi
+
+  if ! pg_ctl -D "$pg_data_dir" status >/dev/null 2>&1; then
+    echo "Starting local Postgres on port $pg_port"
+    pg_ctl -D "$pg_data_dir" -o "-p $pg_port" -l "$pg_log_file" start >/dev/null
+  fi
+
+  # Wait for readiness.
+  if command -v pg_isready >/dev/null 2>&1; then
+    for _ in {1..50}; do
+      if pg_isready -p "$pg_port" >/dev/null 2>&1; then
+        break
+      fi
+      sleep 0.1
+    done
+  else
+    sleep 0.5
+  fi
+
+  # Ensure the dev database exists.
+  if command -v createdb >/dev/null 2>&1; then
+    createdb -p "$pg_port" "$pg_db" >/dev/null 2>&1 || true
+  fi
+
+  export DATABASE_URL="postgresql://${pg_user}@localhost:${pg_port}/${pg_db}?schema=public"
+  return 0
+}
+
+ensure_database_url() {
+  if [[ -n "${DATABASE_URL:-}" ]]; then
+    return 0
+  fi
+  if [[ "$MODE" == "prod" ]]; then
+    echo "DATABASE_URL is required for prod. Set it in the environment or in .env.local."
+    return 1
+  fi
+  ensure_local_postgres
+}
+
 usage() {
   cat <<'USAGE'
 Usage:
@@ -19,6 +89,9 @@ Usage:
 
 Environment:
   PORT=<port>            # default: 3000
+  DATABASE_URL=<url>     # required for prod; auto-provisioned for dev if missing
+  OGN_PG_PORT=<port>     # default: 54329 (dev auto DB)
+  OGN_PG_DB=<name>       # default: ogn_dev (dev auto DB)
 USAGE
 }
 
@@ -52,6 +125,23 @@ if [[ -f "$PID_FILE" ]]; then
   rm -f "$PID_FILE"
 fi
 
+# Load .env for shell-side commands (Prisma, scripts) and to pass env through to Next.
+load_dotenv "$ROOT_DIR/.env"
+load_dotenv "$ROOT_DIR/.env.local"
+
+if ! ensure_database_url; then
+  exit 1
+fi
+
+echo "Ensuring Prisma client + migrations are up to date..."
+npm run db:generate >/dev/null 2>&1 || true
+npm run db:deploy >/dev/null
+
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  echo "DATABASE_URL still missing after preflight; refusing to start."
+  exit 1
+fi
+
 # If Next.js dev lock exists, stop the process holding it (if any).
 LOCK_FILE="$ROOT_DIR/.next/dev/lock"
 if [[ -f "$LOCK_FILE" ]] && command -v lsof >/dev/null 2>&1; then
@@ -77,9 +167,9 @@ fi
 if [[ "$MODE" == "prod" ]]; then
   echo "Building production bundle..."
   npm run build >/dev/null
-  START_CMD=(npm run start -- --port "$PORT")
+  START_CMD=(env DATABASE_URL="$DATABASE_URL" npm run start -- --port "$PORT")
 else
-  START_CMD=(npm run dev -- --port "$PORT")
+  START_CMD=(env DATABASE_URL="$DATABASE_URL" npm run dev -- --port "$PORT")
 fi
 
 echo "Starting OpenGroundNews in $MODE mode on port $PORT"

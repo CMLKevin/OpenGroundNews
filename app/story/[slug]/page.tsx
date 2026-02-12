@@ -11,6 +11,9 @@ import { TimelinePanel } from "@/components/TimelinePanel";
 import { SimilarTopicsPanel } from "@/components/SimilarTopicsPanel";
 import { SourceCoveragePanel } from "@/components/SourceCoveragePanel";
 import { StoryImage } from "@/components/StoryImage";
+import { DailyBriefingList } from "@/components/DailyBriefingList";
+import { PodcastCards } from "@/components/PodcastCards";
+import { ReadingTracker } from "@/components/ReadingTracker";
 import { prettyDate, slugify, sourceCountLabel } from "@/lib/format";
 import { readArchiveForUrl } from "@/lib/archive";
 import { getStoryBySlug, listStories } from "@/lib/store";
@@ -98,6 +101,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
     <main className="container">
       <section className="story-shell">
         <article className="panel" style={{ display: "grid", gap: "0.85rem" }}>
+          <ReadingTracker storySlug={story.slug} bias={story.bias} />
           <div className="story-meta">
             {story.topic} • {story.location} • Published {prettyDate(story.publishedAt)} • Updated {prettyDate(story.updatedAt)}
           </div>
@@ -124,7 +128,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
             {story.trending ? <span className="story-stat-pill">Trending</span> : null}
             {story.local ? <span className="story-stat-pill">Local perspective</span> : null}
             {story.canonicalUrl ? (
-              <a className="story-stat-pill" href={story.canonicalUrl} target="_blank" rel="noreferrer">
+              <a className="btn btn-external" href={story.canonicalUrl} target="_blank" rel="noreferrer">
                 View on Ground News
               </a>
             ) : null}
@@ -137,30 +141,6 @@ export default async function StoryPage({ params, searchParams }: Props) {
 
           <ShareBar title={story.title} url={shareUrl} />
 
-          <section className="panel" style={{ background: "var(--bg-panel)", display: "grid", gap: "0.45rem" }}>
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Coverage Snapshot</h2>
-            </div>
-            <div className="kpi-strip">
-              <div className="kpi">
-                <span>Left share</span>
-                <strong>{story.bias.left}%</strong>
-              </div>
-              <div className="kpi">
-                <span>Center share</span>
-                <strong>{story.bias.center}%</strong>
-              </div>
-              <div className="kpi">
-                <span>Right share</span>
-                <strong>{story.bias.right}%</strong>
-              </div>
-              <div className="kpi">
-                <span>Total sources</span>
-                <strong>{displayTotalSources}</strong>
-              </div>
-            </div>
-          </section>
-
           <BiasDistributionPanel story={story} />
 
           <PerspectiveTabs story={story} />
@@ -172,23 +152,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
               <div className="section-title" style={{ paddingTop: 0 }}>
                 <h2 style={{ margin: 0 }}>Podcasts & Opinions</h2>
               </div>
-              <ul className="perspective-list">
-                {story.podcastReferences.slice(0, 6).map((entry, idx) => {
-                  const match = String(entry || "").match(/https?:\/\/[^\s)]+/i);
-                  const url = match?.[0] ?? "";
-                  const label = String(entry || "").replace(url, "").trim() || entry;
-                  return (
-                    <li key={`${story.id}-pod-${idx}`}>
-                      {label}{" "}
-                      {url ? (
-                        <a className="btn" href={url} target="_blank" rel="noreferrer" style={{ marginLeft: "0.4rem" }}>
-                          Open link
-                        </a>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
+              <PodcastCards entries={story.podcastReferences} />
             </section>
           ) : null}
 
@@ -213,7 +177,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
         <aside className="feed-rail">
           <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Coverage Details</h2>
+              <h2 style={{ margin: 0 }}>At a Glance</h2>
             </div>
             <div className="kpi-strip">
               <div className="kpi">
@@ -221,39 +185,16 @@ export default async function StoryPage({ params, searchParams }: Props) {
                 <strong>{displayTotalSources}</strong>
               </div>
               <div className="kpi">
-                <span>Leaning Left</span>
-                <strong>{coverageLeft}</strong>
-              </div>
-              <div className="kpi">
-                <span>Center</span>
-                <strong>{coverageCenter}</strong>
-              </div>
-              <div className="kpi">
-                <span>Leaning Right</span>
-                <strong>{coverageRight}</strong>
-              </div>
-              <div className="kpi">
                 <span>Last Updated</span>
                 <strong style={{ fontSize: "0.96rem" }}>{prettyDate(story.updatedAt)}</strong>
               </div>
             </div>
+            <div style={{ marginTop: "0.65rem" }}>
+              <BiasBar story={story} showLabels={true} />
+            </div>
           </section>
 
-          <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2>Daily Briefing</h2>
-              <span className="story-meta">Top 6</span>
-            </div>
-            <ol className="rail-list">
-              {dailyBriefing.map((item) => (
-                <li key={item.id}>
-                  <Link href={`/story/${item.slug}`} className="rail-link">
-                    {item.title}
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </section>
+          <DailyBriefingList stories={dailyBriefing} title="Daily Briefing" />
           <SimilarTopicsPanel story={story} />
         </aside>
       </section>
