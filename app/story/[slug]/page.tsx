@@ -6,7 +6,7 @@ import { PerspectiveTabs } from "@/components/PerspectiveTabs";
 import { SimilarTopicsPanel } from "@/components/SimilarTopicsPanel";
 import { SourceCoveragePanel } from "@/components/SourceCoveragePanel";
 import { StoryImage } from "@/components/StoryImage";
-import { prettyDate } from "@/lib/format";
+import { prettyDate, slugify } from "@/lib/format";
 import { readArchiveForUrl } from "@/lib/archive";
 import { getStoryBySlug, listStories } from "@/lib/store";
 
@@ -132,7 +132,9 @@ export default async function StoryPage({ params, searchParams }: Props) {
             </div>
             <div className="chip-row">
               {story.tags.map((tag) => (
-                <span className="chip" key={tag}>{tag}</span>
+                <Link className="chip" key={tag} href={`/interest/${slugify(tag)}`}>
+                  {tag}
+                </Link>
               ))}
             </div>
           </section>

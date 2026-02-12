@@ -249,6 +249,25 @@ function hostFromUrl(raw) {
   }
 }
 
+function looksLikeWeakOutletLabel(value) {
+  const text = normalizeText(value).toLowerCase();
+  if (!text) return true;
+  if (/^\d+\s+(hours?|days?|minutes?)\s+ago/.test(text)) return true;
+  if (/\b(hours?|days?|minutes?)\s+ago\b/.test(text)) return true;
+  if (/^[a-z .'-]{2,40},\s*[a-z .'-]{2,40}$/.test(text) && text.split(" ").length <= 5) return true;
+  if (text.length > 64) return true;
+  return false;
+}
+
+function looksLikeWeakExcerpt(value) {
+  const text = normalizeText(value).toLowerCase();
+  if (!text) return true;
+  if (text.length < 48) return true;
+  if (/^\d+\s+(hours?|days?|minutes?)\s+ago/.test(text)) return true;
+  if (/^(updated|published)\b/.test(text)) return true;
+  return false;
+}
+
 function isGroundNewsUrl(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
@@ -374,6 +393,28 @@ function normalizeAssetUrl(value, baseUrl = "") {
     return parsed.toString();
   } catch {
     return undefined;
+  }
+}
+
+function extractNextDataFromHtml(html) {
+  if (!html) return null;
+  try {
+    const $ = cheerio.load(html);
+    const raw = $("#__NEXT_DATA__").text() || $("#__NEXT_DATA__").html() || "";
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
+}
+
+function extractNextDataRawFromHtml(html) {
+  if (!html) return "";
+  try {
+    const $ = cheerio.load(html);
+    return $("#__NEXT_DATA__").text() || $("#__NEXT_DATA__").html() || "";
+  } catch {
+    return "";
   }
 }
 
@@ -894,18 +935,56 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
 
     const parseCountAfter = (label, text) => {
       const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const match = text.match(new RegExp(`${escaped}\\s+(\\d{1,4})`, "i"));
-      return match ? Number(match[1]) : undefined;
+      const match = text.match(new RegExp(`${escaped}\\s*[:\\-]?\\s*([0-9][0-9,]{0,8})`, "i"));
+      if (!match) return undefined;
+      const parsed = Number(match[1].replace(/,/g, ""));
+      return Number.isFinite(parsed) ? parsed : undefined;
     };
 
     const parseBiasPercentages = (text) => {
-      const match = text.match(/\bL\s*(\d{1,3})%\s*C\s*(\d{1,3})%\s*(?:R\s*)?(\d{1,3})%/i);
+      const match =
+        text.match(/\bL\s*(\d{1,3})%\s*C\s*(\d{1,3})%\s*R\s*(\d{1,3})%/i) ||
+        text.match(/\bleft\s*(\d{1,3})%.*?\bcenter\s*(\d{1,3})%.*?\bright\s*(\d{1,3})%/i);
       if (!match) return undefined;
-      return {
-        left: Number(match[1]),
-        center: Number(match[2]),
-        right: Number(match[3]),
+      const left = Number(match[1]);
+      const center = Number(match[2]);
+      const right = Number(match[3]);
+      if (![left, center, right].every((n) => Number.isFinite(n))) return undefined;
+      return { left, center, right };
+    };
+
+    const parseCoverageFromText = (text) => {
+      const value = normalize(text);
+      if (!value) {
+        return {
+          totalSources: undefined,
+          leaningLeft: undefined,
+          center: undefined,
+          leaningRight: undefined,
+          percentages: undefined,
+        };
+      }
+
+      const pickCount = (labels) => {
+        for (const label of labels) {
+          const parsed = parseCountAfter(label, value);
+          if (Number.isFinite(parsed)) return parsed;
+        }
+        return undefined;
       };
+
+      return {
+        totalSources: pickCount(["Total News Sources", "Total Sources", "Sources"]),
+        leaningLeft: pickCount(["Leaning Left", "Left Sources", "Left Coverage"]),
+        center: pickCount(["Center", "Centre", "Center Sources", "Center Coverage"]),
+        leaningRight: pickCount(["Leaning Right", "Right Sources", "Right Coverage"]),
+        percentages: parseBiasPercentages(value),
+      };
+    };
+
+    const maxFinite = (...values) => {
+      const finite = values.filter((v) => Number.isFinite(v));
+      return finite.length > 0 ? Math.max(...finite.map((v) => Number(v))) : undefined;
     };
 
     const cleanSnippet = (value) => {
@@ -923,6 +1002,26 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
         .trim();
     };
 
+    const isWeakOutletLabel = (value) => {
+      const text = normalize(value || "").toLowerCase();
+      if (!text) return true;
+      if (/^\d+\s+(hours?|days?|minutes?)\s+ago/.test(text)) return true;
+      if (/\b(hours?|days?|minutes?)\s+ago\b/.test(text)) return true;
+      if (text.includes("read full article") || text.includes("open original")) return true;
+      // City/country style placeholders often leak from source cards.
+      if (/^[a-z .'-]{2,40},\s*[a-z .'-]{2,40}$/.test(text) && text.split(" ").length <= 5) return true;
+      return false;
+    };
+
+    const isWeakExcerpt = (value) => {
+      const text = cleanSnippet(value || "");
+      if (!text) return true;
+      if (text.length < 48) return true;
+      if (/^\d+\s+(hours?|days?|minutes?)\s+ago\b/i.test(text)) return true;
+      if (/^(updated|published)\b/i.test(text)) return true;
+      return false;
+    };
+
     const parseFactualityFromBlock = (text) => {
       const match = text.match(/factuality\s*[:\-]?\s*(very high|high|mixed|very low|low)\b/i);
       if (match) return extractFactuality(match[1]);
@@ -930,12 +1029,10 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
     };
 
     const parseOwnershipFromBlock = (text) => {
-      const match = text.match(/ownership\s*[:\-]\s*([a-z0-9&'\/\-\s]{2,80})/i);
+      const match = text.match(/ownership\s*[:\-]\s*([^\n]{2,140})/i);
       if (!match) return "";
       const cleaned = cleanSnippet(match[1].split(/paywall|locality|read|open|reposted|published|updated/i)[0]);
       if (!cleaned || cleaned.length < 2) return "";
-      if (cleaned.length > 32) return "";
-      if (cleaned.split(/\s+/).length > 4) return "";
       if (/^(unknown|na|n\/a)$/i.test(cleaned)) return "";
       return cleaned;
     };
@@ -1026,8 +1123,10 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
         .split(/\n+/)
         .map((line) => cleanSnippet(line))
         .filter(Boolean);
-      const outletLink = container?.querySelector("a[href*='/interest/']");
-      const outletFromInterest = normalize(outletLink?.textContent || "");
+      const outletLink =
+        container?.querySelector("a[href*='/my/discover/source'], a[href*='/source/'], a[href*='/publisher/']") ||
+        container?.querySelector("a[href*='/interest/']");
+      const outletFromInterest = normalize(outletLink?.textContent || outletLink?.getAttribute("aria-label") || "");
       const outletFromLine =
         lines.find((line) => {
           const lower = line.toLowerCase();
@@ -1037,7 +1136,8 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
           if (/lean left|lean right|far left|far right|center|left|right/.test(lower)) return false;
           return true;
         }) || "";
-      const outlet = outletFromInterest || outletFromLine || toHost(normalizedUrl);
+      const outletCandidate = outletFromInterest || outletFromLine || "";
+      const outlet = !isWeakOutletLabel(outletCandidate) ? outletCandidate : toHost(normalizedUrl);
 
       const biasLabel = normalize(container?.querySelector("a[href*='#bias-ratings']")?.textContent || "");
       const paragraphText = cleanSnippet(normalize(container?.querySelector("p")?.textContent || ""));
@@ -1049,7 +1149,9 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
           if (/lean left|lean right|far left|far right/.test(lower)) return false;
           return true;
         }) || "";
-      const excerpt = paragraphText || excerptLine || cleanSnippet(block.split(/(?<=[.!?])\s+/).find((part) => part.length > 70) || block.slice(0, 280));
+      const sentenceExcerpt = cleanSnippet(block.split(/(?<=[.!?])\s+/).find((part) => part.length > 70) || block.slice(0, 280));
+      const primaryExcerpt = paragraphText || excerptLine || sentenceExcerpt;
+      const excerpt = isWeakExcerpt(primaryExcerpt) ? sentenceExcerpt : primaryExcerpt;
 
       const logoUrl = normalize(
         outletLink?.querySelector("img")?.getAttribute("src") ||
@@ -1075,6 +1177,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
     }
 
     const nextDataText = document.getElementById("__NEXT_DATA__")?.textContent || "";
+    let nextCoverage = null;
     if (nextDataText) {
       try {
         const parsed = JSON.parse(nextDataText);
@@ -1093,6 +1196,34 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
           }
 
           const anyNode = node;
+          // Best-effort capture of structured coverage/bias distribution if present in hydration state.
+          if (!nextCoverage && typeof anyNode === "object") {
+            const totalSources = maxFinite(
+              anyNode.totalNewsSources,
+              anyNode.totalSources,
+              anyNode.sourceCount,
+              anyNode.total_count,
+              anyNode.totalCount,
+            );
+            const leaningLeft = maxFinite(anyNode.leaningLeft, anyNode.leftSources, anyNode.leftCount);
+            const center = maxFinite(anyNode.center, anyNode.centre, anyNode.centerSources, anyNode.centerCount);
+            const leaningRight = maxFinite(anyNode.leaningRight, anyNode.rightSources, anyNode.rightCount);
+            const pctLeft = maxFinite(anyNode.leftPercent, anyNode.leftPct, anyNode.left_percentage);
+            const pctCenter = maxFinite(anyNode.centerPercent, anyNode.centerPct, anyNode.center_percentage);
+            const pctRight = maxFinite(anyNode.rightPercent, anyNode.rightPct, anyNode.right_percentage);
+            const hasCounts = Number.isFinite(totalSources) || Number.isFinite(leaningLeft) || Number.isFinite(center) || Number.isFinite(leaningRight);
+            const hasPcts = [pctLeft, pctCenter, pctRight].every((n) => Number.isFinite(n));
+            if (hasCounts || hasPcts) {
+              nextCoverage = {
+                totalSources,
+                leaningLeft,
+                center,
+                leaningRight,
+                percentages: hasPcts ? { left: Number(pctLeft), center: Number(pctCenter), right: Number(pctRight) } : undefined,
+              };
+            }
+          }
+
           const rawUrl = typeof anyNode.url === "string" ? anyNode.url : typeof anyNode.link === "string" ? anyNode.link : "";
           if (!rawUrl) continue;
 
@@ -1119,10 +1250,15 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
           const publishedAt = normalize(anyNode.publishedAt || anyNode.publishDate || anyNode.date || "");
           const logoUrl = normalize(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || "");
 
+          const outletFromExisting = existing?.outlet || "";
+          const excerptFromExisting = existing?.excerpt || "";
+          const outletResolved = !isWeakOutletLabel(outletFromExisting) ? outletFromExisting : outlet;
+          const excerptResolved = !isWeakExcerpt(excerptFromExisting) ? excerptFromExisting : excerpt;
+
           sourceByUrl.set(normalizedUrl, {
             url: normalizedUrl,
-            outlet: existing?.outlet || outlet,
-            excerpt: existing?.excerpt || excerpt,
+            outlet: outletResolved || outlet || sourceUrl.hostname.replace(/^www\./, ""),
+            excerpt: excerptResolved || excerpt || "",
             logoUrl: existing?.logoUrl || logoUrl,
             bias: existing?.bias !== "unknown" ? existing?.bias : bias,
             factuality: existing?.factuality !== "unknown" ? existing?.factuality : factuality,
@@ -1184,12 +1320,13 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       normalize(document.querySelector("time")?.getAttribute("datetime") || "");
 
     const bodyText = normalize(document.body?.innerText || "");
+    const textCoverage = parseCoverageFromText(bodyText);
     const coverage = {
-      totalSources: parseCountAfter("Total News Sources", bodyText),
-      leaningLeft: parseCountAfter("Leaning Left", bodyText),
-      center: parseCountAfter("Center", bodyText),
-      leaningRight: parseCountAfter("Leaning Right", bodyText),
-      percentages: parseBiasPercentages(bodyText),
+      totalSources: nextCoverage?.totalSources ?? textCoverage.totalSources,
+      leaningLeft: nextCoverage?.leaningLeft ?? textCoverage.leaningLeft,
+      center: nextCoverage?.center ?? textCoverage.center,
+      leaningRight: nextCoverage?.leaningRight ?? textCoverage.leaningRight,
+      percentages: nextCoverage?.percentages ?? textCoverage.percentages,
     };
 
     const allHeadings = Array.from(document.querySelectorAll("h1,h2,h3"))
@@ -1259,6 +1396,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
         title,
         headingCount: allHeadings.length,
         headings: allHeadings,
+        nextCoverage: nextCoverage,
         hasCoverageDetails: /coverage details/i.test(bodyText),
         hasBiasDistribution: /bias distribution/i.test(bodyText),
         hasReadFullArticle: /read full article/i.test(bodyText),
@@ -1279,8 +1417,16 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
     const key = `${String(articleOrdinal + 1).padStart(3, "0")}-${slugForFile(toSlugFromUrl(storyUrl, rendered.title))}-${shortHash(storyUrl)}`;
     const articleHtmlPath = path.join(auditState.dir, "articles", `${key}.raw.html`);
     const articleFeaturesPath = path.join(auditState.dir, "articles", `${key}.features.json`);
+    const articleNextDataPath = path.join(auditState.dir, "articles", `${key}.__NEXT_DATA__.json`);
     const html = await page.content();
     await writeTextFile(articleHtmlPath, html);
+    const nextDataRaw = extractNextDataRawFromHtml(html);
+    if (nextDataRaw) {
+      await writeTextFile(articleNextDataPath, nextDataRaw);
+    } else {
+      await writeTextFile(articleNextDataPath, "");
+    }
+
     await writeJsonFile(articleFeaturesPath, {
       capturedAt: new Date().toISOString(),
       storyUrl,
@@ -1290,6 +1436,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       storyUrl,
       htmlPath: articleHtmlPath,
       featurePath: articleFeaturesPath,
+      nextDataPath: articleNextDataPath,
       sourceCardCount: rendered?.rawFeatures?.sourceCardCount ?? 0,
       hasBiasDistribution: Boolean(rendered?.rawFeatures?.hasBiasDistribution),
       hasCoverageDetails: Boolean(rendered?.rawFeatures?.hasCoverageDetails),
@@ -1310,8 +1457,10 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
     ? await fetchSourceMetadata(normalizedUrl, sourceMetadataCache)
     : { excerpt: "", publishedAt: null, title: "" };
   const outlet = normalizeText(candidate.outlet) || hostFromUrl(normalizedUrl);
-  const excerptCandidate = candidateExcerpt || sourceMeta.excerpt || "";
-  const excerpt = summarizeText(excerptCandidate, "Excerpt unavailable from publisher metadata.");
+  const excerptFromMeta = normalizeText(sourceMeta.excerpt);
+  const excerptCandidate = looksLikeWeakExcerpt(candidateExcerpt) ? "" : candidateExcerpt;
+  const excerptResolved = excerptCandidate || excerptFromMeta || candidateExcerpt || "";
+  const excerpt = summarizeText(excerptResolved, "Excerpt unavailable from publisher metadata.");
 
   return {
     id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
@@ -1330,6 +1479,8 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
 
 async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, auditState, articleOrdinal) {
   const rendered = await extractStoryFromDom(page, storyUrl, auditState, articleOrdinal);
+  const renderedHtml = auditState?.enabled ? await page.content().catch(() => "") : "";
+  const nextData = renderedHtml ? extractNextDataFromHtml(renderedHtml) : null;
   const updatedAt = new Date().toISOString();
   const sourceOutletSet = new Set(
     (rendered.sources || [])
@@ -1349,6 +1500,38 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
         .map((source) => [source.url, source]),
     ).values(),
   );
+
+  // If the DOM-based pass produced weak outlet/excerpt values, try to repair them from Next.js hydration state.
+  if (nextData && candidates.length > 0) {
+    const byUrl = new Map(candidates.map((c) => [c.url, c]));
+    const stack = [nextData];
+    while (stack.length > 0) {
+      const node = stack.pop();
+      if (!node || typeof node !== "object") continue;
+      if (Array.isArray(node)) {
+        for (const item of node) stack.push(item);
+        continue;
+      }
+      for (const value of Object.values(node)) {
+        if (value && typeof value === "object") stack.push(value);
+      }
+
+      const anyNode = node;
+      const rawUrl = typeof anyNode.url === "string" ? anyNode.url : typeof anyNode.link === "string" ? anyNode.link : "";
+      const normalized = normalizeExternalUrl(rawUrl);
+      if (!normalized) continue;
+      const existing = byUrl.get(normalized);
+      if (!existing) continue;
+
+      const outlet = normalizeText(anyNode.outlet || anyNode.publisher || anyNode.publisherName || anyNode.sourceName || "");
+      const excerpt = normalizeText(anyNode.excerpt || anyNode.summary || anyNode.description || "");
+      const logoUrl = normalizeText(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || "");
+
+      if (outlet && looksLikeWeakOutletLabel(existing.outlet)) existing.outlet = outlet;
+      if (excerpt && looksLikeWeakExcerpt(existing.excerpt)) existing.excerpt = excerpt;
+      if (logoUrl && !existing.logoUrl) existing.logoUrl = logoUrl;
+    }
+  }
 
   const enrichedSources = (
     await mapWithConcurrency(candidates, SOURCE_FETCH_CONCURRENCY, (candidate) =>

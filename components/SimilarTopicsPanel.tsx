@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { Story } from "@/lib/types";
+import { topicSlug } from "@/lib/lookup";
+import { FollowToggle } from "@/components/FollowToggle";
 
 function initials(label: string) {
   const words = label.split(/\s+/).filter(Boolean);
@@ -19,10 +22,10 @@ export function SimilarTopicsPanel({ story }: { story: Story }) {
         {tags.map((tag, idx) => (
           <li key={`${story.id}-${tag}-${idx}`} className="topic-item">
             <span className="topic-avatar">{initials(tag)}</span>
-            <span>{tag}</span>
-            <button className="topic-action" aria-label={`Follow ${tag}`}>
-              {idx === 0 ? "✓" : "+"}
-            </button>
+            <Link href={`/interest/${topicSlug(tag)}`} style={{ textDecoration: "none" }}>
+              {tag}
+            </Link>
+            <FollowToggle kind="topic" slug={topicSlug(tag)} label={tag} />
           </li>
         ))}
       </ul>

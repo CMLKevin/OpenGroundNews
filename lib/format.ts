@@ -175,16 +175,13 @@ export function normalizeStory(story: Story): Story {
         logoUrl: normalizedLogo,
       };
     }
+
+    // If the excerpt we saved is a known placeholder, keep whatever metadata we already have
+    // (bias/factuality/ownership/etc.) but replace just the excerpt text.
     return {
       ...source,
       logoUrl: normalizedLogo,
       excerpt: "Excerpt unavailable from publisher metadata.",
-      bias: "unknown" as const,
-      factuality: "unknown" as const,
-      ownership: "Unlabeled",
-      publishedAt: undefined,
-      paywall: undefined,
-      locality: undefined,
     };
   });
 
@@ -203,10 +200,8 @@ export function normalizeStory(story: Story): Story {
         })
       : { left: 0, center: 0, right: 0 };
 
-  const normalizedBias =
-    story.bias.left + story.bias.center + story.bias.right > 0 && knownBias.length === normalizedSources.length
-      ? normalizeBiasPercentages(story.bias)
-      : derivedBias;
+  const hasBias = story.bias.left + story.bias.center + story.bias.right > 0;
+  const normalizedBias = hasBias ? normalizeBiasPercentages(story.bias) : derivedBias;
 
   const normalizedSlug = UUID_SLUG_PATTERN.test(story.slug) ? slugify(story.title) : story.slug;
   const outletNames = new Set(

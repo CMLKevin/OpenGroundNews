@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { ArchiveEntry, SourceArticle, StoreShape, Story } from "@/lib/types";
 import { normalizeStory } from "@/lib/format";
+import { outletSlug, storyHasTopicSlug } from "@/lib/lookup";
 
 const STORE_PATH = path.join(process.cwd(), "data", "store.json");
 const STORE_LOCK_PATH = path.join(process.cwd(), "data", "store.lock");
@@ -214,6 +215,34 @@ export async function listStories(params?: {
   }
   if (params?.limit) stories = stories.slice(0, params.limit);
 
+  return stories;
+}
+
+export async function listStoriesByTopicSlug(slug: string, params?: { limit?: number; edition?: string }): Promise<Story[]> {
+  const store = await readStore();
+  let stories = [...store.stories].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+
+  if (params?.edition && params.edition.toLowerCase() !== "all") {
+    const edition = params.edition.trim().toLowerCase();
+    stories = stories.filter((story) => story.location.trim().toLowerCase() === edition);
+  }
+
+  stories = stories.filter((story) => storyHasTopicSlug(story, slug));
+  if (params?.limit) stories = stories.slice(0, params.limit);
+  return stories;
+}
+
+export async function listStoriesByOutletSlug(slug: string, params?: { limit?: number; edition?: string }): Promise<Story[]> {
+  const store = await readStore();
+  let stories = [...store.stories].sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
+
+  if (params?.edition && params.edition.toLowerCase() !== "all") {
+    const edition = params.edition.trim().toLowerCase();
+    stories = stories.filter((story) => story.location.trim().toLowerCase() === edition);
+  }
+
+  stories = stories.filter((story) => story.sources.some((source) => outletSlug(source.outlet).toLowerCase() === slug.toLowerCase()));
+  if (params?.limit) stories = stories.slice(0, params.limit);
   return stories;
 }
 

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { StoryCard } from "@/components/StoryCard";
 import { BiasBar } from "@/components/BiasBar";
 import { StoryImage } from "@/components/StoryImage";
-import { prettyDate } from "@/lib/format";
+import { prettyDate, slugify } from "@/lib/format";
 import { getDashboardStats, listStories } from "@/lib/store";
 
 type HomeProps = {
@@ -68,9 +68,9 @@ export default async function HomePage({ searchParams }: HomeProps) {
     <main className="container">
       <section className="trending-strip" aria-label="Trending topics">
         {trendingTags.map((tag) => (
-          <span className="trending-item" key={tag}>
+          <Link className="trending-item" key={tag} href={`/interest/${slugify(tag)}`}>
             {tag}
-          </span>
+          </Link>
         ))}
       </section>
 

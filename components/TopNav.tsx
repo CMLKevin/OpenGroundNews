@@ -80,6 +80,7 @@ export function TopNav() {
         <div className="nav-center">
           <nav className="navlinks" aria-label="Primary">
             <Link href={hrefWithEdition("/")}>Home</Link>
+            <Link href={hrefWithEdition("/my")}>For You</Link>
             <Link href={hrefWithEdition("/blindspot")}>Blindspot</Link>
             <Link href={hrefWithEdition("/local")}>Local</Link>
             <Link href={hrefWithEdition("/rating-system")}>Ratings</Link>
@@ -92,8 +93,9 @@ export function TopNav() {
             <input
               name="q"
               placeholder="Search stories, topics, outlets"
-              className="btn"
-              style={{ textAlign: "left", background: "#fff" }}
+              className="input-control"
+              type="search"
+              aria-label="Search stories, topics, outlets"
             />
             <button className="btn" type="submit">
               Search

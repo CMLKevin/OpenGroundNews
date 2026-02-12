@@ -38,8 +38,7 @@ export function LocalFeedControls() {
         <input
           value={location}
           onChange={(e) => setLocation(e.target.value)}
-          className="btn"
-          style={{ width: "100%", textAlign: "left", background: "#fff" }}
+          className="input-control"
           placeholder="Set location"
         />
       </label>

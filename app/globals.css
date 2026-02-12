@@ -668,6 +668,16 @@ a:hover {
   background: #e7edd9;
 }
 
+.input-control {
+  border-radius: 9px;
+  border: 1px solid var(--line-strong);
+  background: #fff;
+  color: inherit;
+  padding: 0.42rem 0.72rem;
+  font-size: 0.82rem;
+  width: 100%;
+}
+
 .select-control {
   border-radius: 9px;
   border: 1px solid var(--line-strong);
@@ -691,11 +701,16 @@ a:hover {
 }
 
 .rail-link {
+  display: inline;
   text-decoration-thickness: 1px;
 }
 
 .rail-link:hover {
   text-decoration-thickness: 2px;
+}
+
+.rail-list li {
+  padding: 0.22rem 0.06rem;
 }
 
 .rail-list-rich {
@@ -751,6 +766,14 @@ a:hover {
   grid-template-columns: 36px 1fr auto;
   align-items: center;
   gap: 0.5rem;
+}
+
+.topic-item a {
+  text-decoration: none;
+}
+
+.topic-item a:hover {
+  text-decoration: underline;
 }
 
 .topic-avatar {
@@ -950,6 +973,7 @@ a:hover {
   .source-item,
   .kpi,
   .note,
+  .input-control,
   .select-control,
   .btn {
     background-color: #23292f;

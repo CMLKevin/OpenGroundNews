@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { compactHost, prettyDate } from "@/lib/format";
 import { SourceArticle } from "@/lib/types";
+import { outletSlug } from "@/lib/lookup";
+import { FollowToggle } from "@/components/FollowToggle";
 
 type Props = {
   storySlug: string;
@@ -187,16 +189,21 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
                 <div className="source-outlet">
                   {src.logoUrl ? <img src={src.logoUrl} alt={src.outlet} className="source-logo" /> : <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>}
                   <div style={{ display: "grid", gap: "0.08rem" }}>
-                    <strong>{src.outlet}</strong>
+                    <strong>
+                      <Link href={`/source/${outletSlug(src.outlet)}`} style={{ textDecoration: "none" }}>
+                        {src.outlet}
+                      </Link>
+                    </strong>
                     <span className="story-meta">
                       {src.publishedAt ? `${prettyDate(src.publishedAt)} • ` : ""}
                       {src.locality ?? "unknown locality"}
                     </span>
                   </div>
                 </div>
-                <div className="chip-row source-chip-row">
+                <div className="chip-row source-chip-row" style={{ alignItems: "center" }}>
                   <span className="chip">{src.bias}</span>
                   <span className="chip">{src.factuality}</span>
+                  <FollowToggle kind="outlet" slug={outletSlug(src.outlet)} label={src.outlet} />
                 </div>
               </div>
               <p className="story-summary source-excerpt">{src.excerpt}</p>
