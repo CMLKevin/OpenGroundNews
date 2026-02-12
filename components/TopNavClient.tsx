@@ -25,7 +25,7 @@ function initials(email: string) {
 
 export function TopNavClient() {
   const [edition, setEdition] = useState(DEFAULT_EDITION);
-  const [theme, setTheme] = useState<"dark" | "light" | "auto">("auto");
+  const [theme, setTheme] = useState<"dark" | "light" | "auto">("dark");
   const [user, setUser] = useState<null | { id: string; email: string; role: "user" | "admin" }>(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -38,6 +38,7 @@ export function TopNavClient() {
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const showHeaderSearch = pathname !== "/search";
 
   useEffect(() => {
     const fromQuery = searchParams.get("edition");
@@ -60,7 +61,7 @@ export function TopNavClient() {
       const saved = window.localStorage.getItem(THEME_KEY) as any;
       const fromLocal = saved === "light" || saved === "dark" || saved === "auto" ? saved : "";
 
-      const next = (fromCookie || fromLocal || "auto") as "light" | "dark" | "auto";
+      const next = (fromCookie || fromLocal || "dark") as "light" | "dark" | "auto";
       setTheme(next);
       document.documentElement.dataset.theme = next;
 
@@ -198,90 +199,92 @@ export function TopNavClient() {
           {navLinks}
         </nav>
 
-        <div className="searchwrap" role="search">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search stories, topics, outlets"
-            className="input-control"
-            type="search"
-            aria-label="Search stories, topics, outlets"
-            onFocus={() => {
-              if (suggest) setSuggestOpen(true);
-            }}
-          />
-          <Link className="btn" href={searchActionUrl} onClick={() => setSuggestOpen(false)}>
-            Search
-          </Link>
+        {showHeaderSearch ? (
+          <div className="searchwrap" role="search">
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Enter an article's title, URL, or type to search..."
+              className="input-control"
+              type="search"
+              aria-label="Search stories, topics, outlets"
+              onFocus={() => {
+                if (suggest) setSuggestOpen(true);
+              }}
+            />
+            <Link className="btn" href={searchActionUrl} onClick={() => setSuggestOpen(false)}>
+              Search
+            </Link>
 
-          {suggestOpen && suggest ? (
-            <div className="suggest-pop" role="listbox" aria-label="Search suggestions">
-              <div className="suggest-head">
-                <span className="story-meta">Suggestions</span>
-                <span className="story-meta">{loadingSuggest ? "Loading..." : ""}</span>
+            {suggestOpen && suggest ? (
+              <div className="suggest-pop" role="listbox" aria-label="Search suggestions">
+                <div className="suggest-head">
+                  <span className="story-meta">Suggestions</span>
+                  <span className="story-meta">{loadingSuggest ? "Loading..." : ""}</span>
+                </div>
+
+                {suggest.stories.length > 0 ? (
+                  <div className="suggest-section">
+                    <div className="suggest-title">Stories</div>
+                    {suggest.stories.map((s) => (
+                      <Link
+                        key={s.slug}
+                        className="suggest-item"
+                        href={`/story/${encodeURIComponent(s.slug)}`}
+                        onClick={() => setSuggestOpen(false)}
+                      >
+                        <span className="suggest-item-main">{s.title}</span>
+                        <span className="suggest-item-sub">{s.topic} • {s.location}</span>
+                      </Link>
+                    ))}
+                  </div>
+                ) : null}
+
+                {suggest.topics.length > 0 ? (
+                  <div className="suggest-section">
+                    <div className="suggest-title">Topics</div>
+                    <div className="chip-row">
+                      {suggest.topics.map((t) => (
+                        <Link
+                          key={t.slug}
+                          className="pill"
+                          href={`/interest/${encodeURIComponent(t.slug)}`}
+                          onClick={() => setSuggestOpen(false)}
+                        >
+                          {t.label} ({t.count})
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {suggest.outlets.length > 0 ? (
+                  <div className="suggest-section">
+                    <div className="suggest-title">Sources</div>
+                    <div className="chip-row">
+                      {suggest.outlets.map((o) => (
+                        <Link
+                          key={o.slug}
+                          className="pill"
+                          href={`/source/${encodeURIComponent(o.slug)}`}
+                          onClick={() => setSuggestOpen(false)}
+                        >
+                          {o.label}
+                        </Link>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+
+                {suggest.stories.length === 0 && suggest.topics.length === 0 && suggest.outlets.length === 0 ? (
+                  <p className="story-meta" style={{ margin: 0 }}>
+                    No suggestions yet.
+                  </p>
+                ) : null}
               </div>
-
-              {suggest.stories.length > 0 ? (
-                <div className="suggest-section">
-                  <div className="suggest-title">Stories</div>
-                  {suggest.stories.map((s) => (
-                    <Link
-                      key={s.slug}
-                      className="suggest-item"
-                      href={`/story/${encodeURIComponent(s.slug)}`}
-                      onClick={() => setSuggestOpen(false)}
-                    >
-                      <span className="suggest-item-main">{s.title}</span>
-                      <span className="suggest-item-sub">{s.topic} • {s.location}</span>
-                    </Link>
-                  ))}
-                </div>
-              ) : null}
-
-              {suggest.topics.length > 0 ? (
-                <div className="suggest-section">
-                  <div className="suggest-title">Topics</div>
-                  <div className="chip-row">
-                    {suggest.topics.map((t) => (
-                      <Link
-                        key={t.slug}
-                        className="pill"
-                        href={`/interest/${encodeURIComponent(t.slug)}`}
-                        onClick={() => setSuggestOpen(false)}
-                      >
-                        {t.label} ({t.count})
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {suggest.outlets.length > 0 ? (
-                <div className="suggest-section">
-                  <div className="suggest-title">Sources</div>
-                  <div className="chip-row">
-                    {suggest.outlets.map((o) => (
-                      <Link
-                        key={o.slug}
-                        className="pill"
-                        href={`/source/${encodeURIComponent(o.slug)}`}
-                        onClick={() => setSuggestOpen(false)}
-                      >
-                        {o.label}
-                      </Link>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-
-              {suggest.stories.length === 0 && suggest.topics.length === 0 && suggest.outlets.length === 0 ? (
-                <p className="story-meta" style={{ margin: 0 }}>
-                  No suggestions yet.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="nav-actions">
@@ -291,7 +294,12 @@ export function TopNavClient() {
           aria-label="Open menu"
           onClick={() => setMenuOpen(true)}
         >
-          Menu
+          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              fill="currentColor"
+              d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"
+            />
+          </svg>
         </button>
 
         <label className="story-meta nav-desktop-only" style={{ display: "grid", gap: "0.2rem" }}>
@@ -310,19 +318,36 @@ export function TopNavClient() {
           </select>
         </label>
 
-        <label className="story-meta nav-desktop-only" style={{ display: "grid", gap: "0.2rem" }}>
-          Theme
-          <select
-            className="select-control"
-            value={theme}
-            onChange={(e) => applyTheme(e.target.value as any)}
-            aria-label="Theme"
+        <div className="theme-toggle nav-desktop-only" aria-label="Theme selector">
+          <span className="story-meta">Theme:</span>
+          <button
+            type="button"
+            className={`theme-link ${theme === "light" ? "is-active" : ""}`}
+            onClick={() => applyTheme("light")}
           >
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-            <option value="auto">Auto</option>
-          </select>
-        </label>
+            Light
+          </button>
+          <span className="theme-dot" aria-hidden="true">|</span>
+          <button
+            type="button"
+            className={`theme-link ${theme === "dark" ? "is-active" : ""}`}
+            onClick={() => applyTheme("dark")}
+          >
+            Dark
+          </button>
+          <span className="theme-dot" aria-hidden="true">|</span>
+          <button
+            type="button"
+            className={`theme-link ${theme === "auto" ? "is-active" : ""}`}
+            onClick={() => applyTheme("auto")}
+          >
+            Auto
+          </button>
+        </div>
+
+        <Link className="btn btn-subscribe nav-desktop-only" href={hrefWithEdition("/subscribe")}>
+          Subscribe
+        </Link>
 
         {user ? (
           <>
@@ -399,14 +424,20 @@ export function TopNavClient() {
                   ))}
                 </select>
               </label>
-              <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
-                Theme
-                <select className="select-control" value={theme} onChange={(e) => applyTheme(e.target.value as any)}>
-                  <option value="dark">Dark</option>
-                  <option value="light">Light</option>
-                  <option value="auto">Auto</option>
-                </select>
-              </label>
+              <div className="theme-toggle" aria-label="Theme selector">
+                <span className="story-meta">Theme:</span>
+                <button type="button" className={`theme-link ${theme === "light" ? "is-active" : ""}`} onClick={() => applyTheme("light")}>
+                  Light
+                </button>
+                <span className="theme-dot" aria-hidden="true">|</span>
+                <button type="button" className={`theme-link ${theme === "dark" ? "is-active" : ""}`} onClick={() => applyTheme("dark")}>
+                  Dark
+                </button>
+                <span className="theme-dot" aria-hidden="true">|</span>
+                <button type="button" className={`theme-link ${theme === "auto" ? "is-active" : ""}`} onClick={() => applyTheme("auto")}>
+                  Auto
+                </button>
+              </div>
             </div>
 
             <div className="nav-drawer-section">

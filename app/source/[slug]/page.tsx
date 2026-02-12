@@ -6,6 +6,7 @@ import { FollowToggle } from "@/components/FollowToggle";
 import { listStoriesByOutletSlug } from "@/lib/store";
 import { prettyDate } from "@/lib/format";
 import { outletSlug, sourceMatchesOutletSlug } from "@/lib/lookup";
+import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +26,8 @@ export default async function SourcePage({ params, searchParams }: Props) {
   const stories = await listStoriesByOutletSlug(slug, { edition: edition?.trim() || undefined });
   if (stories.length === 0) return notFound();
 
+  const outlet = await db.outlet.findUnique({ where: { slug }, select: { name: true, logoUrl: true, biasRating: true, bias: true, factuality: true, ownership: true } }).catch(() => null);
+
   const samples = stories.flatMap((story) => story.sources.filter((src) => sourceMatchesOutletSlug(src, slug)));
   const displayOutlet = samples[0]?.outlet || slug;
   const biasCounts = {
@@ -41,6 +44,12 @@ export default async function SourcePage({ params, searchParams }: Props) {
 
   return (
     <main className="container" style={{ padding: "1rem 0 2rem" }}>
+      <nav className="breadcrumbs" aria-label="Breadcrumb">
+        <Link href="/" className="breadcrumb-link">Home</Link>
+        <span className="breadcrumb-sep" aria-hidden="true">/</span>
+        <span className="breadcrumb-current">Source</span>
+      </nav>
+
       <section className="panel" style={{ display: "grid", gap: "0.8rem" }}>
         <div className="section-title" style={{ paddingTop: 0 }}>
           <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.55rem, 4vw, 2.2rem)" }}>
@@ -51,14 +60,36 @@ export default async function SourcePage({ params, searchParams }: Props) {
         <div className="story-meta">
           {stories.length} stories • {samples.length} source cards • {latestSeen ? `Latest source: ${prettyDate(latestSeen)}` : "Latest source: unknown"}
         </div>
-        <div className="chip-row">
-          <span className="pill">Bias: L {biasCounts.left}</span>
-          <span className="pill">C {biasCounts.center}</span>
-          <span className="pill">R {biasCounts.right}</span>
-          {biasCounts.unknown ? <span className="pill">Untracked {biasCounts.unknown}</span> : null}
-          <Link className="pill" href="/">
-            Back to Home
-          </Link>
+        <div className="source-profile">
+          <div className="source-profile-row">
+            <div className="source-profile-label">Bias rating</div>
+            <div className="source-profile-value">
+              {(outlet?.biasRating || "unknown").toString().replace(/_/g, "-")}
+            </div>
+          </div>
+          <div className="source-profile-row">
+            <div className="source-profile-label">Factuality</div>
+            <div className="source-profile-value">
+              {(outlet?.factuality || "unknown").toString().replace(/_/g, "-")}
+            </div>
+          </div>
+          <div className="source-profile-row">
+            <div className="source-profile-label">Ownership</div>
+            <div className="source-profile-value">{outlet?.ownership || "Unlabeled"}</div>
+          </div>
+        </div>
+
+        <div className="source-biasbar" aria-label="Coverage distribution (tracked cards)">
+          <div className="bias-mini-bar">
+            <span className="seg seg-left" style={{ width: `${samples.length ? Math.round((biasCounts.left / samples.length) * 100) : 0}%` }} />
+            <span className="seg seg-center" style={{ width: `${samples.length ? Math.round((biasCounts.center / samples.length) * 100) : 0}%` }} />
+            <span className="seg seg-right" style={{ width: `${samples.length ? Math.round((biasCounts.right / samples.length) * 100) : 0}%` }} />
+          </div>
+          <div className="bias-mini-meta">
+            <span className="bias-meta-left">L {biasCounts.left}</span>
+            <span className="bias-meta-center">C {biasCounts.center}</span>
+            <span className="bias-meta-right">R {biasCounts.right}</span>
+          </div>
         </div>
       </section>
 

@@ -1,0 +1,1447 @@
+{
+  "generatedAt": "2026-02-12T15:44:40.126Z",
+  "source": "audit.md",
+  "issueCount": 120,
+  "issues": [
+    {
+      "id": "A1",
+      "title": "Header not sticky",
+      "priority": "P0",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A2",
+      "title": "Missing mobile bottom navigation",
+      "priority": "P0",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A3",
+      "title": "Missing topic tags bar on secondary pages",
+      "priority": "P0",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A4",
+      "title": "Missing hamburger menu on desktop",
+      "priority": "P1",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A5",
+      "title": "Section header font size: 19.52px vs 32px",
+      "priority": "P0",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A6",
+      "title": "Font family mismatch",
+      "priority": "P1",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A7",
+      "title": "Bias bar center color: gray vs white",
+      "priority": "P1",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A8",
+      "title": "Bias bar left/right colors too bright",
+      "priority": "P2",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A9",
+      "title": "Active tab/button styling: green fill vs gold underline",
+      "priority": "P0",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A10",
+      "title": "Nav links styled as pills vs plain text",
+      "priority": "P2",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A11",
+      "title": "Missing \"Subscribe\" button in header",
+      "priority": "P2",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A12",
+      "title": "Missing location display in utility bar",
+      "priority": "P2",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A13",
+      "title": "Theme selector: dropdown vs inline text toggle",
+      "priority": "P3",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A14",
+      "title": "Max-width 1280px vs 1440px",
+      "priority": "P2",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A15",
+      "title": "Grid gap 16px vs 32px",
+      "priority": "P2",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A16",
+      "title": "Card border-radius 14px vs 8px",
+      "priority": "P3",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "A17",
+      "title": "Footer is minimal",
+      "priority": "P3",
+      "section": {
+        "id": "A",
+        "title": "Global / Cross-Page Issues"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B1",
+      "title": "Empty 467px gap in center column below hero",
+      "priority": "P0",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B2",
+      "title": "Duplicate Daily Briefing",
+      "priority": "P0",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B3",
+      "title": "Missing \"Top News Stories\" section in left sidebar",
+      "priority": "P1",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B4",
+      "title": "\"Original reporting: unknown\" placeholder",
+      "priority": "P1",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B5",
+      "title": "Missing story/article/read-time counts in Daily Briefing",
+      "priority": "P2",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B6",
+      "title": "Blindspot section is plain text list",
+      "priority": "P1",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B7",
+      "title": "Hero card uses serif font (Newsreader) vs sans-serif",
+      "priority": "P2",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B8",
+      "title": "Feed uses 2-column card grid vs single-column news list",
+      "priority": "P1",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B9",
+      "title": "Header layer order swapped",
+      "priority": "P2",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B10",
+      "title": "\"Weather enabled for your saved city\" placeholder text",
+      "priority": "P3",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B11",
+      "title": "Column proportions: 0.92fr/1.7fr/0.92fr vs 3/6/3 cols",
+      "priority": "P2",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B12",
+      "title": "No user avatar/name in My News Bias widget",
+      "priority": "P3",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "B13",
+      "title": "Coverage text as separate chips vs inline text",
+      "priority": "P3",
+      "section": {
+        "id": "B",
+        "title": "Homepage"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C1",
+      "title": "Column ratio 1.5:1 (60/40) vs 2:1 (67/33)",
+      "priority": "P1",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C2",
+      "title": "Sidebar not sticky",
+      "priority": "P1",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C3",
+      "title": "Headline font-size 40px, should be 42px",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C4",
+      "title": "Headline font-weight 700, should be 800",
+      "priority": "P1",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C5",
+      "title": "Headline line-height 43.2px, should be 47.5px",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C6",
+      "title": "Metadata font-weight 400, should be 600",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C7",
+      "title": "Share buttons are text-based, not icon-based",
+      "priority": "P1",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C8",
+      "title": "Missing Email and Pinterest share options",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C9",
+      "title": "Share icons positioned after Key Points, should be near metadata",
+      "priority": "P1",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C10",
+      "title": "Perspective tab names: \"Left View\" vs \"Left\"",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C11",
+      "title": "Missing \"Bias Comparison\" fourth tab",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C12",
+      "title": "Perspective summary text 15.52px, should be 18px/480",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C13",
+      "title": "Source card headers missing gray background",
+      "priority": "P1",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C14",
+      "title": "Source logo 36px, should be 24px circle",
+      "priority": "P3",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C15",
+      "title": "Section heading \"Full Coverage Sources\" vs \"X Articles\"",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C16",
+      "title": "Missing \"Broke the news\" sidebar section",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C17",
+      "title": "Missing L/C/R source count breakdown in sidebar",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C18",
+      "title": "Bias distribution bar uses flat colors vs gradients",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C19",
+      "title": "Bias Distribution panel in main content vs sidebar",
+      "priority": "P2",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C20",
+      "title": "Missing \"Reposted by X other sources\" indicator",
+      "priority": "P3",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C21",
+      "title": "Missing \"Does this summary seem wrong?\" feedback link",
+      "priority": "P3",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "C22",
+      "title": "Image bias overlay rounding mismatch with component",
+      "priority": "P3",
+      "section": {
+        "id": "C",
+        "title": "Story Detail Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D1",
+      "title": "Missing filter tabs: All / For the Left / For the Right",
+      "priority": "P0",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D2",
+      "title": "Bias breakdown: single bar vs 3-row layout",
+      "priority": "P0",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D3",
+      "title": "Duplicate bias bar from CDN image + component",
+      "priority": "P0",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D4",
+      "title": "Card grid: 1 column vs 2 columns per side",
+      "priority": "P1",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D5",
+      "title": "Missing colored card background \"border\" effect",
+      "priority": "P1",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D6",
+      "title": "Missing column subtitles",
+      "priority": "P2",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D7",
+      "title": "Missing BLINDSPOT TM symbol",
+      "priority": "P3",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D8",
+      "title": "Header description overridden by scope text",
+      "priority": "P3",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D9",
+      "title": "Source count not uppercase",
+      "priority": "P3",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D10",
+      "title": "Source badge format differs",
+      "priority": "P2",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D11",
+      "title": "Missing \"More stories\" pagination button",
+      "priority": "P2",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "D12",
+      "title": "Extra KPI strip not in Ground News reference",
+      "priority": "P3",
+      "section": {
+        "id": "D",
+        "title": "Blindspot Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E1",
+      "title": "Missing \"Top {Topic} News\" 3-column featured row",
+      "priority": "P0",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E2",
+      "title": "Missing dedicated \"Blindspots\" section",
+      "priority": "P0",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E3",
+      "title": "Missing compact list-style story cards",
+      "priority": "P1",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E4",
+      "title": "Missing \"More stories\" pagination",
+      "priority": "P1",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E5",
+      "title": "Missing \"Breaking News Topics Related to {Topic}\" grid",
+      "priority": "P1",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E6",
+      "title": "No bias labels on \"Covered Most By\" sources",
+      "priority": "P1",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E7",
+      "title": "Column ratio 60/40 vs 70/30",
+      "priority": "P1",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E8",
+      "title": "2-column card grid vs 3-column for featured",
+      "priority": "P1",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E9",
+      "title": "Header says \"{Topic}\" vs \"News about {Topic}\"",
+      "priority": "P2",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E10",
+      "title": "Missing \"Media Bias Breakdown\" bar chart",
+      "priority": "P2",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E11",
+      "title": "Missing \"Suggest a source\" card in sidebar",
+      "priority": "P3",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E12",
+      "title": "Sidebar not sticky",
+      "priority": "P2",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E13",
+      "title": "Missing source logos/favicons",
+      "priority": "P2",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E14",
+      "title": "404 on many topic slugs",
+      "priority": "P2",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "E15",
+      "title": "Bias bar label clipping on images",
+      "priority": "P3",
+      "section": {
+        "id": "E",
+        "title": "Interest / Topic Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "F1",
+      "title": "Autocomplete dropdown overlaps filter tabs",
+      "priority": "P2",
+      "section": {
+        "id": "F",
+        "title": "Search Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "F2",
+      "title": "Redundant search bars",
+      "priority": "P2",
+      "section": {
+        "id": "F",
+        "title": "Search Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "F3",
+      "title": "Missing descriptive placeholder text",
+      "priority": "P3",
+      "section": {
+        "id": "F",
+        "title": "Search Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "F4",
+      "title": "Missing search result count summary",
+      "priority": "P3",
+      "section": {
+        "id": "F",
+        "title": "Search Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "F5",
+      "title": "Skeleton loading persists for missing images",
+      "priority": "P2",
+      "section": {
+        "id": "F",
+        "title": "Search Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "G1",
+      "title": "Weather widget missing 7-day forecast",
+      "priority": "P1",
+      "section": {
+        "id": "G",
+        "title": "Local Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "G2",
+      "title": "Missing \"Top {Location} News\" hero section",
+      "priority": "P1",
+      "section": {
+        "id": "G",
+        "title": "Local Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "G3",
+      "title": "Missing location avatar/icon and description",
+      "priority": "P2",
+      "section": {
+        "id": "G",
+        "title": "Local Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "G4",
+      "title": "Local News Publishers not collapsible",
+      "priority": "P3",
+      "section": {
+        "id": "G",
+        "title": "Local Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "G5",
+      "title": "Publishers missing bias indicator icons",
+      "priority": "P2",
+      "section": {
+        "id": "G",
+        "title": "Local Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "G6",
+      "title": "Missing \"Discover stories in your city\" CTA",
+      "priority": "P3",
+      "section": {
+        "id": "G",
+        "title": "Local Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H1",
+      "title": "Missing 6-tab navigation",
+      "priority": "P0",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H2",
+      "title": "Missing Filter sidebar",
+      "priority": "P1",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H3",
+      "title": "Missing Favorites sidebar",
+      "priority": "P1",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H4",
+      "title": "Story cards missing description snippets",
+      "priority": "P2",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H5",
+      "title": "No Discover tab",
+      "priority": "P1",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H6",
+      "title": "No Custom Feeds tab",
+      "priority": "P2",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H7",
+      "title": "No Citations tab",
+      "priority": "P2",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "H8",
+      "title": "Empty state in guest mode",
+      "priority": "P2",
+      "section": {
+        "id": "H",
+        "title": "My Feed / For You Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "I1",
+      "title": "Missing comprehensive source profile",
+      "priority": "P1",
+      "section": {
+        "id": "I",
+        "title": "Source Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "I2",
+      "title": "\"Bias: L 0, C 6, R 0\" notation unclear",
+      "priority": "P2",
+      "section": {
+        "id": "I",
+        "title": "Source Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "I3",
+      "title": "\"Back to Home\" misplaced as tag chip",
+      "priority": "P3",
+      "section": {
+        "id": "I",
+        "title": "Source Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "I4",
+      "title": "All articles show \"unknown\" factuality",
+      "priority": "P2",
+      "section": {
+        "id": "I",
+        "title": "Source Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "I5",
+      "title": "No \"about this source\" description paragraph",
+      "priority": "P2",
+      "section": {
+        "id": "I",
+        "title": "Source Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "J1",
+      "title": "SSO buttons disabled but rendered",
+      "priority": "P2",
+      "section": {
+        "id": "J",
+        "title": "Auth Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "J2",
+      "title": "No \"Forgot password?\" link",
+      "priority": "P2",
+      "section": {
+        "id": "J",
+        "title": "Auth Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "J3",
+      "title": "No Terms of Service links",
+      "priority": "P3",
+      "section": {
+        "id": "J",
+        "title": "Auth Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "J4",
+      "title": "Pages look sparse",
+      "priority": "P3",
+      "section": {
+        "id": "J",
+        "title": "Auth Pages"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "K1",
+      "title": "Topic/source chips lack clear toggle states",
+      "priority": "P1",
+      "section": {
+        "id": "K",
+        "title": "Onboarding Wizard"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "K2",
+      "title": "Missing progress bar / stepper",
+      "priority": "P2",
+      "section": {
+        "id": "K",
+        "title": "Onboarding Wizard"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "K3",
+      "title": "No location setup step",
+      "priority": "P2",
+      "section": {
+        "id": "K",
+        "title": "Onboarding Wizard"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "K4",
+      "title": "Hero section repeats on every step",
+      "priority": "P3",
+      "section": {
+        "id": "K",
+        "title": "Onboarding Wizard"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "L1",
+      "title": "Only 3 bias buckets vs Ground News's 7 categories",
+      "priority": "P1",
+      "section": {
+        "id": "L",
+        "title": "Rating System Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "L2",
+      "title": "Missing colored category icons",
+      "priority": "P2",
+      "section": {
+        "id": "L",
+        "title": "Rating System Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "L3",
+      "title": "Missing methodology explanation",
+      "priority": "P2",
+      "section": {
+        "id": "L",
+        "title": "Rating System Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "L4",
+      "title": "No example sources per rating",
+      "priority": "P3",
+      "section": {
+        "id": "L",
+        "title": "Rating System Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "M1",
+      "title": "No imagery/illustrations in plan cards",
+      "priority": "P1",
+      "section": {
+        "id": "M",
+        "title": "Subscribe Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "M2",
+      "title": "No pricing toggle (Monthly/Annual)",
+      "priority": "P2",
+      "section": {
+        "id": "M",
+        "title": "Subscribe Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "M3",
+      "title": "No \"As featured on\" logo strip",
+      "priority": "P3",
+      "section": {
+        "id": "M",
+        "title": "Subscribe Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "M4",
+      "title": "No testimonial section",
+      "priority": "P3",
+      "section": {
+        "id": "M",
+        "title": "Subscribe Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    },
+    {
+      "id": "M5",
+      "title": "No feature comparison table",
+      "priority": "P1",
+      "section": {
+        "id": "M",
+        "title": "Subscribe Page"
+      },
+      "status": "open",
+      "verifiedAt": null,
+      "notes": ""
+    }
+  ]
+}

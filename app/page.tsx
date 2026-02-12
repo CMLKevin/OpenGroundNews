@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { StoryCard } from "@/components/StoryCard";
-import { TrendingStrip } from "@/components/TrendingStrip";
 import { DailyBriefingList } from "@/components/DailyBriefingList";
 import { HeroLeadStoryCard } from "@/components/HeroLeadStoryCard";
 import { MyNewsBiasWidget } from "@/components/MyNewsBiasWidget";
@@ -8,23 +6,13 @@ import { DailyLocalNewsWidget } from "@/components/DailyLocalNewsWidget";
 import { sourceCountLabel } from "@/lib/format";
 import { listStories } from "@/lib/store";
 import { getCurrentUser } from "@/lib/authStore";
+import { NewsList } from "@/components/NewsList";
 
 type HomeProps = {
   searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string; page?: string }>;
 };
 
 export const dynamic = "force-dynamic";
-
-function scoreTags(stories: Awaited<ReturnType<typeof listStories>>) {
-  const counts = new Map<string, number>();
-  for (const story of stories) {
-    for (const tag of story.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([tag]) => tag);
-}
 
 export default async function HomePage({ searchParams }: HomeProps) {
   const { q, edition, view, bias, tag, page } = await searchParams;
@@ -71,7 +59,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
   const gridStories = tagged.slice(gridStart, gridStart + PAGE_SIZE);
   const topStories = tagged.slice(0, 6);
   const blindspotStories = tagged.filter((s) => s.blindspot).slice(0, 6);
-  const trendingTags = scoreTags(tagged);
+  const heroListStories = leadStory ? tagged.slice(1, 1 + 10) : tagged.slice(0, 10);
 
   const paramsForPage = (nextPage: number) => {
     const params = new URLSearchParams();
@@ -88,8 +76,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
   return (
     <main className="container">
-      <TrendingStrip tags={trendingTags} />
-
       <section className="home-hero-grid">
         <div className="home-hero-left">
           <DailyBriefingList stories={topStories} />
@@ -97,6 +83,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
         <div className="home-hero-center">
           {leadStory ? <HeroLeadStoryCard story={leadStory} /> : null}
+          {heroListStories.length ? <NewsList stories={heroListStories} dense={true} /> : null}
           {!leadStory ? (
             <section className="panel">
               <div className="section-title" style={{ paddingTop: 0 }}>
@@ -154,8 +141,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
       <section className="feed-shell">
         <aside className="feed-rail feed-rail-left">
-          <DailyBriefingList stories={topStories} />
-
           <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Explore</h2>
@@ -202,11 +187,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
           {/* Lead story is rendered in the homepage hero for parity; keep feed focused on the grid. */}
 
-          <div className="grid">
-            {gridStories.map((story) => (
-              <StoryCard key={story.id} story={story} />
-            ))}
-          </div>
+          <NewsList stories={gridStories} dense={true} />
 
           {hasMore ? (
             <div style={{ display: "flex", justifyContent: "center" }}>

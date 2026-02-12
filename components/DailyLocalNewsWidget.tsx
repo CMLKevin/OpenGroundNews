@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 
 const KEY = "ogn_local_location";
-const KEY_LAT = "ogn_local_lat";
-const KEY_LON = "ogn_local_lon";
 
 type Story = { slug: string; title: string };
 
@@ -15,15 +13,11 @@ export function DailyLocalNewsWidget() {
   const [location, setLocation] = useState<string>("United States");
   const [stories, setStories] = useState<Story[]>([]);
   const [loading, setLoading] = useState(false);
-  const [hasCoords, setHasCoords] = useState(false);
 
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(KEY);
       if (saved) setLocation(saved);
-      const lat = Number(window.localStorage.getItem(KEY_LAT));
-      const lon = Number(window.localStorage.getItem(KEY_LON));
-      setHasCoords(Number.isFinite(lat) && Number.isFinite(lon));
     } catch {
       // ignore
     }
@@ -76,10 +70,6 @@ export function DailyLocalNewsWidget() {
           No local-marked stories found. Pick a city in Local settings to improve matching.
         </p>
       )}
-
-      <p className="story-meta" style={{ margin: 0 }}>
-        {hasCoords ? "Weather enabled for your saved city." : "Tip: choose a suggestion in Local to enable weather."}
-      </p>
     </section>
   );
 }

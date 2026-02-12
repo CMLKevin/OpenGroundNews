@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Bricolage_Grotesque, Newsreader } from "next/font/google";
 import { TopNav } from "@/components/TopNav";
+import { MobileBottomNav } from "@/components/MobileBottomNav";
 import "@/app/globals.css";
 import { cookies } from "next/headers";
 
@@ -40,7 +41,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const cookieStore = await cookies();
   const cookieTheme = cookieStore.get("ogn_theme")?.value || "";
   const initialTheme: "light" | "dark" | "auto" =
-    cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "auto" ? (cookieTheme as any) : "auto";
+    cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "auto" ? (cookieTheme as any) : "dark";
 
   return (
     <html lang="en" data-theme={initialTheme} suppressHydrationWarning>
@@ -50,6 +51,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <TopNav />
         </Suspense>
         {children}
+        <MobileBottomNav />
         <footer className="footer">
           <div className="container">
             OpenGroundNews • Fully open-source perspective-aware news reader • Remote-browser ingestion via Browser Use CDP.

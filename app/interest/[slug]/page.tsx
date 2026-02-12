@@ -1,6 +1,5 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { StoryCard } from "@/components/StoryCard";
 import { BiasBar } from "@/components/BiasBar";
 import { FollowToggle } from "@/components/FollowToggle";
@@ -66,7 +65,29 @@ export default async function InterestPage({ params, searchParams }: Props) {
   const { edition } = await searchParams;
   const stories = await listStoriesByTopicSlug(slug, { edition: edition?.trim() || undefined });
 
-  if (stories.length === 0) return notFound();
+  if (stories.length === 0) {
+    return (
+      <main className="container" style={{ padding: "1rem 0 2rem" }}>
+        <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
+          <div className="section-title" style={{ paddingTop: 0 }}>
+            <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>News about {slug}</h1>
+            <span className="story-meta">No stories yet</span>
+          </div>
+          <p className="story-meta" style={{ margin: 0 }}>
+            This topic hub is not populated yet for your current edition. Try switching editions or run ingestion again.
+          </p>
+          <div className="chip-row">
+            <Link className="btn" href="/get-started">
+              Get started
+            </Link>
+            <Link className="btn" href="/search">
+              Search
+            </Link>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   const displayTag =
     stories

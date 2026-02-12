@@ -73,7 +73,7 @@ export function SearchBox({
           name="q"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Search stories, topics, outlets"
+          placeholder="Enter an article's title, URL, or type to search..."
           className="input-control"
           type="search"
           aria-label="Search stories, topics, outlets"

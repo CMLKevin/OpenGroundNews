@@ -16,10 +16,11 @@ export function DailyBriefingList({ stories, title = "Daily Briefing" }: { stori
         <h2 style={{ margin: 0 }}>{title}</h2>
         <span className="story-meta">Top {Math.min(6, stories.length)}</span>
       </div>
-      <p className="story-meta" style={{ margin: "0 0 0.55rem" }}>
-        Original reporting:{" "}
-        <strong>{origAvg != null ? `${origAvg}% of sources are Original Reporting` : "unknown"}</strong>
-      </p>
+      {origAvg != null ? (
+        <p className="story-meta" style={{ margin: "0 0 0.55rem" }}>
+          Original reporting: <strong>{origAvg}% of sources are Original Reporting</strong>
+        </p>
+      ) : null}
       <ol className="rail-list rail-list-rich">
         {stories.slice(0, 6).map((story) => (
           <li key={story.id}>

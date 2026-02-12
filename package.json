@@ -19,6 +19,9 @@
     "archive:extract": "node scripts/archive_extract_cdp.mjs",
     "ingest:groundnews": "node scripts/ingest_groundnews.mjs",
     "push:vapid": "node scripts/push_generate_vapid.mjs",
+    "parity:checklist": "node scripts/parity/generate_audit_checklist.mjs",
+    "parity:smoke": "node scripts/parity/run_parity_smoke.mjs",
+    "parity:baseline": "node scripts/parity/capture_baseline.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },

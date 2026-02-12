@@ -29,6 +29,29 @@ function mapBias(bias) {
   return "unknown";
 }
 
+function mapBiasRating(v) {
+  const raw = String(v || "")
+    .toLowerCase()
+    .replace(/[\s_]+/g, "-")
+    .trim();
+  if (!raw) return "unknown";
+  if (raw === "far-left") return "far_left";
+  if (raw === "left") return "left";
+  if (raw === "lean-left" || raw === "center-left") return "lean_left";
+  if (raw === "center" || raw === "centre") return "center";
+  if (raw === "lean-right" || raw === "center-right") return "lean_right";
+  if (raw === "right") return "right";
+  if (raw === "far-right") return "far_right";
+  return "unknown";
+}
+
+function bucket3FromRating(rating) {
+  if (rating === "far_left" || rating === "left" || rating === "lean_left") return "left";
+  if (rating === "center") return "center";
+  if (rating === "lean_right" || rating === "right" || rating === "far_right") return "right";
+  return "unknown";
+}
+
 function mapFactuality(v) {
   const raw = String(v || "").toLowerCase().replace(/[\s_]+/g, "-");
   if (raw === "very-high") return "very_high";
@@ -195,12 +218,18 @@ export async function persistStoriesToDb(stories, context = {}) {
           const outletName = String(src.outlet || "").trim() || "Unknown outlet";
           const outletKey = slugify(outletName);
           const outletId = stableId("outlet", outletKey);
+
+          const biasRating = mapBiasRating(src.biasRating || src.bias_rating || src.biasRating7 || "");
+          const biasBucket =
+            mapBias(src.bias) !== "unknown" ? mapBias(src.bias) : biasRating !== "unknown" ? bucket3FromRating(biasRating) : "unknown";
+
           await tx.outlet.upsert({
             where: { slug: outletKey },
             update: {
               name: outletName,
               logoUrl: src.logoUrl || null,
-              bias: mapBias(src.bias),
+              bias: biasBucket,
+              biasRating,
               factuality: mapFactuality(src.factuality),
               ownership: src.ownership || null,
               lastEnrichedAt: updatedAt,
@@ -210,7 +239,8 @@ export async function persistStoriesToDb(stories, context = {}) {
               slug: outletKey,
               name: outletName,
               logoUrl: src.logoUrl || null,
-              bias: mapBias(src.bias),
+              bias: biasBucket,
+              biasRating,
               factuality: mapFactuality(src.factuality),
               ownership: src.ownership || null,
               lastEnrichedAt: updatedAt,

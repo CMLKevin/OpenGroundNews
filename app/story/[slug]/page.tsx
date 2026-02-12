@@ -102,10 +102,21 @@ export default async function StoryPage({ params, searchParams }: Props) {
       <section className="story-shell">
         <article className="panel" style={{ display: "grid", gap: "0.85rem" }}>
           <ReadingTracker storySlug={story.slug} bias={story.bias} />
-          <div className="story-meta">
-            {story.topic} • {story.location} • Published {prettyDate(story.publishedAt)} • Updated {prettyDate(story.updatedAt)}
+          <div className="story-meta-row">
+            <div className="story-meta">
+              {story.topic} • {story.location} • Published {prettyDate(story.publishedAt)} • Updated {prettyDate(story.updatedAt)}
+            </div>
+            <ShareBar title={story.title} url={shareUrl} />
           </div>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.7rem, 4vw, 2.5rem)", lineHeight: 1.08 }}>
+          <h1
+            style={{
+              margin: 0,
+              fontFamily: "var(--font-serif)",
+              fontSize: "clamp(1.7rem, 4vw, 2.625rem)",
+              fontWeight: 800,
+              lineHeight: 1.13,
+            }}
+          >
             {story.title}
           </h1>
           {story.dek ? <p className="story-summary" style={{ fontSize: "1.02rem", fontWeight: 600 }}>{story.dek}</p> : null}
@@ -138,8 +149,6 @@ export default async function StoryPage({ params, searchParams }: Props) {
           </p>
 
           <KeyPointsPanel story={story} />
-
-          <ShareBar title={story.title} url={shareUrl} />
 
           <BiasDistributionPanel story={story} />
 

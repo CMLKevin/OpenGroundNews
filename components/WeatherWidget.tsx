@@ -4,7 +4,24 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 type WeatherResponse =
-  | { ok: true; current: { temperatureC: number; apparentTemperatureC: number; windSpeedKph: number; label: string; time?: string }; timezone?: string }
+  | {
+      ok: true;
+      current: {
+        temperatureC: number;
+        apparentTemperatureC: number;
+        windSpeedKph: number;
+        label: string;
+        time?: string;
+      };
+      daily: Array<{
+        date: string;
+        weatherCode: number | null;
+        label: string;
+        maxC: number | null;
+        minC: number | null;
+      }>;
+      timezone?: string;
+    }
   | { ok: false; error: string };
 
 export function WeatherWidget() {
@@ -15,6 +32,14 @@ export function WeatherWidget() {
   const enabled = useMemo(() => Number.isFinite(lat) && Number.isFinite(lon), [lat, lon]);
   const [data, setData] = useState<WeatherResponse | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const daily = data && "ok" in data && data.ok ? data.daily || [] : [];
+
+  function dayLabel(value: string) {
+    const ts = Date.parse(value);
+    if (!Number.isFinite(ts)) return value;
+    return new Date(ts).toLocaleDateString("en-US", { weekday: "short" });
+  }
 
   useEffect(() => {
     if (!enabled) {
@@ -53,25 +78,40 @@ export function WeatherWidget() {
           Select a suggested location to show current conditions.
         </p>
       ) : data?.ok ? (
-        <div className="kpi-strip">
-          <div className="kpi">
-            <span>Now</span>
-            <strong>
-              {Math.round(data.current.temperatureC)}°C
-            </strong>
+        <div style={{ display: "grid", gap: "0.75rem" }}>
+          <div className="kpi-strip">
+            <div className="kpi">
+              <span>Now</span>
+              <strong>{Math.round(data.current.temperatureC)}°C</strong>
+            </div>
+            <div className="kpi">
+              <span>Feels like</span>
+              <strong>{Math.round(data.current.apparentTemperatureC)}°C</strong>
+            </div>
+            <div className="kpi">
+              <span>Wind</span>
+              <strong>{Math.round(data.current.windSpeedKph)} kph</strong>
+            </div>
+            <div className="kpi">
+              <span>Sky</span>
+              <strong style={{ fontSize: "1.05rem" }}>{data.current.label}</strong>
+            </div>
           </div>
-          <div className="kpi">
-            <span>Feels like</span>
-            <strong>{Math.round(data.current.apparentTemperatureC)}°C</strong>
-          </div>
-          <div className="kpi">
-            <span>Wind</span>
-            <strong>{Math.round(data.current.windSpeedKph)} kph</strong>
-          </div>
-          <div className="kpi">
-            <span>Sky</span>
-            <strong style={{ fontSize: "1.05rem" }}>{data.current.label}</strong>
-          </div>
+
+          {daily.length ? (
+            <div className="weather-forecast" aria-label="7-day forecast">
+              {daily.slice(0, 7).map((d) => (
+                <div className="weather-day" key={d.date}>
+                  <div className="weather-day-name">{dayLabel(d.date)}</div>
+                  <div className="weather-day-sky">{d.label}</div>
+                  <div className="weather-day-temps">
+                    <span className="weather-temp-max">{d.maxC == null ? "—" : `${Math.round(d.maxC)}°`}</span>
+                    <span className="weather-temp-min">{d.minC == null ? "—" : `${Math.round(d.minC)}°`}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : (
         <p className="story-meta" style={{ margin: 0 }}>
@@ -81,4 +121,3 @@ export function WeatherWidget() {
     </section>
   );
 }
-

@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("latitude", String(lat));
   url.searchParams.set("longitude", String(lon));
   url.searchParams.set("current", "temperature_2m,apparent_temperature,weather_code,wind_speed_10m");
+  url.searchParams.set("daily", "weather_code,temperature_2m_max,temperature_2m_min");
   url.searchParams.set("timezone", "auto");
 
   try {
@@ -49,6 +50,24 @@ export async function GET(request: NextRequest) {
     const data = (await res.json()) as any;
     const current = data?.current;
     const code = Number(current?.weather_code);
+    const daily = data?.daily || {};
+    const dailyTimes: string[] = Array.isArray(daily?.time) ? daily.time : [];
+    const dailyCodes: any[] = Array.isArray(daily?.weather_code) ? daily.weather_code : [];
+    const dailyMax: any[] = Array.isArray(daily?.temperature_2m_max) ? daily.temperature_2m_max : [];
+    const dailyMin: any[] = Array.isArray(daily?.temperature_2m_min) ? daily.temperature_2m_min : [];
+
+    const forecast = dailyTimes.slice(0, 7).map((t: string, idx: number) => {
+      const c = Number(dailyCodes[idx]);
+      const maxC = Number(dailyMax[idx]);
+      const minC = Number(dailyMin[idx]);
+      return {
+        date: t,
+        weatherCode: Number.isFinite(c) ? c : null,
+        label: Number.isFinite(c) ? weatherLabel(c) : "Unknown",
+        maxC: Number.isFinite(maxC) ? maxC : null,
+        minC: Number.isFinite(minC) ? minC : null,
+      };
+    });
 
     return NextResponse.json({
       ok: true,
@@ -60,10 +79,10 @@ export async function GET(request: NextRequest) {
         label: Number.isFinite(code) ? weatherLabel(code) : "Unknown",
         time: current?.time,
       },
+      daily: forecast,
       timezone: data?.timezone,
     });
   } catch {
     return NextResponse.json({ ok: false, error: "Weather lookup failed" }, { status: 200 });
   }
 }
-

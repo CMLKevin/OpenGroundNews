@@ -31,6 +31,10 @@ function randomToken(bytes = 32) {
   return crypto.randomBytes(bytes).toString("hex");
 }
 
+function sha256Hex(value: string): string {
+  return crypto.createHash("sha256").update(String(value || ""), "utf8").digest("hex");
+}
+
 async function scryptHash(password: string, saltHex: string): Promise<string> {
   const salt = Buffer.from(saltHex, "hex");
   const derived = await new Promise<Buffer>((resolve, reject) => {
@@ -185,3 +189,64 @@ export async function toggleFollow(userId: string, params: { kind: "topic" | "ou
   };
 }
 
+export async function requestPasswordReset(emailRaw: string) {
+  const email = normalizeEmail(emailRaw);
+  // Always return ok to avoid user enumeration.
+  if (!email || !email.includes("@")) return { ok: true as const };
+
+  const user = await db.user.findUnique({ where: { email } });
+  if (!user) return { ok: true as const };
+
+  const token = randomToken(32);
+  const tokenHash = sha256Hex(token);
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+
+  await db.passwordResetToken.create({
+    data: {
+      id: `prt_${randomToken(10)}`,
+      userId: user.id,
+      tokenHash,
+      expiresAt,
+    },
+  });
+
+  const site = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3000";
+  const resetUrl = `${site.replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(token)}`;
+
+  // In production you'd send email. For parity and dev workflows we return the link only in non-prod.
+  if (process.env.NODE_ENV !== "production") {
+    return { ok: true as const, devResetUrl: resetUrl };
+  }
+  return { ok: true as const };
+}
+
+export async function resetPassword(params: { token: string; password: string }) {
+  const token = (params.token || "").trim();
+  const password = params.password || "";
+  if (!token) throw new Error("Missing token");
+  if (password.length < 10) throw new Error("Password must be at least 10 characters");
+
+  const tokenHash = sha256Hex(token);
+  const record = await db.passwordResetToken.findUnique({ where: { tokenHash } });
+  if (!record) throw new Error("Invalid or expired reset link");
+  if (record.usedAt) throw new Error("Reset link already used");
+  if (+new Date(record.expiresAt) <= Date.now()) throw new Error("Reset link expired");
+
+  const saltHex = randomToken(16);
+  const hashHex = await scryptHash(password, saltHex);
+
+  await db.$transaction(async (tx) => {
+    await tx.user.update({
+      where: { id: record.userId },
+      data: { passwordSalt: saltHex, passwordHash: hashHex },
+    });
+    await tx.passwordResetToken.update({
+      where: { tokenHash },
+      data: { usedAt: new Date() },
+    });
+    // Invalidate existing sessions after a reset.
+    await tx.session.deleteMany({ where: { userId: record.userId } });
+  });
+
+  return { ok: true as const };
+}

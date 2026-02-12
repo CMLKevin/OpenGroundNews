@@ -318,6 +318,13 @@ function sanitizeImageUrl(raw, baseUrl) {
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
       return FALLBACK_IMAGE;
     }
+    // GN "webMetaImg" endpoints bake bias bars into the image. Avoid for UI parity (we render our own).
+    const lowerPath = String(parsed.pathname || "").toLowerCase();
+    if (lowerPath.includes("webmetaimg") || (lowerPath.includes("webmeta") && lowerPath.includes("img"))) {
+      return FALLBACK_IMAGE;
+    }
+    const lowerHref = parsed.toString().toLowerCase();
+    if (lowerHref.includes("webmetaimg")) return FALLBACK_IMAGE;
     return parsed.toString();
   } catch {
     return FALLBACK_IMAGE;
@@ -381,6 +388,26 @@ function parseBiasLabel(value) {
   if (/(far\s+left|lean\s+left|center[-\s]?left|left)/.test(text)) return "left";
   if (/(far\s+right|lean\s+right|center[-\s]?right|right)/.test(text)) return "right";
   if (text.includes("center")) return "center";
+  return "unknown";
+}
+
+function parseBiasRatingLabel(value) {
+  const text = normalizeText(value).toLowerCase();
+  if (!text) return "unknown";
+  if (text.includes("far left")) return "far-left";
+  if (text.includes("far-right") || text.includes("far right")) return "far-right";
+  if (text.includes("lean left") || text.includes("center left") || text.includes("centre left")) return "lean-left";
+  if (text.includes("lean right") || text.includes("center right") || text.includes("centre right")) return "lean-right";
+  if (/(^|\s)left(\s|$)/.test(text)) return "left";
+  if (/(^|\s)right(\s|$)/.test(text)) return "right";
+  if (text.includes("center") || text.includes("centre")) return "center";
+  return "unknown";
+}
+
+function bucket3FromRating(rating) {
+  if (rating === "far-left" || rating === "left" || rating === "lean-left") return "left";
+  if (rating === "center") return "center";
+  if (rating === "lean-right" || rating === "right" || rating === "far-right") return "right";
   return "unknown";
 }
 
@@ -509,6 +536,23 @@ function parseBiasFromAny(value) {
   if (value && typeof value === "object") {
     const any = value;
     return parseBiasFromAny(any.label || any.name || any.value || "");
+  }
+  return "unknown";
+}
+
+function parseBiasRatingFromAny(value) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    // Numeric leans don't encode far/lean granularity; map to 3-bucket then to rating.
+    const b = parseBiasFromAny(value);
+    if (b === "left") return "left";
+    if (b === "right") return "right";
+    if (b === "center") return "center";
+    return "unknown";
+  }
+  if (typeof value === "string") return parseBiasRatingLabel(value);
+  if (value && typeof value === "object") {
+    const any = value;
+    return parseBiasRatingFromAny(any.label || any.name || any.value || "");
   }
   return "unknown";
 }
@@ -656,6 +700,8 @@ function mergeSourceCandidateRecords(base, incoming) {
 
   merged.logoUrl = normalizeText(base.logoUrl || "") || normalizeText(incoming.logoUrl || "");
   merged.bias = base.bias && base.bias !== "unknown" ? base.bias : incoming.bias || "unknown";
+  merged.biasRating =
+    base.biasRating && base.biasRating !== "unknown" ? base.biasRating : incoming.biasRating || "unknown";
   merged.factuality =
     base.factuality && base.factuality !== "unknown" ? base.factuality : incoming.factuality || "unknown";
   merged.ownership = normalizeText(base.ownership || "") || normalizeText(incoming.ownership || "");
@@ -853,7 +899,9 @@ function extractStructuredFromNextFlightHtml(html) {
         const host = discoverHostFromNode(entry);
         const sourceInfoId = normalizeText(entry.sourceInfoId || entry.source_info_id || "");
 
-        const bias = parseBiasFromAny(entry.bias || entry.biasRating || entry.lean || entry.politicalBias || entry.bias_label);
+        const rawBias = parseBiasFromAny(entry.bias || entry.biasRating || entry.lean || entry.politicalBias || entry.bias_label);
+        const biasRating = parseBiasRatingFromAny(entry.bias || entry.biasRating || entry.lean || entry.politicalBias || entry.bias_label);
+        const bias = rawBias !== "unknown" ? rawBias : bucket3FromRating(biasRating);
         const factuality = parseFactualityFromAny(
           entry.factuality || entry.factualityRating || entry.factuality_score || entry.factualityScore || entry.truthiness,
         );
@@ -879,6 +927,7 @@ function extractStructuredFromNextFlightHtml(html) {
             outletName: existing.outletName || outletName,
             logoUrl: existing.logoUrl || logoUrl,
             bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+            biasRating: existing.biasRating && existing.biasRating !== "unknown" ? existing.biasRating : biasRating,
             factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
             ownership: existing.ownership || ownership,
             paywall: existing.paywall || paywall,
@@ -891,6 +940,7 @@ function extractStructuredFromNextFlightHtml(html) {
             outletName: existing.outletName || outletName,
             logoUrl: existing.logoUrl || logoUrl,
             bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+            biasRating: existing.biasRating && existing.biasRating !== "unknown" ? existing.biasRating : biasRating,
             factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
             ownership: existing.ownership || ownership,
             paywall: existing.paywall || paywall,
@@ -903,7 +953,9 @@ function extractStructuredFromNextFlightHtml(html) {
     const nodeId = normalizeText(node.id || node.sourceInfoId || node.sourceInfoID || "");
     if (!host && !nodeId) return;
 
-    const bias = parseBiasFromAny(node.bias || node.biasRating || node.lean || node.politicalBias || node.bias_label);
+    const rawBias = parseBiasFromAny(node.bias || node.biasRating || node.lean || node.politicalBias || node.bias_label);
+    const biasRating = parseBiasRatingFromAny(node.bias || node.biasRating || node.lean || node.politicalBias || node.bias_label);
+    const bias = rawBias !== "unknown" ? rawBias : bucket3FromRating(biasRating);
     const factuality = parseFactualityFromAny(
       node.factuality || node.factualityRating || node.factuality_score || node.factualityScore || node.truthiness,
     );
@@ -922,6 +974,7 @@ function extractStructuredFromNextFlightHtml(html) {
 
     const hasAnything =
       (bias && bias !== "unknown") ||
+      (biasRating && biasRating !== "unknown") ||
       (factuality && factuality !== "unknown") ||
       Boolean(ownership) ||
       Boolean(paywall) ||
@@ -936,6 +989,7 @@ function extractStructuredFromNextFlightHtml(html) {
         outletName: existing.outletName || outletName,
         logoUrl: existing.logoUrl || logoUrl,
         bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+        biasRating: existing.biasRating && existing.biasRating !== "unknown" ? existing.biasRating : biasRating,
         factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
         ownership: existing.ownership || ownership,
         paywall: existing.paywall || paywall,
@@ -948,6 +1002,7 @@ function extractStructuredFromNextFlightHtml(html) {
         outletName: existing.outletName || outletName,
         logoUrl: existing.logoUrl || logoUrl,
         bias: existing.bias && existing.bias !== "unknown" ? existing.bias : bias,
+        biasRating: existing.biasRating && existing.biasRating !== "unknown" ? existing.biasRating : biasRating,
         factuality: existing.factuality && existing.factuality !== "unknown" ? existing.factuality : factuality,
         ownership: existing.ownership || ownership,
         paywall: existing.paywall || paywall,
@@ -971,6 +1026,12 @@ function extractStructuredFromNextFlightHtml(html) {
     const resolvedSourceInfoId = sourceInfoId || (host ? sourceInfoIdByHost.get(host) : "");
     const outletMeta =
       (resolvedSourceInfoId && outletMetaById.get(resolvedSourceInfoId)) || (host ? outletMetaByHost.get(host) : null);
+    const rawBias =
+      parseBiasFromAny(node.bias || node.biasRating || node.lean || "") || parseBiasFromAny(outletMeta?.bias);
+    const biasRating =
+      parseBiasRatingFromAny(node.bias || node.biasRating || node.lean || "") ||
+      parseBiasRatingFromAny(outletMeta?.biasRating || outletMeta?.bias);
+    const bias = rawBias !== "unknown" ? rawBias : bucket3FromRating(biasRating);
     const incoming = {
       url,
       sourceInfoId: resolvedSourceInfoId,
@@ -979,7 +1040,8 @@ function extractStructuredFromNextFlightHtml(html) {
         normalizeText(outletMeta?.outletName || ""),
       excerpt: normalizeText(node.excerpt || node.summary || node.description || ""),
       logoUrl: normalizeText(node.logo || node.logoUrl || node.icon || node.image || "") || normalizeText(outletMeta?.logoUrl || ""),
-      bias: parseBiasFromAny(node.bias || node.biasRating || node.lean || "") || parseBiasFromAny(outletMeta?.bias),
+      bias,
+      biasRating,
       factuality:
         parseFactualityFromAny(node.factuality || node.factualityRating || node.factualityScore || "") ||
         parseFactualityFromAny(outletMeta?.factuality),
@@ -1059,7 +1121,13 @@ function extractStructuredFromNextFlightHtml(html) {
     if (id && !next.sourceInfoId) next.sourceInfoId = id;
     if (looksLikeWeakOutletLabel(next.outlet) && normalizeText(meta.outletName)) next.outlet = normalizeText(meta.outletName);
     if ((!next.logoUrl || !normalizeText(next.logoUrl)) && normalizeText(meta.logoUrl)) next.logoUrl = normalizeText(meta.logoUrl);
+    if ((!next.biasRating || next.biasRating === "unknown") && meta.biasRating && meta.biasRating !== "unknown") {
+      next.biasRating = meta.biasRating;
+    }
     if ((!next.bias || next.bias === "unknown") && meta.bias && meta.bias !== "unknown") next.bias = meta.bias;
+    if ((!next.bias || next.bias === "unknown") && next.biasRating && next.biasRating !== "unknown") {
+      next.bias = bucket3FromRating(next.biasRating);
+    }
     if ((!next.factuality || next.factuality === "unknown") && meta.factuality && meta.factuality !== "unknown") {
       next.factuality = meta.factuality;
     }

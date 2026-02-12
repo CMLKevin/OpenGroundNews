@@ -23,6 +23,19 @@ enum BiasBucket {
   unknown
 }
 
+// Ground News parity: 7-category media bias rating (plus unknown).
+// We keep BiasBucket for legacy 3-bucket grouping while storing the richer rating here.
+enum OutletBiasRating {
+  far_left
+  left
+  lean_left
+  center
+  lean_right
+  right
+  far_right
+  unknown
+}
+
 enum FactualityBucket {
   very_high
   high
@@ -64,6 +77,7 @@ model User {
   follows      Follow[]
   reading      ReadingEvent[]
   pushSubscriptions PushSubscription[]
+  passwordResets PasswordResetToken[]
 }
 
 model Session {
@@ -193,7 +207,10 @@ model Outlet {
   slug           String           @unique
   name           String
   logoUrl        String?
+  // 3-bucket bias grouping used throughout the app (Left/Center/Right).
   bias           BiasBucket       @default(unknown)
+  // 7-category rating for GN parity surfaces (Far Left..Far Right).
+  biasRating     OutletBiasRating @default(unknown)
   factuality     FactualityBucket @default(unknown)
   ownership      String?          // Optional; "Unlabeled" can be rendered in UI.
   lastEnrichedAt DateTime?
@@ -201,6 +218,7 @@ model Outlet {
   sources        SourceArticle[]
 
   @@index([bias])
+  @@index([biasRating])
   @@index([factuality])
 }
 
@@ -252,4 +270,18 @@ model NewsletterSignup {
 
   @@index([list])
   @@index([email])
+}
+
+model PasswordResetToken {
+  id        String   @id
+  userId    String
+  tokenHash String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  usedAt    DateTime?
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
