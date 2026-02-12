@@ -6,17 +6,26 @@ import { computeBlindspotInfo } from "@/lib/blindspot";
 
 export function BlindspotStoryCard({ story }: { story: Story }) {
   const info = computeBlindspotInfo(story);
-  const badge =
+  const skewLabel =
     info.isBlindspotCandidate && info.dominantSide
       ? `${info.dominantPct}% ${info.dominantSide === "left" ? "Left" : "Right"}`
       : "Blindspot";
   const frameClass = info.column === "for-left" ? "is-for-left" : info.column === "for-right" ? "is-for-right" : "";
+  const severity =
+    info.isBlindspotCandidate && info.dominantPct >= 80
+      ? { label: "Severe", key: "severe" }
+      : info.isBlindspotCandidate && info.dominantPct >= 70
+        ? { label: "High", key: "high" }
+        : info.isBlindspotCandidate
+          ? { label: "Moderate", key: "moderate" }
+          : { label: "Low", key: "low" };
 
   return (
     <div className={`blindspot-frame ${frameClass}`}>
       <article className="story-card blindspot-card">
-        <div className="blindspot-badge-row" aria-label={`Blindspot severity: ${badge}`}>
-          <div className="blindspot-eye" aria-hidden="true">
+        <div className="blindspot-badge-row" aria-label={`Blindspot severity: ${skewLabel}`}>
+          <div className="blindspot-badge-left">
+            <div className="blindspot-eye" aria-hidden="true">
             <svg width="18" height="18" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
               <path
                 fill="currentColor"
@@ -24,10 +33,15 @@ export function BlindspotStoryCard({ story }: { story: Story }) {
               />
             </svg>
           </div>
-          <div className="blindspot-badge">
-            <strong>{badge}</strong>
+            <div className="blindspot-badge-wordmark">
+              <span className="blindspot-word">BLINDSPOT</span>
+              <span className="blindspot-tm" aria-hidden="true">TM</span>
+            </div>
           </div>
-          <div className="blindspot-badge-meta">
+
+          <div className="blindspot-badge-right">
+            <span className={`blindspot-severity blindspot-severity-${severity.key}`}>{severity.label}</span>
+            <span className="blindspot-skew">{skewLabel}</span>
             <span className="blindspot-sources">{String(sourceCountLabel(story)).toUpperCase()}</span>
             {info.column ? <span className="blindspot-badge-sub">{info.label}</span> : null}
           </div>

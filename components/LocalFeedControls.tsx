@@ -23,6 +23,15 @@ function labelForResult(result: GeoResult) {
   return parts.join(", ") || "Unknown location";
 }
 
+function setCookie(name: string, value: string, maxAgeDays = 365) {
+  try {
+    const maxAge = maxAgeDays * 24 * 60 * 60;
+    document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; SameSite=Lax`;
+  } catch {
+    // ignore
+  }
+}
+
 export function LocalFeedControls() {
   const [location, setLocation] = useState(DEFAULT_LOCATION);
   const [lat, setLat] = useState<number | null>(null);
@@ -137,15 +146,20 @@ export function LocalFeedControls() {
                   onClick={() => {
                     setLocation(label);
                     window.localStorage.setItem(KEY, label);
+                    setCookie("ogn_local_label", label);
                     if (hasCoords) {
                       setLat(rLat);
                       setLon(rLon);
                       window.localStorage.setItem(KEY_LAT, String(rLat));
                       window.localStorage.setItem(KEY_LON, String(rLon));
+                      setCookie("ogn_local_lat", String(rLat));
+                      setCookie("ogn_local_lon", String(rLon));
                       updateQuery(label, { lat: rLat, lon: rLon });
                     } else {
                       setLat(null);
                       setLon(null);
+                      setCookie("ogn_local_lat", "");
+                      setCookie("ogn_local_lon", "");
                       updateQuery(label, null);
                     }
                     setResults([]);
@@ -165,6 +179,7 @@ export function LocalFeedControls() {
             const next = location.trim() || DEFAULT_LOCATION;
             setLocation(next);
             window.localStorage.setItem(KEY, next);
+            setCookie("ogn_local_label", next);
             if (lat != null && lon != null) updateQuery(next, { lat, lon });
             else updateQuery(next, null);
           }}
@@ -185,7 +200,10 @@ export function LocalFeedControls() {
                 setLon(nextLon);
                 window.localStorage.setItem(KEY_LAT, String(nextLat));
                 window.localStorage.setItem(KEY_LON, String(nextLon));
+                setCookie("ogn_local_lat", String(nextLat));
+                setCookie("ogn_local_lon", String(nextLon));
                 const label = location.trim() || "Current location";
+                setCookie("ogn_local_label", label);
                 updateQuery(label, { lat: nextLat, lon: nextLon });
               },
               () => {
@@ -207,6 +225,9 @@ export function LocalFeedControls() {
             window.localStorage.removeItem(KEY_LON);
             setLat(null);
             setLon(null);
+            setCookie("ogn_local_label", DEFAULT_LOCATION);
+            setCookie("ogn_local_lat", "");
+            setCookie("ogn_local_lon", "");
             updateQuery(undefined, null);
           }}
         >

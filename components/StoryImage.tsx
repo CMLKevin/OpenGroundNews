@@ -21,6 +21,10 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
   const normalizedSrc = useMemo(() => {
     const clean = (src || "").trim();
     if (!clean || clean === STORY_IMAGE_FALLBACK) return derivedFallback;
+    const lower = clean.toLowerCase();
+    // Ground News "webMetaImg" endpoints bake bias bars into the image; treat as unusable to avoid
+    // duplicating our own bias bars and to fix rounding artifacts in the UI.
+    if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) return derivedFallback;
     return clean;
   }, [src, derivedFallback]);
   const [activeSrc, setActiveSrc] = useState(normalizedSrc);

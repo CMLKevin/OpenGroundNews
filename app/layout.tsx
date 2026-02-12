@@ -1,20 +1,12 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Bricolage_Grotesque, Newsreader } from "next/font/google";
+import "@fontsource-variable/bricolage-grotesque";
+import "@fontsource-variable/newsreader";
 import { TopNav } from "@/components/TopNav";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
+import { SiteFooter } from "@/components/SiteFooter";
 import "@/app/globals.css";
 import { cookies } from "next/headers";
-
-const sans = Bricolage_Grotesque({
-  subsets: ["latin"],
-  variable: "--font-sans",
-});
-
-const serif = Newsreader({
-  subsets: ["latin"],
-  variable: "--font-serif",
-});
 
 export const metadata: Metadata = {
   title: "OpenGroundNews",
@@ -45,18 +37,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en" data-theme={initialTheme} suppressHydrationWarning>
-      <body className={`${sans.variable} ${serif.variable}`}>
+      <body>
         <ThemeBootScript initialTheme={initialTheme} />
         <Suspense fallback={<header className="topbar" />}>
           <TopNav />
         </Suspense>
         {children}
         <MobileBottomNav />
-        <footer className="footer">
-          <div className="container">
-            OpenGroundNews • Fully open-source perspective-aware news reader • Remote-browser ingestion via Browser Use CDP.
-          </div>
-        </footer>
+        <SiteFooter />
       </body>
     </html>
   );

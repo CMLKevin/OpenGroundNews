@@ -7,6 +7,8 @@ import { sourceCountLabel } from "@/lib/format";
 import { listStories } from "@/lib/store";
 import { getCurrentUser } from "@/lib/authStore";
 import { NewsList } from "@/components/NewsList";
+import { TopNewsStories } from "@/components/TopNewsStories";
+import { BlindspotWidget } from "@/components/BlindspotWidget";
 
 type HomeProps = {
   searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string; page?: string }>;
@@ -79,6 +81,9 @@ export default async function HomePage({ searchParams }: HomeProps) {
       <section className="home-hero-grid">
         <div className="home-hero-left">
           <DailyBriefingList stories={topStories} />
+          <div style={{ marginTop: "1rem" }}>
+            <TopNewsStories stories={tagged.slice(6, 18)} />
+          </div>
         </div>
 
         <div className="home-hero-center">
@@ -104,32 +109,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
         <aside className="home-hero-right">
           <MyNewsBiasWidget />
           <DailyLocalNewsWidget />
-          <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Blindspot</h2>
-              <Link href="/blindspot" className="story-meta">
-                open
-              </Link>
-            </div>
-            {blindspotStories.length > 0 ? (
-              <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
-                {blindspotStories.slice(0, 4).map((story) => (
-                  <li key={story.id}>
-                    <Link href={`/story/${story.slug}`} className="rail-link">
-                      {story.title}
-                    </Link>
-                    <div className="story-meta">
-                      {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="story-meta" style={{ margin: 0 }}>
-                No blindspot candidates in the current sample.
-              </p>
-            )}
-          </section>
+          <BlindspotWidget stories={blindspotStories} />
         </aside>
       </section>
 

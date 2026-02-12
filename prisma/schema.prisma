@@ -78,6 +78,9 @@ model User {
   reading      ReadingEvent[]
   pushSubscriptions PushSubscription[]
   passwordResets PasswordResetToken[]
+  savedStories SavedStory[]
+  customFeeds  CustomFeed[]
+  feedback     Feedback[]
 }
 
 model Session {
@@ -170,6 +173,8 @@ model Story {
   tags         StoryTag[]
   sources       SourceArticle[]
   reading       ReadingEvent[]
+  savedBy      SavedStory[]
+  feedback     Feedback[]
 
   @@index([updatedAt])
   @@index([topic])
@@ -207,6 +212,14 @@ model Outlet {
   slug           String           @unique
   name           String
   logoUrl        String?
+  // Ground News identifiers to allow robust enrichment joins.
+  groundNewsSourceId   String?
+  groundNewsSourceSlug String?
+  groundNewsUrl        String?
+  websiteUrl     String?
+  description    String?
+  country        String?
+  foundedYear    Int?
   // 3-bucket bias grouping used throughout the app (Left/Center/Right).
   bias           BiasBucket       @default(unknown)
   // 7-category rating for GN parity surfaces (Far Left..Far Right).
@@ -220,6 +233,9 @@ model Outlet {
   @@index([bias])
   @@index([biasRating])
   @@index([factuality])
+  @@index([groundNewsSourceId])
+  @@index([groundNewsSourceSlug])
+  @@index([groundNewsUrl])
 }
 
 model SourceArticle {
@@ -231,6 +247,7 @@ model SourceArticle {
   publishedAt DateTime?
   paywall     String?
   locality    String?
+  repostedBy  Int?
 
   story       Story            @relation(fields: [storyId], references: [id], onDelete: Cascade)
   outlet      Outlet           @relation(fields: [outletId], references: [id], onDelete: Cascade)
@@ -284,4 +301,61 @@ model PasswordResetToken {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+model SavedStory {
+  id        String   @id
+  userId    String
+  storyId   String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, storyId])
+  @@index([userId, createdAt])
+  @@index([storyId])
+}
+
+model CustomFeed {
+  id          String   @id
+  userId      String
+  name        String
+  description String?
+  // Rules are stored as JSON to allow maximalist parity iteration without schema churn.
+  // Expected shape: { topics: string[], outlets: string[], includeBlindspot?: boolean, includeLocal?: boolean, includeTrending?: boolean }
+  rules       Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+enum FeedbackKind {
+  summary
+  story
+  bug
+  other
+}
+
+model Feedback {
+  id        String       @id
+  kind      FeedbackKind @default(summary)
+  message   String
+  email     String?
+  url       String?
+  userAgent String?
+  createdAt DateTime     @default(now())
+
+  userId    String?
+  storyId   String?
+
+  user      User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  story     Story?       @relation(fields: [storyId], references: [id], onDelete: SetNull)
+
+  @@index([kind, createdAt])
+  @@index([storyId, createdAt])
+  @@index([userId, createdAt])
 }

@@ -109,6 +109,22 @@ export function compactHost(rawUrl: string) {
   }
 }
 
+export function estimateReadTimeMinutes(text: string, opts?: { wpm?: number; min?: number; max?: number }) {
+  const wpm = opts?.wpm ?? 220;
+  const min = opts?.min ?? 1;
+  const max = opts?.max ?? 25;
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (!clean) return min;
+  const words = clean.split(" ").filter(Boolean).length;
+  const minutes = Math.ceil(words / Math.max(120, wpm));
+  return Math.max(min, Math.min(max, minutes));
+}
+
+export function storyReadTimeMinutes(story: Story) {
+  const blob = `${story.title} ${story.dek || ""} ${story.summary || ""}`.trim();
+  return estimateReadTimeMinutes(blob);
+}
+
 function clampInt(value: number) {
   if (!Number.isFinite(value)) return 0;
   if (value < 0) return 0;

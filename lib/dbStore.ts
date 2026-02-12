@@ -16,6 +16,7 @@ function toStory(row: any): Story {
     factuality: (s.outlet?.factuality || "unknown").replace("_", "-"),
     ownership: s.outlet?.ownership || "Unlabeled",
     publishedAt: s.publishedAt ? new Date(s.publishedAt).toISOString() : undefined,
+    repostedBy: typeof s.repostedBy === "number" ? s.repostedBy : undefined,
     paywall: s.paywall || undefined,
     locality: s.locality || undefined,
   }));

@@ -720,6 +720,10 @@ function extractStructuredFromNextFlightHtml(html) {
     leaningRight: undefined,
     percentages: undefined,
   };
+  // Next Flight can contain reference strings like "$85:props:children:...". We parse the
+  // JSON lines we can and then resolve these pointers on demand to recover nested objects
+  // (notably `sourceInfo` payloads that contain factuality/ownership/bias metadata).
+  const flightNodeById = new Map();
   const sourceByUrl = new Map();
   const tagSet = new Set();
   let parsedLineCount = 0;
@@ -1015,12 +1019,46 @@ function extractStructuredFromNextFlightHtml(html) {
     const url = normalizeExternalUrl(rawUrl);
     if (!url || isGroundNewsUrl(url)) return;
     const host = normalizeHost(hostFromUrl(url));
+    const resolveFlightRef = (ref, visited) => {
+      if (typeof ref !== "string") return null;
+      if (!ref.startsWith("$") || !ref.includes(":")) return null;
+      const match = ref.match(/^\$([0-9a-zA-Z]+):(.+)$/);
+      if (!match) return null;
+      const baseId = match[1];
+      const path = match[2];
+      const key = `${baseId}:${path}`;
+      if (visited.has(key)) return null;
+      visited.add(key);
+      const base = flightNodeById.get(baseId);
+      if (!base) return null;
+      const parts = path.split(":").filter(Boolean);
+      let cur = base;
+      for (const part of parts) {
+        if (cur == null) return null;
+        if (/^\d+$/.test(part)) {
+          const idx = Number(part);
+          if (!Array.isArray(cur)) return null;
+          cur = cur[idx];
+          continue;
+        }
+        if (typeof cur !== "object") return null;
+        cur = cur[part];
+      }
+      return cur;
+    };
+
+    const sourceInfoCandidate = node.sourceInfo || node.source_info || null;
+    const resolvedSourceInfo =
+      sourceInfoCandidate && typeof sourceInfoCandidate === "object"
+        ? sourceInfoCandidate
+        : resolveFlightRef(sourceInfoCandidate, new Set());
+
     const sourceInfoId = normalizeText(
       node.sourceInfoId ||
         node.sourceInfoID ||
         node.source_info_id ||
-        node.sourceInfo?.id ||
-        node.sourceInfo?.sourceInfoId ||
+        resolvedSourceInfo?.id ||
+        resolvedSourceInfo?.sourceInfoId ||
         "",
     );
     const resolvedSourceInfoId = sourceInfoId || (host ? sourceInfoIdByHost.get(host) : "");
@@ -1035,17 +1073,30 @@ function extractStructuredFromNextFlightHtml(html) {
     const incoming = {
       url,
       sourceInfoId: resolvedSourceInfoId,
+      sourceInfoSlug: normalizeText(resolvedSourceInfo?.slug || ""),
       outlet:
-        normalizeText(node.outlet || node.publisher || node.publisherName || node.sourceName || "") ||
+        normalizeText(node.outlet || node.publisher || node.publisherName || node.sourceName || resolvedSourceInfo?.name || "") ||
         normalizeText(outletMeta?.outletName || ""),
       excerpt: normalizeText(node.excerpt || node.summary || node.description || ""),
-      logoUrl: normalizeText(node.logo || node.logoUrl || node.icon || node.image || "") || normalizeText(outletMeta?.logoUrl || ""),
+      logoUrl:
+        normalizeText(node.logo || node.logoUrl || node.icon || node.image || resolvedSourceInfo?.icon || "") ||
+        normalizeText(outletMeta?.logoUrl || ""),
       bias,
       biasRating,
       factuality:
-        parseFactualityFromAny(node.factuality || node.factualityRating || node.factualityScore || "") ||
+        parseFactualityFromAny(node.factuality || node.factualityRating || node.factualityScore || resolvedSourceInfo?.factuality || "") ||
         parseFactualityFromAny(outletMeta?.factuality),
-      ownership: normalizeText(node.ownership || "") || normalizeText(outletMeta?.ownership || ""),
+      ownership:
+        normalizeText(node.ownership || "") ||
+        normalizeText(
+          Array.isArray(resolvedSourceInfo?.owners)
+            ? resolvedSourceInfo.owners
+                .map((o) => (o && typeof o === "object" ? normalizeText(o.name || o.label || o.title || "") : normalizeText(String(o || ""))))
+                .filter(Boolean)
+                .join(", ")
+            : "",
+        ) ||
+        normalizeText(outletMeta?.ownership || ""),
       paywall: parsePaywallFromAny(node.paywall || node.paywallType || node.isPaywalled || node.hasPaywall) || normalizeText(outletMeta?.paywall || ""),
       locality: parseLocalityLabel(node.locality || "") || "",
       publishedAt: normalizeText(node.publishedAt || node.publishDate || node.date || ""),
@@ -1064,8 +1115,45 @@ function extractStructuredFromNextFlightHtml(html) {
 
   const walk = (root) => {
     const stack = [root];
+    const seenPointers = new Set();
+
+    const tryResolvePointer = (value) => {
+      if (typeof value !== "string") return null;
+      if (!value.startsWith("$") || !value.includes(":")) return null;
+      const match = value.match(/^\$([0-9a-zA-Z]+):(.+)$/);
+      if (!match) return null;
+      const baseId = match[1];
+      const path = match[2];
+      const key = `${baseId}:${path}`;
+      if (seenPointers.has(key)) return null;
+      seenPointers.add(key);
+      const base = flightNodeById.get(baseId);
+      if (!base) return null;
+      const parts = path.split(":").filter(Boolean);
+      let cur = base;
+      for (const part of parts) {
+        if (cur == null) return null;
+        if (/^\d+$/.test(part)) {
+          const idx = Number(part);
+          if (!Array.isArray(cur)) return null;
+          cur = cur[idx];
+          continue;
+        }
+        if (typeof cur !== "object") return null;
+        cur = cur[part];
+      }
+      return cur;
+    };
+
     while (stack.length > 0) {
       const node = stack.pop();
+      if (typeof node === "string") {
+        const resolved = tryResolvePointer(node);
+        if (resolved && typeof resolved === "object") {
+          stack.push(resolved);
+        }
+        continue;
+      }
       if (!node || typeof node !== "object") continue;
       if (Array.isArray(node)) {
         for (const child of node) stack.push(child);
@@ -1087,6 +1175,10 @@ function extractStructuredFromNextFlightHtml(html) {
       maybeAddTag(node);
       for (const value of Object.values(node)) {
         if (value && typeof value === "object") stack.push(value);
+        else if (typeof value === "string" && value.startsWith("$") && value.includes(":")) {
+          // Pointers into earlier flight nodes; resolve so we can see nested sourceInfo/registry objects.
+          stack.push(value);
+        }
       }
     }
   };
@@ -1097,13 +1189,15 @@ function extractStructuredFromNextFlightHtml(html) {
       .map((line) => line.trim())
       .filter(Boolean);
     for (const line of lines) {
-      const match = line.match(/^\d+:(.+)$/);
+      const match = line.match(/^([0-9a-zA-Z]+):(.+)$/);
       if (!match) continue;
-      const payload = match[1].trim().replace(/,$/, "");
+      const flightId = match[1];
+      const payload = match[2].trim().replace(/,$/, "");
       if (!(payload.startsWith("{") || payload.startsWith("["))) continue;
       try {
         const parsed = JSON.parse(payload);
         parsedLineCount += 1;
+        flightNodeById.set(flightId, parsed);
         walk(parsed);
       } catch {
         // Not strict JSON or not a payload that we can parse directly.
@@ -1665,6 +1759,16 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       }
     };
 
+    const toAbs = (raw) => {
+      const clean = normalize(raw || "");
+      if (!clean) return "";
+      try {
+        return new URL(clean, window.location.origin).toString();
+      } catch {
+        return "";
+      }
+    };
+
     const parseCountAfter = (label, text) => {
       const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const match = text.match(new RegExp(`${escaped}\\s*[:\\-]?\\s*([0-9][0-9,]{0,8})`, "i"));
@@ -1760,20 +1864,31 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       return extractFactuality(text);
     };
 
-    const parseOwnershipFromBlock = (text) => {
-      const match = text.match(/ownership\s*[:\-]\s*([^\n]{2,140})/i);
-      if (!match) return "";
-      const cleaned = cleanSnippet(match[1].split(/paywall|locality|read|open|reposted|published|updated/i)[0]);
-      if (!cleaned || cleaned.length < 2) return "";
-      if (/^(unknown|na|n\/a)$/i.test(cleaned)) return "";
-      return cleaned;
-    };
+	    const parseOwnershipFromBlock = (text) => {
+	      const match = text.match(/ownership\s*[:\-]\s*([^\n]{2,140})/i);
+	      if (!match) return "";
+	      const cleaned = cleanSnippet(match[1].split(/paywall|locality|read|open|reposted|published|updated/i)[0]);
+	      if (!cleaned || cleaned.length < 2) return "";
+	      if (/^(unknown|na|n\/a)$/i.test(cleaned)) return "";
+	      return cleaned;
+	    };
 
-    const parsePaywallFromBlock = (text) => {
-      const match = text.match(/paywall\s*[:\-]?\s*(no paywall|soft|hard|unknown)\b/i);
-      if (match) return extractPaywall(match[1]);
-      return extractPaywall(text);
-    };
+	    const parseRepostedByFromBlock = (text) => {
+	      const value = normalize(text || "").toLowerCase();
+	      if (!value.includes("reposted")) return undefined;
+	      const match =
+	        value.match(/reposted\s+by\s+(\d{1,4})\s+other\s+sources?/i) ||
+	        value.match(/reposted\s+by\s+(\d{1,4})\b/i);
+	      if (!match) return undefined;
+	      const parsed = Number(match[1]);
+	      return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : undefined;
+	    };
+
+	    const parsePaywallFromBlock = (text) => {
+	      const match = text.match(/paywall\s*[:\-]?\s*(no paywall|soft|hard|unknown)\b/i);
+	      if (match) return extractPaywall(match[1]);
+	      return extractPaywall(text);
+	    };
 
     const parseLocalityFromBlock = (text) => {
       const match = text.match(/locality\s*[:\-]?\s*(local|national|international)\b/i);
@@ -1910,6 +2025,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
         container?.querySelector("a[href*='/my/discover/source'], a[href*='/source/'], a[href*='/publisher/']") ||
         container?.querySelector("a[href*='/interest/']");
       const outletFromInterest = normalize(outletLink?.textContent || outletLink?.getAttribute("aria-label") || "");
+      const outletProfileUrl = toAbs(outletLink?.getAttribute("href") || (outletLink?.href ?? ""));
       const outletFromLine =
         lines.find((line) => {
           const lower = line.toLowerCase();
@@ -1945,19 +2061,23 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
         normalize(container?.querySelector("time")?.getAttribute("datetime") || "") ||
         normalize(container?.querySelector("time")?.textContent || "");
 
-      sourceByUrl.set(normalizedUrl, {
-        url: normalizedUrl,
-        outlet,
-        excerpt,
-        logoUrl,
-        bias: extractBiasFromText(`${biasLabel} ${block}`),
-        factuality: parseFactualityFromBlock(block),
-        paywall: parsePaywallFromBlock(block),
-        locality: parseLocalityFromBlock(block),
-        ownership: parseOwnershipFromBlock(block),
-        publishedAt,
-      });
-    }
+	      sourceByUrl.set(normalizedUrl, {
+	        url: normalizedUrl,
+	        outlet,
+	        excerpt,
+	        logoUrl,
+          outletProfileUrl,
+          groundNewsSourceId: undefined,
+          groundNewsSourceSlug: undefined,
+	        bias: extractBiasFromText(`${biasLabel} ${block}`),
+	        factuality: parseFactualityFromBlock(block),
+	        paywall: parsePaywallFromBlock(block),
+	        locality: parseLocalityFromBlock(block),
+	        ownership: parseOwnershipFromBlock(block),
+	        repostedBy: parseRepostedByFromBlock(block),
+	        publishedAt,
+	      });
+	    }
 
     const nextDataText = document.getElementById("__NEXT_DATA__")?.textContent || "";
     let nextCoverage = null;
@@ -2021,40 +2141,60 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
 
           const normalizedUrl = sourceUrl.toString();
           const existing = sourceByUrl.get(normalizedUrl);
+          const sourceInfo = anyNode.sourceInfo || anyNode.source_info || anyNode.publisherInfo || anyNode.publisher_info || null;
           const outlet =
-            normalize(anyNode.outlet || anyNode.publisher || anyNode.publisherName || anyNode.sourceName || "") ||
+            normalize(anyNode.outlet || anyNode.publisher || anyNode.publisherName || anyNode.sourceName || sourceInfo?.name || "") ||
             sourceUrl.hostname.replace(/^www\./, "");
           const excerpt = normalize(anyNode.excerpt || anyNode.summary || anyNode.description || "");
-          const bias = extractBiasFromText(normalize(anyNode.bias || anyNode.biasRating || ""));
-          const factuality = extractFactuality(normalize(anyNode.factuality || anyNode.factualityRating || ""));
-          const ownership = normalize(anyNode.ownership || "");
-          const paywall = extractPaywall(normalize(anyNode.paywall || ""));
-          const locality = extractLocality(normalize(anyNode.locality || ""));
-          const publishedAt = normalize(anyNode.publishedAt || anyNode.publishDate || anyNode.date || "");
-          const logoUrl = normalize(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || "");
+	          const bias = extractBiasFromText(normalize(anyNode.bias || anyNode.biasRating || sourceInfo?.bias || sourceInfo?.politicalBias || ""));
+	          const factuality = extractFactuality(normalize(anyNode.factuality || anyNode.factualityRating || sourceInfo?.factuality || ""));
+	          const ownersRaw = sourceInfo?.owners || sourceInfo?.owner || sourceInfo?.ownership || null;
+	          const ownership =
+	            normalize(anyNode.ownership || "") ||
+	            (Array.isArray(ownersRaw)
+	              ? normalize(
+	                  ownersRaw
+	                    .map((o) => (typeof o === "string" ? o : o?.name || o?.label || ""))
+	                    .filter(Boolean)
+	                    .join(", "),
+	                )
+	              : normalize(typeof ownersRaw === "string" ? ownersRaw : ownersRaw?.name || ownersRaw?.label || ""));
+	          const paywall = extractPaywall(normalize(anyNode.paywall || ""));
+	          const locality = extractLocality(normalize(anyNode.locality || ""));
+	          const repostedByRaw = anyNode.repostedBy || anyNode.reposted_by || anyNode.repostedByCount || "";
+	          const repostedByParsed = Number(repostedByRaw);
+	          const repostedBy = Number.isFinite(repostedByParsed) ? Math.max(0, Math.round(repostedByParsed)) : undefined;
+	          const publishedAt = normalize(anyNode.publishedAt || anyNode.publishDate || anyNode.date || "");
+	          const logoUrl = normalize(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || sourceInfo?.icon || "");
+	          const groundNewsSourceId = normalize(sourceInfo?.id || sourceInfo?.sourceInfoId || "");
+	          const groundNewsSourceSlug = normalize(sourceInfo?.slug || "");
 
           const outletFromExisting = existing?.outlet || "";
           const excerptFromExisting = existing?.excerpt || "";
           const outletResolved = !isWeakOutletLabel(outletFromExisting) ? outletFromExisting : outlet;
           const excerptResolved = !isWeakExcerpt(excerptFromExisting) ? excerptFromExisting : excerpt;
 
-          sourceByUrl.set(normalizedUrl, {
-            url: normalizedUrl,
-            outlet: outletResolved || outlet || sourceUrl.hostname.replace(/^www\./, ""),
-            excerpt: excerptResolved || excerpt || "",
-            logoUrl: existing?.logoUrl || logoUrl,
-            bias: existing?.bias !== "unknown" ? existing?.bias : bias,
-            factuality: existing?.factuality !== "unknown" ? existing?.factuality : factuality,
-            paywall: existing?.paywall || paywall,
-            locality: existing?.locality || locality,
-            ownership: existing?.ownership || ownership,
-            publishedAt: existing?.publishedAt || publishedAt,
-          });
-        }
-      } catch {
-        // Ignore hydration payload parse failures.
-      }
-    }
+	          sourceByUrl.set(normalizedUrl, {
+	            url: normalizedUrl,
+	            outlet: outletResolved || outlet || sourceUrl.hostname.replace(/^www\./, ""),
+	            excerpt: excerptResolved || excerpt || "",
+	            logoUrl: existing?.logoUrl || logoUrl,
+              outletProfileUrl: existing?.outletProfileUrl || "",
+              groundNewsSourceId: existing?.groundNewsSourceId || groundNewsSourceId || undefined,
+              groundNewsSourceSlug: existing?.groundNewsSourceSlug || groundNewsSourceSlug || undefined,
+	            bias: existing?.bias !== "unknown" ? existing?.bias : bias,
+	            factuality: existing?.factuality !== "unknown" ? existing?.factuality : factuality,
+	            paywall: existing?.paywall || paywall,
+	            locality: existing?.locality || locality,
+	            ownership: existing?.ownership || ownership,
+	            repostedBy: existing?.repostedBy ?? repostedBy,
+	            publishedAt: existing?.publishedAt || publishedAt,
+	          });
+	        }
+	      } catch {
+	        // Ignore hydration payload parse failures.
+	      }
+	    }
 
     const title =
       meta("meta[property='og:title']") ||
@@ -2253,20 +2393,27 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
   const excerptResolved = excerptCandidate || excerptFromMeta || candidateExcerpt || "";
   const excerpt = summarizeText(excerptResolved, "Excerpt unavailable from publisher metadata.");
 
-  return {
-    id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
-    outlet,
-    url: normalizedUrl,
-    excerpt,
-    logoUrl: normalizeAssetUrl(candidate.logoUrl, storyUrlForAssets || "https://ground.news"),
-    bias: parseBiasLabel(candidate.bias),
-    factuality: parseFactualityLabel(candidate.factuality),
-    ownership: normalizeText(candidate.ownership) || "Unlabeled",
-    publishedAt: candidatePublishedAt || sourceMeta.publishedAt || undefined,
-    paywall: parsePaywallLabel(candidate.paywall),
-    locality: parseLocalityLabel(candidate.locality),
-  };
-}
+	  return {
+	    id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
+	    outlet,
+	    url: normalizedUrl,
+	    excerpt,
+	    logoUrl: normalizeAssetUrl(candidate.logoUrl, storyUrlForAssets || "https://ground.news"),
+	    bias: parseBiasLabel(candidate.bias),
+      biasRating: parseBiasRatingLabel(candidate.biasRating || ""),
+	    factuality: parseFactualityLabel(candidate.factuality),
+	    ownership: normalizeText(candidate.ownership) || "Unlabeled",
+      groundNewsSourceId: normalizeText(candidate.sourceInfoId || candidate.groundNewsSourceId || "") || undefined,
+      groundNewsSourceSlug: normalizeText(candidate.sourceInfoSlug || candidate.groundNewsSourceSlug || "") || undefined,
+	    repostedBy:
+	      typeof candidate.repostedBy === "number" && Number.isFinite(candidate.repostedBy)
+	        ? Math.max(0, Math.round(candidate.repostedBy))
+	        : undefined,
+	    publishedAt: candidatePublishedAt || sourceMeta.publishedAt || undefined,
+	    paywall: parsePaywallLabel(candidate.paywall),
+	    locality: parseLocalityLabel(candidate.locality),
+	  };
+	}
 
 async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, auditState, articleOrdinal) {
   const rendered = await extractStoryFromDom(page, storyUrl, auditState, articleOrdinal);

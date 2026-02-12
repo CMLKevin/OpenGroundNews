@@ -7,17 +7,19 @@ import { computeBlindspotInfo } from "@/lib/blindspot";
 export const dynamic = "force-dynamic";
 
 type BlindspotProps = {
-  searchParams: Promise<{ edition?: string; scope?: string; filter?: string }>;
+  searchParams: Promise<{ edition?: string; scope?: string; filter?: string; page?: string }>;
 };
 
 export default async function BlindspotPage({ searchParams }: BlindspotProps) {
-  const { edition, scope, filter } = await searchParams;
+  const { edition, scope, filter, page } = await searchParams;
   const normalizedScope = (scope || "").toLowerCase();
   const useInternational = normalizedScope === "international";
   const normalizedFilter = (filter || "all").toLowerCase();
+  const pageNumber = Math.max(1, Number(page || 1) || 1);
+  const PAGE_SIZE = 12;
   const stories = await listStories({
     view: "blindspot",
-    limit: 30,
+    limit: 200,
     edition: useInternational ? undefined : edition?.trim() || undefined,
   });
 
@@ -31,10 +33,18 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
   const showLeft = normalizedFilter === "all" || normalizedFilter === "left";
   const showRight = normalizedFilter === "all" || normalizedFilter === "right";
 
+  const visibleCount = pageNumber * PAGE_SIZE;
+  const forLeftVisible = forLeft.slice(0, visibleCount);
+  const forRightVisible = forRight.slice(0, visibleCount);
+  const hasMore =
+    (showLeft && forLeftVisible.length < forLeft.length) || (showRight && forRightVisible.length < forRight.length);
+
   const hrefFor = (next: Record<string, string | undefined>) => {
     const params = new URLSearchParams();
     if (edition) params.set("edition", edition);
     if (useInternational) params.set("scope", "international");
+    if (normalizedFilter && normalizedFilter !== "all") params.set("filter", normalizedFilter);
+    if (pageNumber > 1) params.set("page", String(pageNumber));
     for (const [k, v] of Object.entries(next)) {
       if (v) params.set(k, v);
       else params.delete(k);
@@ -47,7 +57,10 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
     <main className="container" style={{ padding: "1rem 0 2rem" }}>
       <section className="panel blindspot-hero" style={{ display: "grid", gap: "0.7rem" }}>
         <div className="section-title" style={{ paddingTop: 0 }}>
-          <BlindspotHeader subtitle={useInternational ? "International blindspots" : "Edition blindspots"} />
+          <BlindspotHeader
+            subtitle="Stories that one side barely sees."
+            scopeLabel={useInternational ? "International blindspots" : "Edition blindspots"}
+          />
         </div>
 
         <div className="panel" style={{ padding: "0.75rem", display: "grid", gap: "0.6rem" }}>
@@ -111,7 +124,7 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
                 </p>
               </section>
             ) : (
-              forLeft.map((story) => <BlindspotStoryCard key={story.id} story={story} />)
+              forLeftVisible.map((story) => <BlindspotStoryCard key={story.id} story={story} />)
             )}
           </div>
         </div>
@@ -135,12 +148,20 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
                 </p>
               </section>
             ) : (
-              forRight.map((story) => <BlindspotStoryCard key={story.id} story={story} />)
+              forRightVisible.map((story) => <BlindspotStoryCard key={story.id} story={story} />)
             )}
           </div>
         </div>
         ) : null}
       </section>
+
+      {hasMore ? (
+        <div style={{ display: "flex", justifyContent: "center", marginTop: "1.2rem" }}>
+          <a className="btn" href={hrefFor({ page: String(pageNumber + 1) })}>
+            More stories
+          </a>
+        </div>
+      ) : null}
     </main>
   );
 }

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Story } from "@/lib/types";
-import { biasLabel, prettyDate, sourceCountLabel } from "@/lib/format";
+import { biasLabel, prettyDate, sourceCountLabel, storyReadTimeMinutes } from "@/lib/format";
 import { BiasBar } from "@/components/BiasBar";
 import { StoryImage } from "@/components/StoryImage";
 
@@ -39,11 +39,16 @@ export function StoryCard({ story }: { story: Story }) {
         </h3>
         <BiasBar story={story} showLabels={false} />
         <p className="story-summary">{story.summary}</p>
-        <div className="story-card-footer">
-          <span className="pill">
-            {biasLabel(story) === "No bias data" ? "Bias data unavailable" : `${biasLabel(story)} coverage`}
+        <div className="story-card-inline-meta">
+          <span>{biasLabel(story) === "No bias data" ? "Bias data unavailable" : `${biasLabel(story)} coverage`}</span>
+          <span className="utility-dot" aria-hidden="true">
+            •
           </span>
-          <span className="pill">{sourceCountLabel(story)}</span>
+          <span>{sourceCountLabel(story)}</span>
+          <span className="utility-dot" aria-hidden="true">
+            •
+          </span>
+          <span>~{storyReadTimeMinutes(story)} min read</span>
         </div>
       </div>
     </article>

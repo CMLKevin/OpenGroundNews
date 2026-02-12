@@ -26,7 +26,24 @@ export default async function SourcePage({ params, searchParams }: Props) {
   const stories = await listStoriesByOutletSlug(slug, { edition: edition?.trim() || undefined });
   if (stories.length === 0) return notFound();
 
-  const outlet = await db.outlet.findUnique({ where: { slug }, select: { name: true, logoUrl: true, biasRating: true, bias: true, factuality: true, ownership: true } }).catch(() => null);
+  const outlet = await db.outlet
+    .findUnique({
+      where: { slug },
+      select: {
+        name: true,
+        logoUrl: true,
+        websiteUrl: true,
+        description: true,
+        country: true,
+        foundedYear: true,
+        biasRating: true,
+        bias: true,
+        factuality: true,
+        ownership: true,
+        lastEnrichedAt: true,
+      },
+    })
+    .catch(() => null);
 
   const samples = stories.flatMap((story) => story.sources.filter((src) => sourceMatchesOutletSlug(src, slug)));
   const displayOutlet = samples[0]?.outlet || slug;
@@ -42,6 +59,10 @@ export default async function SourcePage({ params, searchParams }: Props) {
     .filter(Boolean)
     .sort((a, b) => +new Date(b as string) - +new Date(a as string))[0] as string | undefined;
 
+  const biasRatingLabel = String(outlet?.biasRating || "unknown").replace(/_/g, "-");
+  const factualityLabel = String(outlet?.factuality || "unknown").replace(/_/g, "-");
+  const ownershipLabel = (outlet?.ownership || "").trim() || "Unlabeled";
+
   return (
     <main className="container" style={{ padding: "1rem 0 2rem" }}>
       <nav className="breadcrumbs" aria-label="Breadcrumb">
@@ -52,9 +73,18 @@ export default async function SourcePage({ params, searchParams }: Props) {
 
       <section className="panel" style={{ display: "grid", gap: "0.8rem" }}>
         <div className="section-title" style={{ paddingTop: 0 }}>
-          <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.55rem, 4vw, 2.2rem)" }}>
-            {displayOutlet}
-          </h1>
+          <div style={{ display: "flex", gap: "0.65rem", alignItems: "center" }}>
+            <span className="topic-avatar" aria-hidden="true">
+              {outlet?.logoUrl ? (
+                <img src={String(outlet.logoUrl)} alt={displayOutlet} style={{ width: 28, height: 28, borderRadius: 999, objectFit: "cover" }} />
+              ) : (
+                displayOutlet.slice(0, 2).toUpperCase()
+              )}
+            </span>
+            <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.55rem, 4vw, 2.2rem)" }}>
+              {displayOutlet}
+            </h1>
+          </div>
           <FollowToggle kind="outlet" slug={slug} label={displayOutlet} variant="pill" />
         </div>
         <div className="story-meta">
@@ -64,18 +94,40 @@ export default async function SourcePage({ params, searchParams }: Props) {
           <div className="source-profile-row">
             <div className="source-profile-label">Bias rating</div>
             <div className="source-profile-value">
-              {(outlet?.biasRating || "unknown").toString().replace(/_/g, "-")}
+              <span className="bias-pill">{biasRatingLabel}</span>
             </div>
           </div>
           <div className="source-profile-row">
             <div className="source-profile-label">Factuality</div>
             <div className="source-profile-value">
-              {(outlet?.factuality || "unknown").toString().replace(/_/g, "-")}
+              <span className="bias-pill">{factualityLabel === "unknown" ? "not-rated" : factualityLabel}</span>
             </div>
           </div>
           <div className="source-profile-row">
             <div className="source-profile-label">Ownership</div>
-            <div className="source-profile-value">{outlet?.ownership || "Unlabeled"}</div>
+            <div className="source-profile-value">{ownershipLabel}</div>
+          </div>
+          <div className="source-profile-row">
+            <div className="source-profile-label">Website</div>
+            <div className="source-profile-value">
+              {outlet?.websiteUrl ? (
+                <a href={String(outlet.websiteUrl)} target="_blank" rel="noreferrer">
+                  {String(outlet.websiteUrl)}
+                </a>
+              ) : (
+                <span className="story-meta">Unknown</span>
+              )}
+            </div>
+          </div>
+          <div className="source-profile-row">
+            <div className="source-profile-label">Country</div>
+            <div className="source-profile-value">{outlet?.country || <span className="story-meta">Unknown</span>}</div>
+          </div>
+          <div className="source-profile-row">
+            <div className="source-profile-label">Founded</div>
+            <div className="source-profile-value">
+              {typeof outlet?.foundedYear === "number" ? outlet.foundedYear : <span className="story-meta">Unknown</span>}
+            </div>
           </div>
         </div>
 
@@ -91,6 +143,18 @@ export default async function SourcePage({ params, searchParams }: Props) {
             <span className="bias-meta-right">R {biasCounts.right}</span>
           </div>
         </div>
+      </section>
+
+      <section className="panel" style={{ marginTop: "1rem", display: "grid", gap: "0.6rem" }}>
+        <div className="section-title" style={{ paddingTop: 0 }}>
+          <h2 style={{ margin: 0 }}>About this source</h2>
+          <span className="story-meta">{outlet?.lastEnrichedAt ? `Enriched ${prettyDate(outlet.lastEnrichedAt.toISOString())}` : "Not enriched yet"}</span>
+        </div>
+        <p className="story-meta" style={{ margin: 0 }}>
+          {outlet?.description
+            ? outlet.description
+            : "Description unavailable. Run outlet enrichment to populate ownership, factuality, and profile metadata."}
+        </p>
       </section>
 
       <section className="panel" style={{ marginTop: "1rem" }}>
@@ -114,8 +178,8 @@ export default async function SourcePage({ params, searchParams }: Props) {
                   </div>
                 </div>
                 <div className="chip-row source-chip-row">
-                  <span className="chip">{src.bias}</span>
-                  <span className="chip">{src.factuality}</span>
+                  <span className="chip">{src.bias === "unknown" ? "Unclassified" : src.bias}</span>
+                  <span className="chip">{src.factuality === "unknown" ? "Not rated" : src.factuality}</span>
                 </div>
               </div>
               <p className="story-summary source-excerpt">{src.excerpt}</p>

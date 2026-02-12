@@ -23,6 +23,7 @@ export type SourceArticle = {
   factuality: FactualityBucket;
   ownership: string;
   publishedAt?: string;
+  repostedBy?: number;
   paywall?: "none" | "soft" | "hard";
   locality?: "local" | "national" | "international";
 };

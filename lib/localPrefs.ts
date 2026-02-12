@@ -2,6 +2,7 @@
 
 const TOPIC_KEY = "ogn_follow_topics";
 const OUTLET_KEY = "ogn_follow_outlets";
+const SAVED_KEY = "ogn_saved_stories";
 
 function safeParse(value: string | null): string[] {
   if (!value) return [];
@@ -48,3 +49,21 @@ export function listFollows(kind: FollowKind) {
   return Array.from(readSet(prefsKey(kind)).values());
 }
 
+export function isStorySaved(storySlug: string) {
+  const set = readSet(SAVED_KEY);
+  return set.has(storySlug);
+}
+
+export function toggleSavedStory(storySlug: string) {
+  const slug = (storySlug || "").trim();
+  if (!slug) return false;
+  const set = readSet(SAVED_KEY);
+  if (set.has(slug)) set.delete(slug);
+  else set.add(slug);
+  writeSet(SAVED_KEY, set);
+  return set.has(slug);
+}
+
+export function listSavedStories() {
+  return Array.from(readSet(SAVED_KEY).values());
+}

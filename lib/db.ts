@@ -7,18 +7,33 @@ declare global {
   var __ogn_prisma__: PrismaClient | undefined;
 }
 
-function createClient() {
+function createClientOrNull(): PrismaClient | null {
   if (!process.env.DATABASE_URL) {
-    // Fail fast so we don't silently fall back to file stores when parity relies on DB state.
-    throw new Error('DATABASE_URL is not set. Set it in .env.local or start via ./restart.sh dev (auto-provisions local Postgres).');
+    // IMPORTANT:
+    // Next.js loads route modules during build-time analysis. Throwing here would break `next build`
+    // even though the DB is only needed at runtime. We still fail fast when code actually touches `db`.
+    return null;
   }
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   const adapter = new PrismaPg(pool);
   return new PrismaClient({ adapter });
 }
 
-export const db: PrismaClient = globalThis.__ogn_prisma__ ?? createClient();
+const dbReal: PrismaClient | null = globalThis.__ogn_prisma__ ?? createClientOrNull();
 
-if (process.env.NODE_ENV !== "production") {
-  globalThis.__ogn_prisma__ = db;
+export const db: PrismaClient =
+  dbReal ??
+  (new Proxy(
+    {},
+    {
+      get() {
+        throw new Error(
+          'DATABASE_URL is not set. Set it in .env.local or start via ./restart.sh dev (auto-provisions local Postgres).'
+        );
+      },
+    }
+  ) as PrismaClient);
+
+if (process.env.NODE_ENV !== "production" && dbReal) {
+  globalThis.__ogn_prisma__ = dbReal;
 }

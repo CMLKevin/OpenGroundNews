@@ -3,7 +3,15 @@ import type { Story } from "@/lib/types";
 import { prettyDate, sourceCountLabel } from "@/lib/format";
 import { StoryImage } from "@/components/StoryImage";
 
-export function StoryListItem({ story, dense = false }: { story: Story; dense?: boolean }) {
+export function StoryListItem({
+  story,
+  dense = false,
+  showSummary = false,
+}: {
+  story: Story;
+  dense?: boolean;
+  showSummary?: boolean;
+}) {
   return (
     <article className={`story-list-item ${dense ? "is-dense" : ""}`}>
       <div className="story-list-item-main">
@@ -15,6 +23,7 @@ export function StoryListItem({ story, dense = false }: { story: Story; dense?: 
             {story.title}
           </Link>
         </h3>
+        {showSummary ? <p className="story-list-item-summary">{story.summary}</p> : null}
         <div className="story-list-item-bias" aria-label="Bias coverage">
           <div className="bias-mini-bar">
             <span className="seg seg-left" style={{ width: `${story.bias.left}%` }} />
@@ -40,4 +49,3 @@ export function StoryListItem({ story, dense = false }: { story: Story; dense?: 
     </article>
   );
 }
-

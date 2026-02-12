@@ -223,27 +223,60 @@ export async function persistStoriesToDb(stories, context = {}) {
           const biasBucket =
             mapBias(src.bias) !== "unknown" ? mapBias(src.bias) : biasRating !== "unknown" ? bucket3FromRating(biasRating) : "unknown";
 
+          const factuality = mapFactuality(src.factuality);
+          const ownership = String(src.ownership || "").trim();
+          const groundNewsSourceId = String(src.groundNewsSourceId || src.groundnewsSourceId || "").trim();
+          const groundNewsSourceSlug = String(src.groundNewsSourceSlug || src.groundnewsSourceSlug || "").trim();
+          const groundNewsUrl = String(src.outletProfileUrl || src.groundNewsUrl || "").trim();
+
+          const outletUpdate = {
+            name: outletName,
+          };
+          if (src.logoUrl) outletUpdate.logoUrl = src.logoUrl;
+          if (biasBucket !== "unknown") outletUpdate.bias = biasBucket;
+          if (biasRating !== "unknown") outletUpdate.biasRating = biasRating;
+          if (factuality !== "unknown") outletUpdate.factuality = factuality;
+          if (ownership) outletUpdate.ownership = ownership;
+          if (groundNewsSourceId) outletUpdate.groundNewsSourceId = groundNewsSourceId;
+          if (groundNewsSourceSlug) outletUpdate.groundNewsSourceSlug = groundNewsSourceSlug;
+          if (groundNewsUrl) outletUpdate.groundNewsUrl = groundNewsUrl;
+          if (
+            (biasRating !== "unknown" || biasBucket !== "unknown") ||
+            factuality !== "unknown" ||
+            Boolean(ownership) ||
+            Boolean(groundNewsSourceId) ||
+            Boolean(groundNewsSourceSlug) ||
+            Boolean(groundNewsUrl)
+          ) {
+            outletUpdate.lastEnrichedAt = updatedAt;
+          }
+
           await tx.outlet.upsert({
             where: { slug: outletKey },
             update: {
-              name: outletName,
-              logoUrl: src.logoUrl || null,
-              bias: biasBucket,
-              biasRating,
-              factuality: mapFactuality(src.factuality),
-              ownership: src.ownership || null,
-              lastEnrichedAt: updatedAt,
+              ...outletUpdate,
             },
             create: {
               id: outletId,
               slug: outletKey,
               name: outletName,
               logoUrl: src.logoUrl || null,
-              bias: biasBucket,
-              biasRating,
-              factuality: mapFactuality(src.factuality),
-              ownership: src.ownership || null,
-              lastEnrichedAt: updatedAt,
+              groundNewsSourceId: groundNewsSourceId || null,
+              groundNewsSourceSlug: groundNewsSourceSlug || null,
+              groundNewsUrl: groundNewsUrl || null,
+              bias: biasBucket !== "unknown" ? biasBucket : undefined,
+              biasRating: biasRating !== "unknown" ? biasRating : undefined,
+              factuality: factuality !== "unknown" ? factuality : undefined,
+              ownership: ownership || null,
+              lastEnrichedAt:
+                (biasRating !== "unknown" || biasBucket !== "unknown") ||
+                factuality !== "unknown" ||
+                Boolean(ownership) ||
+                Boolean(groundNewsSourceId) ||
+                Boolean(groundNewsSourceSlug) ||
+                Boolean(groundNewsUrl)
+                  ? updatedAt
+                  : null,
             },
           });
 
@@ -262,6 +295,10 @@ export async function persistStoriesToDb(stories, context = {}) {
               publishedAt: src.publishedAt ? new Date(src.publishedAt) : null,
               paywall: src.paywall || null,
               locality: src.locality || null,
+              repostedBy:
+                typeof src.repostedBy === "number" && Number.isFinite(src.repostedBy)
+                  ? Math.max(0, Math.round(src.repostedBy))
+                  : null,
             },
             create: {
               id: sourceId,
@@ -272,6 +309,10 @@ export async function persistStoriesToDb(stories, context = {}) {
               publishedAt: src.publishedAt ? new Date(src.publishedAt) : null,
               paywall: src.paywall || null,
               locality: src.locality || null,
+              repostedBy:
+                typeof src.repostedBy === "number" && Number.isFinite(src.repostedBy)
+                  ? Math.max(0, Math.round(src.repostedBy))
+                  : null,
             },
           });
         }

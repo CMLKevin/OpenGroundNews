@@ -84,13 +84,14 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
   }, [sources]);
 
   const paged = useMemo(() => filtered.slice(0, Math.max(1, visibleCount)), [filtered, visibleCount]);
+  const totalArticles = Math.max(totalSourceCount ?? sources.length, sources.length);
 
   return (
     <section className="panel" style={{ display: "grid", gap: "0.8rem" }}>
       <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>Full Coverage Sources</h2>
+        <h2 style={{ margin: 0 }}>{totalArticles} Articles</h2>
         <span className="story-meta">
-          {paged.length} shown / {filtered.length} filtered / {Math.max(totalSourceCount ?? sources.length, sources.length)} total
+          {paged.length} shown / {filtered.length} filtered
         </span>
       </div>
 

@@ -14,6 +14,9 @@ import { StoryImage } from "@/components/StoryImage";
 import { DailyBriefingList } from "@/components/DailyBriefingList";
 import { PodcastCards } from "@/components/PodcastCards";
 import { ReadingTracker } from "@/components/ReadingTracker";
+import { BrokeTheNewsPanel } from "@/components/BrokeTheNewsPanel";
+import { SummaryFeedbackLink } from "@/components/SummaryFeedbackLink";
+import { SaveStoryToggle } from "@/components/SaveStoryToggle";
 import { prettyDate, slugify, sourceCountLabel } from "@/lib/format";
 import { readArchiveForUrl } from "@/lib/archive";
 import { getStoryBySlug, listStories } from "@/lib/store";
@@ -96,6 +99,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
   const reader = source ? await readArchiveForUrl(source) : null;
   const site = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3000";
   const shareUrl = `${site.replace(/\/$/, "")}/story/${encodeURIComponent(story.slug)}`;
+  const repostMax = story.sources.reduce((acc, s) => Math.max(acc, typeof s.repostedBy === "number" ? s.repostedBy : 0), 0);
 
   return (
     <main className="container">
@@ -106,7 +110,10 @@ export default async function StoryPage({ params, searchParams }: Props) {
             <div className="story-meta">
               {story.topic} • {story.location} • Published {prettyDate(story.publishedAt)} • Updated {prettyDate(story.updatedAt)}
             </div>
-            <ShareBar title={story.title} url={shareUrl} />
+            <div style={{ display: "flex", gap: "0.55rem", alignItems: "center" }}>
+              <SaveStoryToggle storySlug={story.slug} />
+              <ShareBar title={story.title} url={shareUrl} />
+            </div>
           </div>
           <h1
             style={{
@@ -135,6 +142,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
             <span className="story-stat-pill">{story.bias.left}% left</span>
             <span className="story-stat-pill">{story.bias.center}% center</span>
             <span className="story-stat-pill">{story.bias.right}% right</span>
+            {repostMax > 0 ? <span className="story-stat-pill">Reposted by {repostMax} other sources</span> : null}
             {story.blindspot ? <span className="story-stat-pill">Blindspot candidate</span> : null}
             {story.trending ? <span className="story-stat-pill">Trending</span> : null}
             {story.local ? <span className="story-stat-pill">Local perspective</span> : null}
@@ -147,10 +155,9 @@ export default async function StoryPage({ params, searchParams }: Props) {
           <p className="story-summary" style={{ fontSize: "0.98rem" }}>
             {story.summary}
           </p>
+          <SummaryFeedbackLink storySlug={story.slug} url={shareUrl} />
 
           <KeyPointsPanel story={story} />
-
-          <BiasDistributionPanel story={story} />
 
           <PerspectiveTabs story={story} />
 
@@ -197,12 +204,26 @@ export default async function StoryPage({ params, searchParams }: Props) {
                 <span>Last Updated</span>
                 <strong style={{ fontSize: "0.96rem" }}>{prettyDate(story.updatedAt)}</strong>
               </div>
+              <div className="kpi">
+                <span>Left</span>
+                <strong>{coverageLeft}</strong>
+              </div>
+              <div className="kpi">
+                <span>Center</span>
+                <strong>{coverageCenter}</strong>
+              </div>
+              <div className="kpi">
+                <span>Right</span>
+                <strong>{coverageRight}</strong>
+              </div>
             </div>
             <div style={{ marginTop: "0.65rem" }}>
               <BiasBar story={story} showLabels={true} />
             </div>
           </section>
 
+          <BiasDistributionPanel story={story} />
+          <BrokeTheNewsPanel sources={story.sources} />
           <DailyBriefingList stories={dailyBriefing} title="Daily Briefing" />
           <SimilarTopicsPanel story={story} />
         </aside>
