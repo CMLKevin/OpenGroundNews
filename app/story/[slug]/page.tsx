@@ -6,7 +6,7 @@ import { PerspectiveTabs } from "@/components/PerspectiveTabs";
 import { SimilarTopicsPanel } from "@/components/SimilarTopicsPanel";
 import { SourceCoveragePanel } from "@/components/SourceCoveragePanel";
 import { StoryImage } from "@/components/StoryImage";
-import { prettyDate, slugify } from "@/lib/format";
+import { prettyDate, slugify, sourceCountLabel } from "@/lib/format";
 import { readArchiveForUrl } from "@/lib/archive";
 import { getStoryBySlug, listStories } from "@/lib/store";
 
@@ -25,16 +25,44 @@ export default async function StoryPage({ params, searchParams }: Props) {
   if (!story) return notFound();
 
   const displayTotalSources = story.coverage?.totalSources ?? story.sourceCount;
-  const coverageLeft = story.coverage?.leaningLeft ?? Math.round((story.bias.left / 100) * displayTotalSources);
-  const coverageCenter = story.coverage?.center ?? Math.round((story.bias.center / 100) * displayTotalSources);
-  const coverageRight = story.coverage?.leaningRight ?? Math.round((story.bias.right / 100) * displayTotalSources);
+  let coverageLeft = story.coverage?.leaningLeft;
+  let coverageCenter = story.coverage?.center;
+  let coverageRight = story.coverage?.leaningRight;
+  if (
+    (coverageLeft == null || coverageCenter == null || coverageRight == null) &&
+    Number.isFinite(displayTotalSources) &&
+    displayTotalSources > 0
+  ) {
+    const rawLeft = Math.round((story.bias.left / 100) * displayTotalSources);
+    const rawCenter = Math.round((story.bias.center / 100) * displayTotalSources);
+    const rawRight = Math.round((story.bias.right / 100) * displayTotalSources);
+    const sum = rawLeft + rawCenter + rawRight;
+    const diff = Math.round(displayTotalSources - sum);
+    const buckets: Array<{ key: "left" | "center" | "right"; pct: number; value: number }> = [
+      { key: "left" as const, pct: story.bias.left, value: rawLeft },
+      { key: "center" as const, pct: story.bias.center, value: rawCenter },
+      { key: "right" as const, pct: story.bias.right, value: rawRight },
+    ];
+    buckets.sort((a, b) => b.pct - a.pct);
+
+    const adjustKey: "left" | "center" | "right" = buckets[0]?.key ?? "center";
+    const adjusted: Record<"left" | "center" | "right", number> = { left: rawLeft, center: rawCenter, right: rawRight };
+    adjusted[adjustKey] = Math.max(0, adjusted[adjustKey] + diff);
+    coverageLeft = adjusted.left;
+    coverageCenter = adjusted.center;
+    coverageRight = adjusted.right;
+  } else {
+    coverageLeft = coverageLeft ?? 0;
+    coverageCenter = coverageCenter ?? 0;
+    coverageRight = coverageRight ?? 0;
+  }
   const dailyBriefing = (await listStories({ view: "all", limit: 8 })).filter((item) => item.slug !== story.slug).slice(0, 6);
   const reader = source ? await readArchiveForUrl(source) : null;
 
   return (
     <main className="container">
       <section className="story-shell">
-        <article className="panel" style={{ display: "grid", gap: "0.85rem", background: "#fff" }}>
+        <article className="panel" style={{ display: "grid", gap: "0.85rem" }}>
           <div className="story-meta">
             {story.topic} • {story.location} • Published {prettyDate(story.publishedAt)} • Updated {prettyDate(story.updatedAt)}
           </div>
@@ -53,7 +81,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
           />
           <BiasBar story={story} showLabels={true} />
           <div className="story-stat-row">
-            <span className="story-stat-pill">{displayTotalSources} sources</span>
+            <span className="story-stat-pill">{sourceCountLabel(story)}</span>
             <span className="story-stat-pill">{story.bias.left}% left</span>
             <span className="story-stat-pill">{story.bias.center}% center</span>
             <span className="story-stat-pill">{story.bias.right}% right</span>
@@ -139,8 +167,10 @@ export default async function StoryPage({ params, searchParams }: Props) {
             </div>
           </section>
 
+          <SourceCoveragePanel storySlug={story.slug} sources={story.sources} totalSourceCount={displayTotalSources} />
+
           {reader && (
-            <section className="reader panel" style={{ background: "#fff" }}>
+            <section className="reader panel">
               <h3>{reader.title}</h3>
               <div className="story-meta">
                 Reader mode status: <strong>{reader.status}</strong> • {reader.notes}
@@ -158,7 +188,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
         </article>
 
         <aside className="feed-rail">
-          <section className="panel" style={{ background: "#fff" }}>
+          <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2 style={{ margin: 0 }}>Coverage Details</h2>
             </div>
@@ -186,7 +216,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
             </div>
           </section>
 
-          <section className="panel" style={{ background: "#fff" }}>
+          <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Daily Briefing</h2>
               <span className="story-meta">Top 6</span>
@@ -202,7 +232,6 @@ export default async function StoryPage({ params, searchParams }: Props) {
             </ol>
           </section>
           <SimilarTopicsPanel story={story} />
-          <SourceCoveragePanel storySlug={story.slug} sources={story.sources} totalSourceCount={displayTotalSources} />
         </aside>
       </section>
     </main>

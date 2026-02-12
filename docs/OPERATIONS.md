@@ -8,9 +8,13 @@ Required:
 Optional:
 - Rotation and session controls (see `docs/ROTATION_STRATEGIES.md`)
 
+Notes:
+- The Node ingestion/scrape scripts automatically load `.env` + `.env.local` when run via `node scripts/*.mjs`.
+
 ## Suggested schedule
 1. Every 5-10 minutes:
    - `npm run ingest:groundnews`
+   - Optional self-heal for older/incorrect stories: `npm run ingest:groundnews -- --refresh-existing 5`
 2. Optional archive verification batch:
    - `npm run archive:verify -- --urls-file <file>`
 

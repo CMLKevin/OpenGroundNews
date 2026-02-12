@@ -69,7 +69,7 @@ export default async function InterestPage({ params, searchParams }: Props) {
 
   return (
     <main className="container" style={{ padding: "1rem 0 2rem" }}>
-      <section className="panel" style={{ background: "#fff", display: "grid", gap: "0.75rem" }}>
+      <section className="panel" style={{ display: "grid", gap: "0.75rem" }}>
         <div className="section-title" style={{ paddingTop: 0 }}>
           <h1 style={{ margin: 0, fontFamily: "var(--font-serif)", fontSize: "clamp(1.6rem, 4vw, 2.3rem)" }}>
             {displayTag}
@@ -100,4 +100,3 @@ export default async function InterestPage({ params, searchParams }: Props) {
     </main>
   );
 }
-

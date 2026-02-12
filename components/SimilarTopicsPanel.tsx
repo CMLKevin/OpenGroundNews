@@ -14,7 +14,7 @@ export function SimilarTopicsPanel({ story }: { story: Story }) {
   const tags = story.tags.slice(0, 10);
 
   return (
-    <section className="panel" style={{ background: "#fff" }}>
+    <section className="panel">
       <div className="section-title" style={{ paddingTop: 0 }}>
         <h2 style={{ margin: 0 }}>Similar News Topics</h2>
       </div>

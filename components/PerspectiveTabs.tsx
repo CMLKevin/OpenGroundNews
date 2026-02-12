@@ -18,7 +18,7 @@ export function PerspectiveTabs({ story }: { story: Story }) {
   const emptyLabel = active === "left" ? "Left" : active === "center" ? "Center" : "Right";
 
   return (
-    <section className="panel" style={{ background: "#fff" }}>
+    <section className="panel">
       <div className="section-title" style={{ paddingTop: 0 }}>
         <h2 style={{ margin: 0 }}>Perspective Summary</h2>
       </div>

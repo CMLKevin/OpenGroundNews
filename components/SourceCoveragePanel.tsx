@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { compactHost, prettyDate } from "@/lib/format";
 import { SourceArticle } from "@/lib/types";
@@ -42,6 +42,12 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
   const [factFilter, setFactFilter] = useState<string>("all");
   const [ownershipFilter, setOwnershipFilter] = useState<string>("all");
   const [paywallFilter, setPaywallFilter] = useState<string>("all");
+  const [visibleCount, setVisibleCount] = useState<number>(20);
+
+  useEffect(() => {
+    // Reset pagination when filters/sort change so users don't land mid-list.
+    setVisibleCount(20);
+  }, [sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter, sources]);
 
   const ownershipOptions = useMemo(
     () => Array.from(new Set(sources.map((s) => normalizeOwnership(s.ownership)))).sort((a, b) => a.localeCompare(b)),
@@ -77,12 +83,14 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
     return { all: sources.length, left, center, right };
   }, [sources]);
 
+  const paged = useMemo(() => filtered.slice(0, Math.max(1, visibleCount)), [filtered, visibleCount]);
+
   return (
-    <section className="panel" style={{ display: "grid", gap: "0.8rem", background: "#fff" }}>
+    <section className="panel" style={{ display: "grid", gap: "0.8rem" }}>
       <div className="section-title" style={{ paddingTop: 0 }}>
         <h2 style={{ margin: 0 }}>Full Coverage Sources</h2>
         <span className="story-meta">
-          {filtered.length} shown / {Math.max(totalSourceCount ?? sources.length, sources.length)} total
+          {paged.length} shown / {filtered.length} filtered / {Math.max(totalSourceCount ?? sources.length, sources.length)} total
         </span>
       </div>
 
@@ -181,7 +189,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
       ) : null}
 
       <div className="source-list">
-        {filtered.map((src) => {
+        {paged.map((src) => {
           const href = `/story/${storySlug}?source=${encodeURIComponent(src.url)}`;
           return (
             <article key={src.id} className="source-item">
@@ -196,13 +204,13 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
                     </strong>
                     <span className="story-meta">
                       {src.publishedAt ? `${prettyDate(src.publishedAt)} • ` : ""}
-                      {src.locality ?? "unknown locality"}
+                      {src.locality ?? "Locality unavailable"}
                     </span>
                   </div>
                 </div>
                 <div className="chip-row source-chip-row" style={{ alignItems: "center" }}>
-                  <span className="chip">{src.bias}</span>
-                  <span className="chip">{src.factuality}</span>
+                  <span className="chip">{src.bias === "unknown" ? "Unclassified" : src.bias}</span>
+                  <span className="chip">{src.factuality === "unknown" ? "Not rated" : src.factuality}</span>
                   <FollowToggle kind="outlet" slug={outletSlug(src.outlet)} label={src.outlet} />
                 </div>
               </div>
@@ -222,6 +230,12 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
           );
         })}
       </div>
+
+      {paged.length < filtered.length ? (
+        <button className="btn" onClick={() => setVisibleCount((n) => Math.min(filtered.length, n + 20))}>
+          Show more ({Math.max(0, filtered.length - paged.length)} remaining)
+        </button>
+      ) : null}
     </section>
   );
 }

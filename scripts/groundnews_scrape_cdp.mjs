@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
+import "./lib/load_env.mjs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright-core";
