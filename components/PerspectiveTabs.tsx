@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { Story } from "@/lib/types";
 
 type Perspective = "left" | "center" | "right";
+type Tab = Perspective | "compare";
 
 function buildPerspectiveEntries(story: Story, perspective: Perspective) {
   return story.sources
@@ -12,7 +13,7 @@ function buildPerspectiveEntries(story: Story, perspective: Perspective) {
 }
 
 export function PerspectiveTabs({ story }: { story: Story }) {
-  const [active, setActive] = useState<Perspective>("center");
+  const [active, setActive] = useState<Tab>("center");
 
   const hasAnyPerspective = useMemo(() => {
     return story.sources.some(
@@ -22,8 +23,20 @@ export function PerspectiveTabs({ story }: { story: Story }) {
     );
   }, [story.sources]);
 
-  const entries = useMemo(() => buildPerspectiveEntries(story, active), [story, active]);
-  const emptyLabel = active === "left" ? "Left" : active === "center" ? "Center" : "Right";
+  const entries = useMemo(() => {
+    if (active === "compare") return [];
+    return buildPerspectiveEntries(story, active);
+  }, [story, active]);
+  const emptyLabel = active === "left" ? "Left" : active === "center" ? "Center" : active === "right" ? "Right" : "Bias comparison";
+
+  const compare = useMemo(() => {
+    if (active !== "compare") return null;
+    return {
+      left: buildPerspectiveEntries(story, "left"),
+      center: buildPerspectiveEntries(story, "center"),
+      right: buildPerspectiveEntries(story, "right"),
+    };
+  }, [active, story]);
 
   return (
     <section className="panel">
@@ -42,24 +55,50 @@ export function PerspectiveTabs({ story }: { story: Story }) {
               onClick={() => setActive("left")}
               aria-pressed={active === "left"}
             >
-              Left View
+              Left
             </button>
             <button
               className={`btn perspective-btn ${active === "center" ? "is-active" : ""}`}
               onClick={() => setActive("center")}
               aria-pressed={active === "center"}
             >
-              Center View
+              Center
             </button>
             <button
               className={`btn perspective-btn ${active === "right" ? "is-active" : ""}`}
               onClick={() => setActive("right")}
               aria-pressed={active === "right"}
             >
-              Right View
+              Right
+            </button>
+            <button
+              className={`btn perspective-btn ${active === "compare" ? "is-active" : ""}`}
+              onClick={() => setActive("compare")}
+              aria-pressed={active === "compare"}
+            >
+              Bias Comparison
             </button>
           </div>
-          {entries.length === 0 ? (
+          {active === "compare" && compare ? (
+            <div className="perspective-compare" aria-label="Bias comparison">
+              {(["left", "center", "right"] as const).map((side) => (
+                <div key={side} className={`perspective-compare-col perspective-compare-${side}`}>
+                  <div className="perspective-compare-title">{side === "left" ? "Left" : side === "center" ? "Center" : "Right"}</div>
+                  <ul className="perspective-list">
+                    {(compare[side] || []).length ? (
+                      compare[side].map((source) => (
+                        <li key={source.id}>
+                          <strong>{source.outlet}:</strong> {source.excerpt}
+                        </li>
+                      ))
+                    ) : (
+                      <li>No excerpts available.</li>
+                    )}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : entries.length === 0 ? (
             <p className="story-summary" style={{ fontSize: "0.98rem" }}>
               No {emptyLabel.toLowerCase()}-bucket excerpts are available for this story yet.
             </p>

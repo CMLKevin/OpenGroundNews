@@ -12,9 +12,11 @@ function toStory(row: any): Story {
     excerpt: s.excerpt || "",
     logoUrl: s.outlet?.logoUrl || undefined,
     bias: s.outlet?.bias || "unknown",
+    biasRating: (s.outlet?.biasRating || "unknown").replace(/_/g, "-"),
     factuality: (s.outlet?.factuality || "unknown").replace("_", "-"),
     ownership: s.outlet?.ownership || "Unlabeled",
     publishedAt: s.publishedAt ? new Date(s.publishedAt).toISOString() : undefined,
+    repostedBy: typeof s.repostedBy === "number" ? s.repostedBy : undefined,
     paywall: s.paywall || undefined,
     locality: s.locality || undefined,
   }));

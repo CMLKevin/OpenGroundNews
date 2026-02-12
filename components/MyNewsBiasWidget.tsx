@@ -32,6 +32,7 @@ function readGuestEvents(): Array<{ bias?: Bias; dwellMs?: number; readAt?: stri
 
 export function MyNewsBiasWidget() {
   const [signedIn, setSignedIn] = useState(false);
+  const [userLabel, setUserLabel] = useState<string>("Guest");
   const [data, setData] = useState<ApiBiasResponse | null>(null);
   const [guestReads, setGuestReads] = useState(0);
   const [guestBias, setGuestBias] = useState<Bias>({ left: 0, center: 0, right: 0 });
@@ -45,6 +46,7 @@ export function MyNewsBiasWidget() {
         if (!alive) return;
         if (!me?.user) {
           setSignedIn(false);
+          setUserLabel("Guest");
           setData(null);
           const events = readGuestEvents();
           let left = 0;
@@ -63,6 +65,8 @@ export function MyNewsBiasWidget() {
           return;
         }
         setSignedIn(true);
+        const email = String(me.user.email || "").trim();
+        setUserLabel(email ? email.split("@")[0] : "Account");
         const biasRes = await fetch("/api/me/bias?days=30", { cache: "no-store" });
         const json = (await biasRes.json()) as ApiBiasResponse;
         if (!alive) return;
@@ -87,7 +91,15 @@ export function MyNewsBiasWidget() {
   return (
     <section className="panel" style={{ display: "grid", gap: "0.6rem" }}>
       <div className="section-title" style={{ paddingTop: 0 }}>
-        <h2 style={{ margin: 0 }}>My News Bias</h2>
+        <div style={{ display: "flex", alignItems: "center", gap: "0.55rem" }}>
+          <span className="user-avatar" aria-hidden="true">
+            {(userLabel || "G").slice(0, 1).toUpperCase()}
+          </span>
+          <div style={{ display: "grid", gap: "0.08rem" }}>
+            <h2 style={{ margin: 0 }}>My News Bias</h2>
+            <span className="story-meta">{userLabel}</span>
+          </div>
+        </div>
         <span className="story-meta">{reads ? `${reads} read` : signedIn ? "No reads yet" : "Guest mode"}</span>
       </div>
 

@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "next start",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
@@ -19,10 +19,16 @@
     "archive:extract": "node scripts/archive_extract_cdp.mjs",
     "ingest:groundnews": "node scripts/ingest_groundnews.mjs",
     "push:vapid": "node scripts/push_generate_vapid.mjs",
+    "parity:checklist": "node scripts/parity/generate_audit_checklist.mjs",
+    "parity:smoke": "node scripts/parity/run_parity_smoke.mjs",
+    "parity:baseline": "node scripts/parity/capture_baseline.mjs",
+    "parity:todo": "node scripts/parity/generate_parity_todo.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.2.10",
+    "@fontsource-variable/newsreader": "^5.2.10",
     "@prisma/adapter-pg": "^7.4.0",
     "@prisma/client": "^7.4.0",
     "@types/web-push": "^3.6.4",

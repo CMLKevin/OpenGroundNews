@@ -23,6 +23,7 @@ export default async function SearchPage({ searchParams }: Props) {
     bias: biasFilter as any,
     time: timeFilter as any,
   });
+  const shownArticleCount = result.stories.reduce((acc, s) => acc + (s.coverage?.totalSources ?? s.sourceCount ?? 0), 0);
 
   function buildHref(next: Record<string, string | undefined>) {
     const sp = new URLSearchParams();
@@ -43,7 +44,7 @@ export default async function SearchPage({ searchParams }: Props) {
       <SearchBox initialQuery={query} edition={edition?.trim() || undefined} bias={biasFilter} time={timeFilter} tab={activeTab} />
 
       <section className="panel" style={{ marginTop: "1rem", display: "grid", gap: "0.65rem" }}>
-        <div className="chip-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
+          <div className="chip-row" style={{ justifyContent: "space-between", alignItems: "center" }}>
           <div className="chip-row">
             <Link className={`pill ${activeTab === "stories" ? "perspective-btn is-active" : ""}`} href={buildHref({ tab: "stories" })}>
               Stories
@@ -55,7 +56,9 @@ export default async function SearchPage({ searchParams }: Props) {
               Sources
             </Link>
           </div>
-          <span className="story-meta">{query ? `${result.count} matches` : "Type to search"}</span>
+          <span className="story-meta">
+            {query ? `${result.count} stories, ${shownArticleCount} articles` : "Type to search"}
+          </span>
         </div>
 
         <form action="/search" method="get" className="filters-grid">

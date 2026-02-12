@@ -1,6 +1,4 @@
 import Link from "next/link";
-import { StoryCard } from "@/components/StoryCard";
-import { TrendingStrip } from "@/components/TrendingStrip";
 import { DailyBriefingList } from "@/components/DailyBriefingList";
 import { HeroLeadStoryCard } from "@/components/HeroLeadStoryCard";
 import { MyNewsBiasWidget } from "@/components/MyNewsBiasWidget";
@@ -8,23 +6,15 @@ import { DailyLocalNewsWidget } from "@/components/DailyLocalNewsWidget";
 import { sourceCountLabel } from "@/lib/format";
 import { listStories } from "@/lib/store";
 import { getCurrentUser } from "@/lib/authStore";
+import { NewsList } from "@/components/NewsList";
+import { TopNewsStories } from "@/components/TopNewsStories";
+import { BlindspotWidget } from "@/components/BlindspotWidget";
 
 type HomeProps = {
   searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string; page?: string }>;
 };
 
 export const dynamic = "force-dynamic";
-
-function scoreTags(stories: Awaited<ReturnType<typeof listStories>>) {
-  const counts = new Map<string, number>();
-  for (const story of stories) {
-    for (const tag of story.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-  }
-  return Array.from(counts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
-    .map(([tag]) => tag);
-}
 
 export default async function HomePage({ searchParams }: HomeProps) {
   const { q, edition, view, bias, tag, page } = await searchParams;
@@ -71,7 +61,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
   const gridStories = tagged.slice(gridStart, gridStart + PAGE_SIZE);
   const topStories = tagged.slice(0, 6);
   const blindspotStories = tagged.filter((s) => s.blindspot).slice(0, 6);
-  const trendingTags = scoreTags(tagged);
+  const heroListStories = leadStory ? tagged.slice(1, 1 + 10) : tagged.slice(0, 10);
 
   const paramsForPage = (nextPage: number) => {
     const params = new URLSearchParams();
@@ -88,15 +78,17 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
   return (
     <main className="container">
-      <TrendingStrip tags={trendingTags} />
-
       <section className="home-hero-grid">
         <div className="home-hero-left">
           <DailyBriefingList stories={topStories} />
+          <div style={{ marginTop: "1rem" }}>
+            <TopNewsStories stories={tagged.slice(6, 18)} />
+          </div>
         </div>
 
         <div className="home-hero-center">
           {leadStory ? <HeroLeadStoryCard story={leadStory} /> : null}
+          {heroListStories.length ? <NewsList stories={heroListStories} dense={true} /> : null}
           {!leadStory ? (
             <section className="panel">
               <div className="section-title" style={{ paddingTop: 0 }}>
@@ -117,32 +109,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
         <aside className="home-hero-right">
           <MyNewsBiasWidget />
           <DailyLocalNewsWidget />
-          <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2 style={{ margin: 0 }}>Blindspot</h2>
-              <Link href="/blindspot" className="story-meta">
-                open
-              </Link>
-            </div>
-            {blindspotStories.length > 0 ? (
-              <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
-                {blindspotStories.slice(0, 4).map((story) => (
-                  <li key={story.id}>
-                    <Link href={`/story/${story.slug}`} className="rail-link">
-                      {story.title}
-                    </Link>
-                    <div className="story-meta">
-                      {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="story-meta" style={{ margin: 0 }}>
-                No blindspot candidates in the current sample.
-              </p>
-            )}
-          </section>
+          <BlindspotWidget stories={blindspotStories} />
         </aside>
       </section>
 
@@ -154,8 +121,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
       <section className="feed-shell">
         <aside className="feed-rail feed-rail-left">
-          <DailyBriefingList stories={topStories} />
-
           <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Explore</h2>
@@ -202,11 +167,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
           {/* Lead story is rendered in the homepage hero for parity; keep feed focused on the grid. */}
 
-          <div className="grid">
-            {gridStories.map((story) => (
-              <StoryCard key={story.id} story={story} />
-            ))}
-          </div>
+          <NewsList stories={gridStories} dense={true} />
 
           {hasMore ? (
             <div style={{ display: "flex", justifyContent: "center" }}>

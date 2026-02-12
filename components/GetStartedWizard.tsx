@@ -1,18 +1,33 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const EDITION_KEY = "ogn_edition";
 const THEME_KEY = "ogn_theme";
 const NOTIFY_DAILY_KEY = "ogn_notify_daily";
 const NOTIFY_BLINDSPOT_KEY = "ogn_notify_blindspot";
 const NOTIFY_FOLLOWED_KEY = "ogn_notify_followed";
+const LOCAL_LABEL_KEY = "ogn_local_location";
+const LOCAL_LAT_KEY = "ogn_local_lat";
+const LOCAL_LON_KEY = "ogn_local_lon";
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5;
 type FollowKind = "topic" | "outlet";
 
 type Suggestion = { slug: string; label: string };
+type GeoResult = {
+  name?: string;
+  admin1?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+};
+
+function labelForResult(result: GeoResult) {
+  const parts = [result.name, result.admin1, result.country].filter(Boolean);
+  return parts.join(", ") || "Unknown location";
+}
 
 async function postJson(url: string, body: any) {
   const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
@@ -30,6 +45,12 @@ export function GetStartedWizard({
   const [step, setStep] = useState<Step>(1);
   const [edition, setEdition] = useState("International");
   const [theme, setTheme] = useState<"dark" | "light" | "auto">("auto");
+  const [localLabel, setLocalLabel] = useState("");
+  const [localLat, setLocalLat] = useState<number | null>(null);
+  const [localLon, setLocalLon] = useState<number | null>(null);
+  const [geoResults, setGeoResults] = useState<GeoResult[]>([]);
+  const [geoLoading, setGeoLoading] = useState(false);
+  const geoAbortRef = useRef<AbortController | null>(null);
   const [selectedTopics, setSelectedTopics] = useState<Set<string>>(new Set());
   const [selectedOutlets, setSelectedOutlets] = useState<Set<string>>(new Set());
   const [notifyDailyBriefing, setNotifyDailyBriefing] = useState(false);
@@ -59,6 +80,14 @@ export function GetStartedWizard({
       setNotifyDailyBriefing(window.localStorage.getItem(NOTIFY_DAILY_KEY) === "1");
       setNotifyBlindspot(window.localStorage.getItem(NOTIFY_BLINDSPOT_KEY) === "1");
       setNotifyFollowed(window.localStorage.getItem(NOTIFY_FOLLOWED_KEY) === "1");
+      const savedLocal = window.localStorage.getItem(LOCAL_LABEL_KEY);
+      if (savedLocal) setLocalLabel(savedLocal);
+      const savedLat = Number(window.localStorage.getItem(LOCAL_LAT_KEY));
+      const savedLon = Number(window.localStorage.getItem(LOCAL_LON_KEY));
+      if (Number.isFinite(savedLat) && Number.isFinite(savedLon)) {
+        setLocalLat(savedLat);
+        setLocalLon(savedLon);
+      }
     } catch {
       // ignore
     }
@@ -66,6 +95,30 @@ export function GetStartedWizard({
 
   const topicList = useMemo(() => suggestedTopics.slice(0, 18), [suggestedTopics]);
   const outletList = useMemo(() => suggestedOutlets.slice(0, 18), [suggestedOutlets]);
+
+  useEffect(() => {
+    const query = localLabel.trim();
+    if (query.length < 2) {
+      setGeoResults([]);
+      return;
+    }
+    const handle = window.setTimeout(async () => {
+      try {
+        geoAbortRef.current?.abort();
+        const controller = new AbortController();
+        geoAbortRef.current = controller;
+        setGeoLoading(true);
+        const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`, { cache: "no-store", signal: controller.signal });
+        const data = (await res.json()) as { results?: GeoResult[] };
+        setGeoResults(Array.isArray(data.results) ? data.results : []);
+      } catch {
+        setGeoResults([]);
+      } finally {
+        setGeoLoading(false);
+      }
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [localLabel]);
 
   function toggle(kind: FollowKind, slug: string) {
     const set = kind === "topic" ? new Set(selectedTopics) : new Set(selectedOutlets);
@@ -85,9 +138,28 @@ export function GetStartedWizard({
       window.localStorage.setItem(NOTIFY_DAILY_KEY, notifyDailyBriefing ? "1" : "0");
       window.localStorage.setItem(NOTIFY_BLINDSPOT_KEY, notifyBlindspot ? "1" : "0");
       window.localStorage.setItem(NOTIFY_FOLLOWED_KEY, notifyFollowed ? "1" : "0");
+      window.localStorage.setItem(LOCAL_LABEL_KEY, localLabel.trim());
+      if (localLat != null && localLon != null) {
+        window.localStorage.setItem(LOCAL_LAT_KEY, String(localLat));
+        window.localStorage.setItem(LOCAL_LON_KEY, String(localLon));
+      }
+      document.cookie = `ogn_local_label=${encodeURIComponent(localLabel.trim())}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      if (localLat != null && localLon != null) {
+        document.cookie = `ogn_local_lat=${encodeURIComponent(String(localLat))}; Path=/; Max-Age=31536000; SameSite=Lax`;
+        document.cookie = `ogn_local_lon=${encodeURIComponent(String(localLon))}; Path=/; Max-Age=31536000; SameSite=Lax`;
+      }
 
       if (signedIn) {
-        await postJson("/api/me/prefs", { edition, theme, notifyDailyBriefing, notifyBlindspot, notifyFollowed });
+        await postJson("/api/me/prefs", {
+          edition,
+          theme,
+          localLabel: localLabel.trim() || undefined,
+          localLat: localLat ?? undefined,
+          localLon: localLon ?? undefined,
+          notifyDailyBriefing,
+          notifyBlindspot,
+          notifyFollowed,
+        });
         for (const slug of Array.from(selectedTopics)) {
           await postJson("/api/follows", { kind: "topic", slug });
         }
@@ -103,8 +175,30 @@ export function GetStartedWizard({
   return (
     <section className="panel" style={{ display: "grid", gap: "0.85rem" }}>
       <div className="section-title" style={{ paddingTop: 0 }}>
-        <h1 style={{ margin: 0, fontFamily: "var(--font-serif)" }}>Get Started</h1>
-        <span className="story-meta">Step {step} of 4</span>
+        <div style={{ display: "grid", gap: "0.25rem" }}>
+          <h2 style={{ margin: 0 }}>Get Started</h2>
+          <span className="story-meta">Step {step} of 5</span>
+        </div>
+      </div>
+
+      <div className="wizard-stepper" aria-label="Progress">
+        <div className="wizard-stepper-bar" style={{ ["--step" as any]: step }}>
+          <span className="wizard-stepper-fill" />
+        </div>
+        <div className="wizard-stepper-steps">
+          {[
+            { n: 1, label: "Basics" },
+            { n: 2, label: "Location" },
+            { n: 3, label: "Topics" },
+            { n: 4, label: "Sources" },
+            { n: 5, label: "Alerts" },
+          ].map((s) => (
+            <div key={s.n} className={`wizard-step ${step >= (s.n as any) ? "is-done" : ""}`}>
+              <span className="wizard-step-dot" aria-hidden="true" />
+              <span className="wizard-step-label">{s.label}</span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {step === 1 ? (
@@ -123,14 +217,21 @@ export function GetStartedWizard({
                 ))}
               </select>
             </label>
-            <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+            <div className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
               Theme
-              <select className="select-control" value={theme} onChange={(e) => setTheme(e.target.value as any)}>
-                <option value="auto">Auto</option>
-                <option value="dark">Dark</option>
-                <option value="light">Light</option>
-              </select>
-            </label>
+              <div className="theme-toggle">
+                {(["light", "dark", "auto"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    className={`theme-link ${theme === t ? "is-active" : ""}`}
+                    onClick={() => setTheme(t)}
+                  >
+                    {t[0].toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           <div className="chip-row">
             <button className="btn" type="button" onClick={() => setStep(2)}>
@@ -146,19 +247,76 @@ export function GetStartedWizard({
       {step === 2 ? (
         <div style={{ display: "grid", gap: "0.7rem" }}>
           <p className="story-meta" style={{ margin: 0 }}>
-            Follow topics to tune your feed.
+            Set your location to personalize Local and enable the Weather forecast.
           </p>
+          <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
+            Location
+            <input
+              className="input-control"
+              value={localLabel}
+              onChange={(e) => setLocalLabel(e.target.value)}
+              placeholder="Search for a city (e.g., Seattle, WA)"
+            />
+          </label>
+          {geoLoading ? <div className="story-meta">Searching locations...</div> : null}
+          {geoResults.length ? (
+            <div className="panel" style={{ padding: "0.7rem", display: "grid", gap: "0.45rem" }}>
+              <div className="story-meta">Suggestions</div>
+              <div style={{ display: "grid", gap: "0.35rem" }}>
+                {geoResults.slice(0, 6).map((r) => {
+                  const label = labelForResult(r);
+                  const lat = Number(r.latitude);
+                  const lon = Number(r.longitude);
+                  const hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
+                  return (
+                    <button
+                      key={`${label}-${lat}-${lon}`}
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setLocalLabel(label);
+                        setGeoResults([]);
+                        if (hasCoords) {
+                          setLocalLat(lat);
+                          setLocalLon(lon);
+                        } else {
+                          setLocalLat(null);
+                          setLocalLon(null);
+                        }
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           <div className="chip-row">
-            {topicList.map((t) => (
-              <button
-                key={t.slug}
-                type="button"
-                className={`pill ${selectedTopics.has(t.slug) ? "perspective-btn is-active" : ""}`}
-                onClick={() => toggle("topic", t.slug)}
-              >
-                {t.label}
-              </button>
-            ))}
+            <button
+              className="btn"
+              type="button"
+              onClick={() => {
+                if (!navigator.geolocation) return;
+                navigator.geolocation.getCurrentPosition(
+                  (pos) => {
+                    const lat = pos.coords.latitude;
+                    const lon = pos.coords.longitude;
+                    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return;
+                    setLocalLat(lat);
+                    setLocalLon(lon);
+                    if (!localLabel.trim()) setLocalLabel("Current location");
+                  },
+                  () => {},
+                  { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 },
+                );
+              }}
+            >
+              Use my location
+            </button>
+            <Link className="btn" href="/local">
+              Preview Local
+            </Link>
           </div>
           <div className="chip-row">
             <button className="btn" type="button" onClick={() => setStep(1)}>
@@ -174,23 +332,21 @@ export function GetStartedWizard({
       {step === 3 ? (
         <div style={{ display: "grid", gap: "0.7rem" }}>
           <p className="story-meta" style={{ margin: 0 }}>
-            Follow sources you trust (or want to monitor).
+            Follow topics to tune your feed.
           </p>
           <div className="chip-row">
-            {outletList.map((o) => (
+            {topicList.map((t) => (
               <button
-                key={o.slug}
+                key={t.slug}
                 type="button"
-                className={`pill ${selectedOutlets.has(o.slug) ? "perspective-btn is-active" : ""}`}
-                onClick={() => toggle("outlet", o.slug)}
+                className={`wizard-chip ${selectedTopics.has(t.slug) ? "is-selected" : ""}`}
+                onClick={() => toggle("topic", t.slug)}
               >
-                {o.label}
+                <span className="wizard-chip-check" aria-hidden="true">{selectedTopics.has(t.slug) ? "✓" : "+"}</span>
+                {t.label}
               </button>
             ))}
           </div>
-          <p className="note" style={{ margin: 0 }}>
-            {signedIn ? "These will sync to your account." : "Sign in to sync these picks across devices."}
-          </p>
           <div className="chip-row">
             <button className="btn" type="button" onClick={() => setStep(2)} disabled={busy}>
               Back
@@ -208,6 +364,43 @@ export function GetStartedWizard({
       ) : null}
 
       {step === 4 ? (
+        <div style={{ display: "grid", gap: "0.7rem" }}>
+          <p className="story-meta" style={{ margin: 0 }}>
+            Follow sources you trust (or want to monitor).
+          </p>
+          <div className="chip-row">
+            {outletList.map((o) => (
+              <button
+                key={o.slug}
+                type="button"
+                className={`wizard-chip ${selectedOutlets.has(o.slug) ? "is-selected" : ""}`}
+                onClick={() => toggle("outlet", o.slug)}
+              >
+                <span className="wizard-chip-check" aria-hidden="true">{selectedOutlets.has(o.slug) ? "✓" : "+"}</span>
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <p className="note" style={{ margin: 0 }}>
+            {signedIn ? "These will sync to your account." : "Sign in to sync these picks across devices."}
+          </p>
+          <div className="chip-row">
+            <button className="btn btn-secondary" type="button" onClick={() => setStep(3)} disabled={busy}>
+              Back
+            </button>
+            <button
+              className="btn"
+              type="button"
+              onClick={() => setStep(5)}
+              disabled={busy}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {step === 5 ? (
         <div style={{ display: "grid", gap: "0.7rem" }}>
           <p className="story-meta" style={{ margin: 0 }}>
             Want alerts? Choose what you care about. You can enable push per-device on the Notifications page.
@@ -228,7 +421,7 @@ export function GetStartedWizard({
             After finishing, open <Link href="/notifications">Notifications</Link> to enable push on this browser.
           </p>
           <div className="chip-row">
-            <button className="btn btn-secondary" type="button" onClick={() => setStep(3)} disabled={busy}>
+            <button className="btn btn-secondary" type="button" onClick={() => setStep(4)} disabled={busy}>
               Back
             </button>
             <button

@@ -1,5 +1,15 @@
 export type BiasBucket = "left" | "center" | "right" | "unknown";
 
+export type BiasRatingBucket =
+  | "far-left"
+  | "left"
+  | "lean-left"
+  | "center"
+  | "lean-right"
+  | "right"
+  | "far-right"
+  | "unknown";
+
 export type FactualityBucket = "very-high" | "high" | "mixed" | "low" | "very-low" | "unknown";
 
 export type SourceArticle = {
@@ -9,9 +19,11 @@ export type SourceArticle = {
   excerpt: string;
   logoUrl?: string;
   bias: BiasBucket;
+  biasRating?: BiasRatingBucket;
   factuality: FactualityBucket;
   ownership: string;
   publishedAt?: string;
+  repostedBy?: number;
   paywall?: "none" | "soft" | "hard";
   locality?: "local" | "national" | "international";
 };

@@ -49,19 +49,6 @@ export function AuthForm({ mode }: { mode: Mode }) {
         </div>
       </div>
 
-      <div className="auth-oauth-row">
-        <button className="btn" type="button" disabled aria-disabled="true">
-          Continue with Google (coming soon)
-        </button>
-        <button className="btn" type="button" disabled aria-disabled="true">
-          Continue with Apple (coming soon)
-        </button>
-      </div>
-
-      <div className="auth-divider">
-        <span>or</span>
-      </div>
-
       <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
         Email
         <input className="input-control" value={email} onChange={(e) => setEmail(e.target.value)} type="email" autoComplete="email" />
@@ -77,6 +64,11 @@ export function AuthForm({ mode }: { mode: Mode }) {
           placeholder={mode === "signup" ? "At least 10 characters" : ""}
         />
       </label>
+      {mode === "login" ? (
+        <Link className="story-meta" href="/forgot-password" style={{ width: "fit-content" }}>
+          Forgot password?
+        </Link>
+      ) : null}
       {error ? (
         <p className="note" style={{ margin: 0 }}>
           {error}
@@ -97,7 +89,9 @@ export function AuthForm({ mode }: { mode: Mode }) {
         )}
       </div>
       <p className="story-meta" style={{ margin: 0 }}>
-        Your account enables cloud-synced follows and bias tracking. Passwords are stored using scrypt hashing.
+        By continuing, you agree to the Terms and acknowledge the Privacy Policy. Passwords are stored using scrypt hashing.
+        {" "}
+        <Link href="/terms">Terms</Link> • <Link href="/privacy">Privacy</Link>
       </p>
     </section>
   );
