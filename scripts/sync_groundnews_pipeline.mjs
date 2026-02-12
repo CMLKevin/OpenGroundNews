@@ -347,6 +347,33 @@ function sanitizeTags(tags) {
   return dedup;
 }
 
+function extractKeywordTokens(value) {
+  const stop = new Set(["the", "and", "for", "with", "from", "into", "over", "under", "about", "your", "news"]);
+  return normalizeText(value)
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .split(/[^a-z0-9]+/g)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 4 && !stop.has(t));
+}
+
+function tagSeemsRelevant(tag, storyText) {
+  const clean = normalizeText(tag);
+  if (!clean) return false;
+  const tokens = extractKeywordTokens(clean);
+  if (tokens.length === 0) return false;
+  return tokens.some((t) => storyText.includes(t));
+}
+
+function chooseTopic(renderedTopic, tags, storyText) {
+  const topic = normalizeText(renderedTopic) || "Top Stories";
+  const topicTokens = extractKeywordTokens(topic);
+  const topicLooksRelevant = topicTokens.length > 0 ? topicTokens.some((t) => storyText.includes(t)) : true;
+  if (topicLooksRelevant) return topic;
+  const tagCandidate = (tags || []).find((t) => tagSeemsRelevant(t, storyText));
+  return normalizeText(tagCandidate || topic) || "Top Stories";
+}
+
 function parseBiasLabel(value) {
   const text = normalizeText(value).toLowerCase();
   if (!text) return "unknown";
@@ -2184,8 +2211,13 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
       .filter(Boolean),
   );
   const seedTags = [...(rendered.tags || []), ...(nextFlightStructured?.tags || [])];
+  const storyTextForRelevance = `${normalizeText(rendered.title)} ${normalizeText(rendered.summary)} ${normalizeText(rendered.dek)}`
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  const relevantSeedTags = seedTags.filter((t) => tagSeemsRelevant(t, storyTextForRelevance));
+  const relevanceFiltered = relevantSeedTags.length >= 2 ? relevantSeedTags : seedTags;
   const tags = sanitizeTags(
-    seedTags.filter((tag) => !sourceOutletSet.has(normalizeText(tag).toLowerCase())),
+    relevanceFiltered.filter((tag) => !sourceOutletSet.has(normalizeText(tag).toLowerCase())),
   );
   const title = summarizeText(rendered.title, "Untitled story");
   const slug = toSlugFromUrl(storyUrl, title);
@@ -2307,6 +2339,9 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
 
   const localContext = `${title} ${summary} ${tags.join(" ")}`.toLowerCase();
   const localHeuristic = /\b(local|city|county|state|province|district|municipal)\b/.test(localContext);
+  const blindspotGap = Math.abs((bias.left || 0) - (bias.right || 0));
+  const blindspotBySkew = dominant >= 70 && blindspotGap >= 35 && (bias.center || 0) <= 70;
+  const topic = chooseTopic(rendered.topic, tags, storyTextForRelevance);
 
   return {
     id: stableId(storyUrl, "story"),
@@ -2316,7 +2351,7 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
     dek: summarizeText(rendered.dek || "", ""),
     author: normalizeText(rendered.author || ""),
     summary,
-    topic: summarizeText(rendered.topic, "Top Stories"),
+    topic: summarizeText(topic, "Top Stories"),
     location,
     tags: tags.length > 0 ? tags : ["News"],
     imageUrl: sanitizeImageUrl(rendered.imageUrl, storyUrl),
@@ -2324,7 +2359,7 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
     updatedAt,
     sourceCount: Math.max(enrichedSources.length, coverageTotals.totalSources ?? 0),
     bias,
-    blindspot: signals.blindspot || dominant >= 60,
+    blindspot: signals.blindspot || blindspotBySkew,
     local: signals.local || localHeuristic,
     trending: signals.trending,
     sources: enrichedSources,

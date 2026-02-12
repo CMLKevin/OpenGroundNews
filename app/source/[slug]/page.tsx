@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { StoryCard } from "@/components/StoryCard";
 import { FollowToggle } from "@/components/FollowToggle";
@@ -12,6 +13,11 @@ type Props = {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{ edition?: string }>;
 };
+
+export async function generateMetadata({ params }: Pick<Props, "params">): Promise<Metadata> {
+  const { slug } = await params;
+  return { title: `${slug} • Sources • OpenGroundNews`, description: `Coverage and stories for source: ${slug}.` };
+}
 
 export default async function SourcePage({ params, searchParams }: Props) {
   const { slug } = await params;

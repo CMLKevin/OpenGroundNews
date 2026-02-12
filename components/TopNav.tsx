@@ -7,10 +7,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 const EDITION_KEY = "ogn_edition";
 const DEFAULT_EDITION = "International";
 const EDITIONS = ["International", "United States", "Canada", "United Kingdom", "Europe"] as const;
+const THEME_KEY = "ogn_theme";
 
 export function TopNav() {
   const [edition, setEdition] = useState(DEFAULT_EDITION);
   const [todayLabel, setTodayLabel] = useState("");
+  const [theme, setTheme] = useState<"dark" | "light">("dark");
+  const [user, setUser] = useState<null | { id: string; email: string; role: "user" | "admin" }>(null);
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -39,6 +42,36 @@ export function TopNav() {
     }
   }, [searchParams]);
 
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(THEME_KEY);
+      const next = saved === "light" || saved === "dark" ? saved : "dark";
+      setTheme(next);
+      document.documentElement.dataset.theme = next;
+    } catch {
+      setTheme("dark");
+      document.documentElement.dataset.theme = "dark";
+    }
+  }, []);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const res = await fetch("/api/auth/me", { cache: "no-store" });
+        const data = (await res.json()) as { ok: boolean; user: any };
+        if (!alive) return;
+        setUser(data?.user || null);
+      } catch {
+        if (!alive) return;
+        setUser(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   function hrefWithEdition(target: string) {
     const params = new URLSearchParams();
     if (edition) params.set("edition", edition);
@@ -52,6 +85,26 @@ export function TopNav() {
     const params = new URLSearchParams(searchParams.toString());
     params.set("edition", nextEdition);
     router.replace(`${pathname}${params.toString() ? `?${params.toString()}` : ""}`);
+  }
+
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    try {
+      window.localStorage.setItem(THEME_KEY, next);
+    } catch {
+      // Ignore persistence failures.
+    }
+    document.documentElement.dataset.theme = next;
+  }
+
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setUser(null);
+      router.refresh();
+    }
   }
 
   return (
@@ -85,10 +138,10 @@ export function TopNav() {
             <Link href={hrefWithEdition("/local")}>Local</Link>
             <Link href={hrefWithEdition("/rating-system")}>Ratings</Link>
             <Link href={hrefWithEdition("/subscribe")}>Plans</Link>
-            <Link href={hrefWithEdition("/admin")}>Admin</Link>
+            {user?.role === "admin" ? <Link href={hrefWithEdition("/admin")}>Admin</Link> : null}
           </nav>
 
-          <form action="/" method="get" className="searchbar">
+          <form action="/search" method="get" className="searchbar">
             <input type="hidden" name="edition" value={edition} />
             <input
               name="q"
@@ -120,6 +173,18 @@ export function TopNav() {
               ))}
             </select>
           </label>
+          <button className="btn" type="button" onClick={toggleTheme} aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}>
+            Theme: {theme === "dark" ? "Dark" : "Light"}
+          </button>
+          {user ? (
+            <button className="btn" type="button" onClick={logout} aria-label="Sign out">
+              Sign out
+            </button>
+          ) : (
+            <Link className="btn" href={`/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`}>
+              Sign in
+            </Link>
+          )}
           <Link className="btn" href={hrefWithEdition("/subscribe")}>
             Subscribe
           </Link>

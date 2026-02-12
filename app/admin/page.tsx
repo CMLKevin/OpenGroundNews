@@ -1,4 +1,6 @@
 import { getDashboardStats } from "@/lib/store";
+import { getCurrentUser } from "@/lib/authStore";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,10 @@ const parityChecklist = [
 ];
 
 export default async function AdminPage() {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login?next=/admin");
+  if (user.role !== "admin") redirect("/");
+
   const stats = await getDashboardStats();
 
   return (

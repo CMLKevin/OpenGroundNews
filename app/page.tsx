@@ -2,11 +2,13 @@ import Link from "next/link";
 import { StoryCard } from "@/components/StoryCard";
 import { BiasBar } from "@/components/BiasBar";
 import { StoryImage } from "@/components/StoryImage";
-import { prettyDate, slugify, sourceCountLabel } from "@/lib/format";
+import { TrendingStrip } from "@/components/TrendingStrip";
+import { prettyDate, sourceCountLabel } from "@/lib/format";
 import { getDashboardStats, listStories } from "@/lib/store";
+import { getCurrentUser } from "@/lib/authStore";
 
 type HomeProps = {
-  searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string }>;
+  searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string; page?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -23,11 +25,16 @@ function scoreTags(stories: Awaited<ReturnType<typeof listStories>>) {
 }
 
 export default async function HomePage({ searchParams }: HomeProps) {
-  const { q, edition, view, bias, tag } = await searchParams;
-  const [stories, stats] = await Promise.all([
-    listStories({ view: "all", limit: 48, edition: edition?.trim() || undefined }),
+  const { q, edition, view, bias, tag, page } = await searchParams;
+  const pageNumber = Math.max(1, Number(page || 1) || 1);
+  const PAGE_SIZE = 24;
+
+  const [stories, stats, currentUser] = await Promise.all([
+    listStories({ view: "all", limit: 500, edition: edition?.trim() || undefined }),
     getDashboardStats(),
+    getCurrentUser(),
   ]);
+  const isAdmin = currentUser?.role === "admin";
 
   const query = (q ?? "").trim().toLowerCase();
   const normalizedView = (view ?? "all").trim().toLowerCase();
@@ -58,21 +65,29 @@ export default async function HomePage({ searchParams }: HomeProps) {
     ? biasFiltered.filter((story) => story.tags.some((storyTag) => storyTag.toLowerCase().includes(normalizedTag)))
     : biasFiltered;
 
-  const leadStory = tagged[0] ?? null;
-  const gridStories = tagged.slice(1, 25);
+  const leadStory = pageNumber === 1 ? (tagged[0] ?? null) : null;
+  const gridStart = 1 + (pageNumber - 1) * PAGE_SIZE;
+  const gridStories = tagged.slice(gridStart, gridStart + PAGE_SIZE);
   const topStories = tagged.slice(0, 6);
   const blindspotStories = tagged.filter((s) => s.blindspot).slice(0, 6);
   const trendingTags = scoreTags(tagged);
 
+  const paramsForPage = (nextPage: number) => {
+    const params = new URLSearchParams();
+    if (q?.trim()) params.set("q", q.trim());
+    if (edition?.trim()) params.set("edition", edition.trim());
+    if (view?.trim()) params.set("view", view.trim());
+    if (bias?.trim()) params.set("bias", bias.trim());
+    if (tag?.trim()) params.set("tag", tag.trim());
+    if (nextPage > 1) params.set("page", String(nextPage));
+    return params.toString() ? `?${params.toString()}` : "";
+  };
+
+  const hasMore = gridStart + gridStories.length < tagged.length;
+
   return (
     <main className="container">
-      <section className="trending-strip" aria-label="Trending topics">
-        {trendingTags.map((tag) => (
-          <Link className="trending-item" key={tag} href={`/interest/${slugify(tag)}`}>
-            {tag}
-          </Link>
-        ))}
-      </section>
+      <TrendingStrip tags={trendingTags} />
 
       <section className="hero">
         <div className="hero-panel">
@@ -92,9 +107,11 @@ export default async function HomePage({ searchParams }: HomeProps) {
         <div className="hero-panel">
           <div className="section-title" style={{ paddingTop: 0 }}>
             <h2>Pipeline Snapshot</h2>
-            <Link className="btn" href="/admin">
-              Admin
-            </Link>
+            {isAdmin ? (
+              <Link className="btn" href="/admin">
+                Admin
+              </Link>
+            ) : null}
           </div>
           <div className="kpi-strip">
             <div className="kpi">
@@ -131,11 +148,79 @@ export default async function HomePage({ searchParams }: HomeProps) {
       ) : null}
 
       <section className="feed-shell">
+        <aside className="feed-rail">
+          <section className="panel">
+            <div className="section-title" style={{ paddingTop: 0 }}>
+              <h2>Daily Briefing</h2>
+              <span className="story-meta">Top 6</span>
+            </div>
+            <ol className="rail-list rail-list-rich">
+              {topStories.map((story) => (
+                <li key={story.id}>
+                  <Link href={`/story/${story.slug}`} className="rail-rich-link">
+                    <StoryImage
+                      src={story.imageUrl}
+                      alt={story.title}
+                      width={86}
+                      height={54}
+                      className="rail-thumb"
+                      unoptimized
+                    />
+                    <span>
+                      <span className="rail-link">{story.title}</span>
+                      <span className="story-meta">
+                        {sourceCountLabel(story)} • {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R
+                      </span>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ol>
+          </section>
+
+          <section className="panel">
+            <div className="section-title" style={{ paddingTop: 0 }}>
+              <h2>Explore</h2>
+            </div>
+            <div className="chip-row">
+              <Link className="pill" href="/local">
+                Local
+              </Link>
+              <Link className="pill" href="/my">
+                For You
+              </Link>
+              <Link className="pill" href="/blindspot">
+                Blindspot
+              </Link>
+              <Link className="pill" href="/rating-system">
+                Rating system
+              </Link>
+              <Link className="pill" href="/subscribe">
+                Support
+              </Link>
+            </div>
+          </section>
+        </aside>
+
         <div className="feed-main">
           <div className="section-title" style={{ paddingTop: 0 }}>
             <h2 style={{ margin: 0 }}>Latest Stories</h2>
-            <span className="story-meta">{tagged.length} stories</span>
+            <span className="story-meta">
+              {tagged.length === 0 ? "0 stories" : `Showing ${Math.min(tagged.length, gridStart + gridStories.length)} of ${tagged.length}`}
+            </span>
           </div>
+
+          {tagged.length === 0 ? (
+            <section className="panel" style={{ display: "grid", gap: "0.5rem" }}>
+              <h3 style={{ margin: 0 }}>No stories match your current filters.</h3>
+              <p className="story-meta" style={{ margin: 0 }}>
+                Try clearing a filter, changing edition, or broadening your search query.
+              </p>
+              <Link className="btn" href={edition ? `/?edition=${encodeURIComponent(edition)}` : "/"}>
+                Reset filters
+              </Link>
+            </section>
+          ) : null}
 
           {leadStory ? (
             <article className="lead-story">
@@ -170,6 +255,14 @@ export default async function HomePage({ searchParams }: HomeProps) {
               <StoryCard key={story.id} story={story} />
             ))}
           </div>
+
+          {hasMore ? (
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              <Link className="btn" href={`/${paramsForPage(pageNumber + 1)}`}>
+                Load more stories
+              </Link>
+            </div>
+          ) : null}
         </div>
 
         <aside className="feed-rail">
@@ -213,26 +306,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
           <section className="panel">
             <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2>Daily Briefing</h2>
-              <span className="story-meta">Top 6</span>
-            </div>
-            <ol className="rail-list rail-list-rich">
-              {topStories.map((story) => (
-                <li key={story.id}>
-                  <Link href={`/story/${story.slug}`} className="rail-rich-link">
-                    <StoryImage src={story.imageUrl} alt={story.title} width={86} height={54} className="rail-thumb" unoptimized />
-                    <span>
-                      <span className="rail-link">{story.title}</span>
-                      <span className="story-meta">{sourceCountLabel(story)} • {story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
               <h2>Blindspot Watch</h2>
               <Link href="/blindspot" className="story-meta">
                 open
@@ -248,26 +321,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
                 </li>
               ))}
             </ul>
-          </section>
-
-          <section className="panel">
-            <div className="section-title" style={{ paddingTop: 0 }}>
-              <h2>Explore</h2>
-            </div>
-            <div className="chip-row">
-              <Link className="pill" href="/local">
-                Local
-              </Link>
-              <Link className="pill" href="/blindspot">
-                Blindspot
-              </Link>
-              <Link className="pill" href="/rating-system">
-                Rating system
-              </Link>
-              <Link className="pill" href="/subscribe">
-                Support
-              </Link>
-            </div>
           </section>
         </aside>
       </section>

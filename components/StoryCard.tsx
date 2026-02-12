@@ -40,7 +40,9 @@ export function StoryCard({ story }: { story: Story }) {
         <BiasBar story={story} showLabels={false} />
         <p className="story-summary">{story.summary}</p>
         <div className="story-card-footer">
-          <span className="pill">{biasLabel(story)} coverage</span>
+          <span className="pill">
+            {biasLabel(story) === "No bias data" ? "Bias data unavailable" : `${biasLabel(story)} coverage`}
+          </span>
           <span className="pill">{sourceCountLabel(story)}</span>
         </div>
       </div>

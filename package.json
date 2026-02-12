@@ -18,7 +18,8 @@
     "next": "^16.0.0",
     "playwright-core": "^1.58.2",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "stripe": "^18.5.0"
   },
   "devDependencies": {
     "@types/node": "^25.2.3",

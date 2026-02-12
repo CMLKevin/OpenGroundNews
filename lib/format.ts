@@ -1,10 +1,66 @@
 import { SourceArticle, Story } from "@/lib/types";
 
 export const STORY_IMAGE_FALLBACK = "/images/story-fallback.svg";
+export const STORY_IMAGE_FALLBACK_THUMB = "/images/story-fallback-thumb.svg";
+export const STORY_IMAGE_FALLBACK_VARIANTS = [
+  "/images/fallbacks/story-fallback-1.svg",
+  "/images/fallbacks/story-fallback-2.svg",
+  "/images/fallbacks/story-fallback-3.svg",
+  "/images/fallbacks/story-fallback-4.svg",
+  "/images/fallbacks/story-fallback-5.svg",
+  "/images/fallbacks/story-fallback-6.svg",
+] as const;
+
+function stableHash32(input: string): number {
+  // Small, deterministic hash to pick fallback variants.
+  // (Not crypto; just stable across runtimes.)
+  let h = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+
+export function pickStoryFallbackImage(seed: string, opts?: { kind?: "thumb" | "story" }) {
+  const kind = opts?.kind ?? "story";
+  if (kind === "thumb") return STORY_IMAGE_FALLBACK_THUMB;
+  const key = (seed || "story").trim().toLowerCase() || "story";
+  const idx = stableHash32(key) % STORY_IMAGE_FALLBACK_VARIANTS.length;
+  return STORY_IMAGE_FALLBACK_VARIANTS[idx] || STORY_IMAGE_FALLBACK;
+}
 const BIAS_TAG_PATTERN = /\b(lean left|lean right|far left|far right|left|right|center)\b/i;
 const DOMAIN_PATTERN = /[a-z0-9-]+\.[a-z]{2,}/i;
 const PLACEHOLDER_EXCERPT_PATTERN = /^coverage excerpt from /i;
 const UUID_SLUG_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const COMMON_TOPIC_WHITELIST = new Set(
+  [
+    "Politics",
+    "US Politics",
+    "World",
+    "Business",
+    "Business & Markets",
+    "Markets",
+    "Economy",
+    "Technology",
+    "Science",
+    "Health",
+    "Health & Medicine",
+    "Sports",
+    "Entertainment",
+    "Climate",
+    "Education",
+    "Law",
+    "Immigration",
+    "Elections",
+    "Top Stories",
+    "News",
+    "United States",
+    "Canada",
+    "United Kingdom",
+    "Europe",
+  ].map((v) => v.toLowerCase()),
+);
 
 export function prettyDate(value: string) {
   const d = new Date(value);
@@ -184,6 +240,34 @@ function sanitizeTag(tag: string): string | null {
   return clean;
 }
 
+function canonicalizeLooseLabel(value: string): string {
+  return (value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\.[a-z]{2,}$/i, "") // drop simple TLDs (best-effort)
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function extractKeywordTokens(value: string): string[] {
+  const stop = new Set(["the", "and", "for", "with", "from", "into", "over", "under", "about", "your", "news"]);
+  return (value || "")
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .split(/[^a-z0-9]+/g)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 4 && !stop.has(t));
+}
+
+function tagSeemsRelevant(tag: string, storyText: string): boolean {
+  const clean = tag.trim();
+  if (!clean) return false;
+  const key = clean.toLowerCase();
+  if (COMMON_TOPIC_WHITELIST.has(key)) return true;
+  const tokens = extractKeywordTokens(clean);
+  if (tokens.length === 0) return false;
+  return tokens.some((t) => storyText.includes(t));
+}
+
 export function sanitizeStoryTags(tags: string[]): string[] {
   const dedupKeys = new Set<string>();
   const dedup: string[] = [];
@@ -244,9 +328,32 @@ export function normalizeStory(story: Story): Story {
   const outletNames = new Set(
     normalizedSources.map((source) => source.outlet.trim().toLowerCase()).filter(Boolean),
   );
-  const tags = sanitizeStoryTags(
-    (Array.isArray(story.tags) ? story.tags : []).filter((tag) => !outletNames.has(tag.trim().toLowerCase())),
+  const outletLooseKeys = new Set(
+    normalizedSources
+      .flatMap((source) => {
+        const host = compactHost(source.url || "");
+        const outlet = source.outlet || "";
+        return [canonicalizeLooseLabel(outlet), canonicalizeLooseLabel(host)];
+      })
+      .filter(Boolean),
   );
+
+  const rawTags = Array.isArray(story.tags) ? story.tags : [];
+  const storyTextForRelevance = `${story.title || ""} ${story.summary || ""} ${story.dek || ""}`.toLowerCase();
+  const filteredTagsBase = rawTags
+    .filter((tag) => {
+      const clean = (tag || "").trim().toLowerCase();
+      if (!clean) return false;
+      if (outletNames.has(clean)) return false;
+      const loose = canonicalizeLooseLabel(clean);
+      if (loose && outletLooseKeys.has(loose)) return false;
+      return true;
+    });
+
+  const relevantTags = filteredTagsBase.filter((tag) => tagSeemsRelevant(String(tag), storyTextForRelevance));
+  const filteredTags = relevantTags.length >= 2 ? relevantTags : filteredTagsBase;
+
+  const tags = sanitizeStoryTags(filteredTags);
   const coverage = story.coverage ?? {};
   const safeCoverage = {
     totalSources: typeof coverage.totalSources === "number" && Number.isFinite(coverage.totalSources) ? Math.max(0, Math.round(coverage.totalSources)) : undefined,
@@ -268,12 +375,19 @@ export function normalizeStory(story: Story): Story {
   const cleanSummary = (story.summary || "").trim();
   const dedupedDek = cleanDek && cleanSummary && cleanDek === cleanSummary ? "" : cleanDek;
 
+  const cleanTopic = (story.topic || "").trim() || "Top Stories";
+  const topicKey = cleanTopic.toLowerCase();
+  const topicLooksRelevant =
+    COMMON_TOPIC_WHITELIST.has(topicKey) || extractKeywordTokens(cleanTopic).some((t) => storyTextForRelevance.includes(t));
+  const topicCandidate = topicLooksRelevant ? cleanTopic : (tags[0] || cleanTopic);
+
   return {
     ...story,
     slug: normalizedSlug,
     dek: dedupedDek || undefined,
     author: cleanAuthor || undefined,
     summary: cleanSummary || story.summary,
+    topic: topicCandidate,
     bias: normalizedBias,
     sourceCount: Math.max(
       normalizedSources.length,

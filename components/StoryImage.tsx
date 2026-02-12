@@ -2,18 +2,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image, { ImageProps } from "next/image";
-import { STORY_IMAGE_FALLBACK } from "@/lib/format";
+import { pickStoryFallbackImage, STORY_IMAGE_FALLBACK } from "@/lib/format";
 
 type Props = Omit<ImageProps, "src"> & {
   src?: string | null;
   fallbackSrc?: string;
 };
 
-export function StoryImage({ src, fallbackSrc = STORY_IMAGE_FALLBACK, alt, ...rest }: Props) {
+export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
+  const derivedFallback = useMemo(() => {
+    if (fallbackSrc && fallbackSrc.trim()) return fallbackSrc.trim();
+    const width = typeof rest.width === "number" ? rest.width : 0;
+    const height = typeof rest.height === "number" ? rest.height : 0;
+    const kind = Math.min(width || Infinity, height || Infinity) <= 120 ? "thumb" : "story";
+    return pickStoryFallbackImage(String(alt || "story"), { kind });
+  }, [fallbackSrc, rest.width, rest.height, alt]);
+
   const normalizedSrc = useMemo(() => {
-    if (!src || !src.trim()) return fallbackSrc;
-    return src;
-  }, [src, fallbackSrc]);
+    const clean = (src || "").trim();
+    if (!clean || clean === STORY_IMAGE_FALLBACK) return derivedFallback;
+    return clean;
+  }, [src, derivedFallback]);
   const [activeSrc, setActiveSrc] = useState(normalizedSrc);
 
   useEffect(() => {
@@ -26,7 +35,7 @@ export function StoryImage({ src, fallbackSrc = STORY_IMAGE_FALLBACK, alt, ...re
       src={activeSrc}
       alt={alt}
       onError={() => {
-        if (activeSrc !== fallbackSrc) setActiveSrc(fallbackSrc);
+        if (activeSrc !== derivedFallback) setActiveSrc(derivedFallback);
       }}
     />
   );

@@ -1,8 +1,13 @@
 import Link from "next/link";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BiasBar } from "@/components/BiasBar";
 import { BiasDistributionPanel } from "@/components/BiasDistributionPanel";
+import { KeyPointsPanel } from "@/components/KeyPointsPanel";
 import { PerspectiveTabs } from "@/components/PerspectiveTabs";
+import { ReaderDrawer } from "@/components/ReaderDrawer";
+import { ShareBar } from "@/components/ShareBar";
+import { TimelinePanel } from "@/components/TimelinePanel";
 import { SimilarTopicsPanel } from "@/components/SimilarTopicsPanel";
 import { SourceCoveragePanel } from "@/components/SourceCoveragePanel";
 import { StoryImage } from "@/components/StoryImage";
@@ -16,6 +21,34 @@ type Props = {
 };
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: Pick<Props, "params">): Promise<Metadata> {
+  const { slug } = await params;
+  const story = await getStoryBySlug(slug);
+  if (!story) return { title: "Story not found • OpenGroundNews" };
+
+  const description = (story.dek || story.summary || "").slice(0, 240);
+  const site = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3000";
+  const url = `${site.replace(/\/$/, "")}/story/${encodeURIComponent(story.slug)}`;
+
+  return {
+    title: `${story.title} • OpenGroundNews`,
+    description,
+    openGraph: {
+      title: story.title,
+      description,
+      url,
+      images: story.imageUrl ? [{ url: story.imageUrl }] : undefined,
+      type: "article",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: story.title,
+      description,
+      images: story.imageUrl ? [story.imageUrl] : undefined,
+    },
+  };
+}
 
 export default async function StoryPage({ params, searchParams }: Props) {
   const { slug } = await params;
@@ -58,6 +91,8 @@ export default async function StoryPage({ params, searchParams }: Props) {
   }
   const dailyBriefing = (await listStories({ view: "all", limit: 8 })).filter((item) => item.slug !== story.slug).slice(0, 6);
   const reader = source ? await readArchiveForUrl(source) : null;
+  const site = process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3000";
+  const shareUrl = `${site.replace(/\/$/, "")}/story/${encodeURIComponent(story.slug)}`;
 
   return (
     <main className="container">
@@ -98,6 +133,10 @@ export default async function StoryPage({ params, searchParams }: Props) {
             {story.summary}
           </p>
 
+          <KeyPointsPanel story={story} />
+
+          <ShareBar title={story.title} url={shareUrl} />
+
           <section className="panel" style={{ background: "var(--bg-panel)", display: "grid", gap: "0.45rem" }}>
             <div className="section-title" style={{ paddingTop: 0 }}>
               <h2 style={{ margin: 0 }}>Coverage Snapshot</h2>
@@ -126,31 +165,30 @@ export default async function StoryPage({ params, searchParams }: Props) {
 
           <PerspectiveTabs story={story} />
 
-          {(story.timelineHeaders?.length || story.podcastReferences?.length) ? (
+          <TimelinePanel story={story} />
+
+          {story.podcastReferences?.length ? (
             <section className="panel" style={{ background: "var(--bg-panel)", display: "grid", gap: "0.5rem" }}>
               <div className="section-title" style={{ paddingTop: 0 }}>
-                <h2 style={{ margin: 0 }}>Context Signals</h2>
+                <h2 style={{ margin: 0 }}>Podcasts & Opinions</h2>
               </div>
-              {story.timelineHeaders?.length ? (
-                <div>
-                  <div className="story-meta" style={{ marginBottom: "0.2rem" }}>Story timeline cues</div>
-                  <ul className="perspective-list">
-                    {story.timelineHeaders.slice(0, 5).map((heading, idx) => (
-                      <li key={`${story.id}-timeline-${idx}`}>{heading}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
-              {story.podcastReferences?.length ? (
-                <div>
-                  <div className="story-meta" style={{ marginBottom: "0.2rem" }}>Podcasts & opinions</div>
-                  <ul className="perspective-list">
-                    {story.podcastReferences.slice(0, 4).map((entry, idx) => (
-                      <li key={`${story.id}-pod-${idx}`}>{entry}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : null}
+              <ul className="perspective-list">
+                {story.podcastReferences.slice(0, 6).map((entry, idx) => {
+                  const match = String(entry || "").match(/https?:\/\/[^\s)]+/i);
+                  const url = match?.[0] ?? "";
+                  const label = String(entry || "").replace(url, "").trim() || entry;
+                  return (
+                    <li key={`${story.id}-pod-${idx}`}>
+                      {label}{" "}
+                      {url ? (
+                        <a className="btn" href={url} target="_blank" rel="noreferrer" style={{ marginLeft: "0.4rem" }}>
+                          Open link
+                        </a>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
             </section>
           ) : null}
 
@@ -169,22 +207,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
 
           <SourceCoveragePanel storySlug={story.slug} sources={story.sources} totalSourceCount={displayTotalSources} />
 
-          {reader && (
-            <section className="reader panel">
-              <h3>{reader.title}</h3>
-              <div className="story-meta">
-                Reader mode status: <strong>{reader.status}</strong> • {reader.notes}
-              </div>
-              {reader.archiveUrl !== "none" && (
-                <a className="btn" href={reader.archiveUrl} target="_blank" rel="noreferrer">
-                  Open Archived Source
-                </a>
-              )}
-              {reader.paragraphs.map((p, idx) => (
-                <p key={`${reader.originalUrl}-${idx}`}>{p}</p>
-              ))}
-            </section>
-          )}
+          {reader ? <ReaderDrawer entry={reader} /> : null}
         </article>
 
         <aside className="feed-rail">
