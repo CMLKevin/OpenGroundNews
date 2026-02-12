@@ -1,10 +1,14 @@
-import { Story } from "@/lib/types";
+import { SourceArticle, Story } from "@/lib/types";
 
-export const STORY_IMAGE_FALLBACK =
-  "https://images.unsplash.com/photo-1495020689067-958852a7765e?auto=format&fit=crop&w=1600&q=80";
+export const STORY_IMAGE_FALLBACK = "/images/story-fallback.svg";
+const BIAS_TAG_PATTERN = /\b(lean left|lean right|far left|far right|left|right|center)\b/i;
+const DOMAIN_PATTERN = /[a-z0-9-]+\.[a-z]{2,}/i;
+const PLACEHOLDER_EXCERPT_PATTERN = /^coverage excerpt from /i;
+const UUID_SLUG_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export function prettyDate(value: string) {
   const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "Unknown";
   return d.toLocaleString("en-US", {
     month: "short",
     day: "numeric",
@@ -15,6 +19,9 @@ export function prettyDate(value: string) {
 }
 
 export function biasLabel(story: Story) {
+  if (story.bias.left + story.bias.center + story.bias.right <= 0) {
+    return "No bias data";
+  }
   const entries: Array<[string, number]> = [
     ["Left", story.bias.left],
     ["Center", story.bias.center],
@@ -35,6 +42,7 @@ export function compactHost(rawUrl: string) {
 function clampInt(value: number) {
   if (!Number.isFinite(value)) return 0;
   if (value < 0) return 0;
+  if (value > 100) return 100;
   return Math.round(value);
 }
 
@@ -90,6 +98,10 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
     const parsed = new URL(value);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return fallback;
 
+    // Ground News image CDN often includes embedded bias overlays.
+    if (/^web-api-cdn\.ground\.news$/i.test(parsed.hostname)) {
+      return fallback;
+    }
     // Ignore tiny flag/icon assets that are not story art.
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
       return fallback;
@@ -101,15 +113,84 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
   }
 }
 
+export function slugify(value: string) {
+  const slug = value
+    .toLowerCase()
+    .replace(/['"]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug.slice(0, 110) || "story";
+}
+
+function sanitizeTag(tag: string): string | null {
+  const clean = tag.trim().replace(/\s+/g, " ");
+  if (!clean) return null;
+  if (clean.length < 2 || clean.length > 60) return null;
+  if (BIAS_TAG_PATTERN.test(clean)) return null;
+  if (DOMAIN_PATTERN.test(clean)) return null;
+  return clean;
+}
+
+export function sanitizeStoryTags(tags: string[]): string[] {
+  const dedup = new Set<string>();
+  for (const tag of tags) {
+    const normalized = sanitizeTag(tag);
+    if (!normalized) continue;
+    dedup.add(normalized);
+    if (dedup.size >= 8) break;
+  }
+  return Array.from(dedup);
+}
+
+export function isPlaceholderExcerpt(value: string): boolean {
+  return PLACEHOLDER_EXCERPT_PATTERN.test((value || "").trim());
+}
+
 export function normalizeStory(story: Story): Story {
-  const normalizedBias = normalizeBiasPercentages(story.bias);
-  const normalizedSources = Array.isArray(story.sources) ? story.sources : [];
+  const normalizedSources: SourceArticle[] = (Array.isArray(story.sources) ? story.sources : []).map((source) => {
+    if (!isPlaceholderExcerpt(source.excerpt)) return source;
+    return {
+      ...source,
+      excerpt: "Excerpt unavailable from publisher metadata.",
+      bias: "unknown" as const,
+      factuality: "unknown" as const,
+      ownership: "Unlabeled",
+      publishedAt: undefined,
+      paywall: undefined,
+      locality: undefined,
+    };
+  });
+
+  const knownBias = normalizedSources.filter((src) => src.bias !== "unknown");
+  const counted = {
+    left: knownBias.filter((src) => src.bias === "left").length,
+    center: knownBias.filter((src) => src.bias === "center").length,
+    right: knownBias.filter((src) => src.bias === "right").length,
+  };
+  const derivedBias =
+    knownBias.length > 0
+      ? normalizeBiasPercentages({
+          left: Math.round((counted.left / knownBias.length) * 100),
+          center: Math.round((counted.center / knownBias.length) * 100),
+          right: Math.round((counted.right / knownBias.length) * 100),
+        })
+      : { left: 0, center: 0, right: 0 };
+
+  const normalizedBias =
+    story.bias.left + story.bias.center + story.bias.right > 0 && knownBias.length === normalizedSources.length
+      ? normalizeBiasPercentages(story.bias)
+      : derivedBias;
+
+  const normalizedSlug = UUID_SLUG_PATTERN.test(story.slug) ? slugify(story.title) : story.slug;
+  const tags = sanitizeStoryTags(Array.isArray(story.tags) ? story.tags : []);
 
   return {
     ...story,
+    slug: normalizedSlug,
     bias: normalizedBias,
-    sourceCount: normalizedSources.length > 0 ? normalizedSources.length : Math.max(0, story.sourceCount || 0),
+    sourceCount: normalizedSources.length,
     imageUrl: sanitizeStoryImageUrl(story.imageUrl),
     sources: normalizedSources,
+    tags: tags.length > 0 ? tags : ["News"],
   };
 }

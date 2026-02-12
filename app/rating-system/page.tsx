@@ -12,15 +12,16 @@ export default function RatingSystemPage() {
             <strong>Bias buckets:</strong> <code>left</code>, <code>center</code>, <code>right</code>
           </li>
           <li>
-            <strong>Factuality:</strong> <code>high</code>, <code>mixed</code>, <code>low</code>
+            <strong>Factuality:</strong> <code>very-high</code>, <code>high</code>, <code>mixed</code>,{" "}
+            <code>low</code>, <code>very-low</code>, <code>unknown</code>
           </li>
           <li>
             <strong>Ownership:</strong> Organization label tracked per outlet
           </li>
         </ul>
         <p className="note">
-          The default pipeline uses deterministic placeholder scoring from domain hashes. Replace with your own
-          external ratings dataset for production-grade analysis.
+          Sources without reliable metadata are labeled <code>unknown</code> instead of inferring values from domain
+          names.
         </p>
       </div>
     </main>

@@ -4,8 +4,18 @@ import { listStories } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export default async function LocalPage() {
-  const stories = await listStories({ view: "local", limit: 24 });
+type LocalPageProps = {
+  searchParams: Promise<{ location?: string; edition?: string }>;
+};
+
+export default async function LocalPage({ searchParams }: LocalPageProps) {
+  const { location, edition } = await searchParams;
+  const stories = await listStories({
+    view: "local",
+    limit: 24,
+    location: location?.trim() || undefined,
+    edition: edition?.trim() || undefined,
+  });
 
   return (
     <main className="container" style={{ paddingTop: "1rem" }}>
@@ -14,8 +24,7 @@ export default async function LocalPage() {
       </div>
       <LocalFeedControls />
       <p className="note">
-        Local stories are generated from region-tagged stories during ingestion. For deeper parity, add geolocation +
-        district-level ranking in the pipeline.
+        Local stories are filtered by your selected region/city and by local-marked stories from ingestion.
       </p>
       <section className="grid" style={{ marginTop: "1rem" }}>
         {stories.map((story) => (

@@ -7,6 +7,8 @@ Returns stories list.
 - `view`: `all` | `blindspot` | `local` | `trending`
 - `topic`: topic name filter
 - `limit`: numeric cap
+- `edition`: edition/location filter (e.g. `International`, `United States`)
+- `location`: free-text location filter (primarily for `view=local`)
 
 ### Response
 ```json
@@ -29,6 +31,9 @@ Returns one story or 404.
 
 ## POST /api/archive/read
 Attempts archive-first article read.
+
+### Auth
+- Header `x-ogn-api-key: <key>` (or `Authorization: Bearer <key>`)
 
 ### Body
 ```json
@@ -54,6 +59,9 @@ Attempts archive-first article read.
 
 ## POST /api/ingest/groundnews
 Triggers ingestion pipeline.
+
+### Auth
+- Header `x-ogn-api-key: <key>` (or `Authorization: Bearer <key>`)
 
 ### Response
 ```json

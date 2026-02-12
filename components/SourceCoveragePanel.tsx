@@ -18,12 +18,14 @@ const factualityWeight: Record<string, number> = {
   mixed: 3,
   low: 2,
   "very-low": 1,
+  unknown: 0,
 };
 
 const biasWeight: Record<string, number> = {
   center: 3,
   left: 2,
   right: 1,
+  unknown: 0,
 };
 
 export function SourceCoveragePanel({ storySlug, sources }: Props) {
@@ -34,7 +36,7 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
   const [paywallFilter, setPaywallFilter] = useState<string>("all");
 
   const ownershipOptions = useMemo(
-    () => Array.from(new Set(sources.map((s) => s.ownership))).sort((a, b) => a.localeCompare(b)),
+    () => Array.from(new Set(sources.map((s) => s.ownership || "Unlabeled"))).sort((a, b) => a.localeCompare(b)),
     [sources],
   );
 
@@ -43,7 +45,7 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
       if (biasFilter !== "all" && s.bias !== biasFilter) return false;
       if (factFilter !== "all" && s.factuality !== factFilter) return false;
       if (ownershipFilter !== "all" && s.ownership !== ownershipFilter) return false;
-      if (paywallFilter !== "all" && (s.paywall ?? "none") !== paywallFilter) return false;
+      if (paywallFilter !== "all" && (s.paywall ?? "unknown") !== paywallFilter) return false;
       return true;
     });
 
@@ -53,7 +55,10 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
       if (sortMode === "factuality") {
         return (factualityWeight[b.factuality] ?? 0) - (factualityWeight[a.factuality] ?? 0);
       }
-      return +new Date(b.publishedAt ?? 0) - +new Date(a.publishedAt ?? 0);
+      const timeA = a.publishedAt ? +new Date(a.publishedAt) : Number.NEGATIVE_INFINITY;
+      const timeB = b.publishedAt ? +new Date(b.publishedAt) : Number.NEGATIVE_INFINITY;
+      if (timeA === timeB) return a.outlet.localeCompare(b.outlet);
+      return timeB - timeA;
     });
   }, [sources, sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter]);
 
@@ -67,7 +72,7 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
       <div className="filters-grid">
         <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
           Sort
-          <select className="btn" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
+          <select className="select-control" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
             <option value="latest">Latest</option>
             <option value="alphabetical">Alphabetical</option>
             <option value="bias">Bias</option>
@@ -77,29 +82,31 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
 
         <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
           Bias
-          <select className="btn" value={biasFilter} onChange={(e) => setBiasFilter(e.target.value)}>
+          <select className="select-control" value={biasFilter} onChange={(e) => setBiasFilter(e.target.value)}>
             <option value="all">All</option>
             <option value="left">Left</option>
             <option value="center">Center</option>
             <option value="right">Right</option>
+            <option value="unknown">Unknown</option>
           </select>
         </label>
 
         <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
           Factuality
-          <select className="btn" value={factFilter} onChange={(e) => setFactFilter(e.target.value)}>
+          <select className="select-control" value={factFilter} onChange={(e) => setFactFilter(e.target.value)}>
             <option value="all">All</option>
             <option value="very-high">Very High</option>
             <option value="high">High</option>
             <option value="mixed">Mixed</option>
             <option value="low">Low</option>
             <option value="very-low">Very Low</option>
+            <option value="unknown">Unknown</option>
           </select>
         </label>
 
         <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
           Ownership
-          <select className="btn" value={ownershipFilter} onChange={(e) => setOwnershipFilter(e.target.value)}>
+          <select className="select-control" value={ownershipFilter} onChange={(e) => setOwnershipFilter(e.target.value)}>
             <option value="all">All</option>
             {ownershipOptions.map((value) => (
               <option key={value} value={value}>
@@ -111,17 +118,17 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
 
         <label className="story-meta" style={{ display: "grid", gap: "0.2rem" }}>
           Paywall
-          <select className="btn" value={paywallFilter} onChange={(e) => setPaywallFilter(e.target.value)}>
+          <select className="select-control" value={paywallFilter} onChange={(e) => setPaywallFilter(e.target.value)}>
             <option value="all">All</option>
             <option value="none">No Paywall</option>
             <option value="soft">Soft Paywall</option>
             <option value="hard">Hard Paywall</option>
+            <option value="unknown">Unknown</option>
           </select>
         </label>
 
         <button
-          className="btn"
-          style={{ alignSelf: "end" }}
+          className="btn reset-btn"
           onClick={() => {
             setSortMode("latest");
             setBiasFilter("all");
@@ -148,7 +155,7 @@ export function SourceCoveragePanel({ storySlug, sources }: Props) {
               </div>
               <p className="story-summary">{src.excerpt}</p>
               <div className="story-meta">
-                Ownership: {src.ownership} • Paywall: {src.paywall ?? "none"}
+                Ownership: {src.ownership || "Unlabeled"} • Paywall: {src.paywall ?? "unknown"}
               </div>
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                 <Link className="btn" href={href}>

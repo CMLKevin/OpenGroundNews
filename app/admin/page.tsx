@@ -29,8 +29,12 @@ export default async function AdminPage() {
             <strong>{stats.storyCount}</strong>
           </div>
           <div className="kpi">
-            <span>Sources</span>
-            <strong>{stats.sourceCount}</strong>
+            <span>Source Articles</span>
+            <strong>{stats.sourceArticleCount}</strong>
+          </div>
+          <div className="kpi">
+            <span>Unique Outlets</span>
+            <strong>{stats.uniqueOutletCount}</strong>
           </div>
           <div className="kpi">
             <span>Archive Entries</span>
@@ -44,7 +48,7 @@ export default async function AdminPage() {
 
         <p className="note">
           Trigger sync via API:<br />
-          <code>curl -X POST http://localhost:3000/api/ingest/groundnews</code>
+          <code>curl -X POST -H "x-ogn-api-key: &lt;key&gt;" http://localhost:3000/api/ingest/groundnews</code>
         </p>
 
         <section className="panel" style={{ background: "#fff" }}>

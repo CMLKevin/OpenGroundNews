@@ -71,6 +71,7 @@ npm run start
 ## 5) Configuration
 ### Required
 - `BROWSER_USE_API_KEY`: Browser Use Cloud API key
+- `OGN_API_KEY` (or `OPEN_GROUND_NEWS_API_KEY`): required for protected write APIs (`POST /api/ingest/groundnews`, `POST /api/archive/read`)
 
 ### Optional browser session controls
 - `BROWSER_USE_TIMEOUT_MINUTES`: session timeout passed to Browser Use `/api/v2/browsers`
@@ -145,11 +146,13 @@ PORT=3001 ./restart.sh prod
 
 ## 8) API Endpoints
 - `GET /api/stories`
-  - Query params: `view`, `topic`, `limit`
+  - Query params: `view`, `topic`, `limit`, `edition`, `location`
 - `GET /api/stories/[slug]`
 - `POST /api/archive/read`
+  - Header: `x-ogn-api-key: <key>`
   - Body: `{ "url": "https://...", "force": true|false }`
 - `POST /api/ingest/groundnews`
+  - Header: `x-ogn-api-key: <key>`
 
 See detailed request/response notes in:
 - `/Users/kevinlin/OpenGroundNews/docs/API.md`

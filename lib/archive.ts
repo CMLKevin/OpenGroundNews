@@ -14,7 +14,17 @@ async function fallbackExtract(originalUrl: string): Promise<ArchiveEntry> {
         "user-agent": "OpenGroundNewsBot/1.0 (+https://opengroundnews.local)",
       },
       cache: "no-store",
+      signal: AbortSignal.timeout(15000),
     });
+    if (!res.ok) {
+      throw new Error(`Publisher returned HTTP ${res.status}`);
+    }
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.toLowerCase().includes("text/html")) {
+      throw new Error("Publisher response was not HTML content");
+    }
+
     const html = await res.text();
     const $ = cheerio.load(html);
 
@@ -36,7 +46,7 @@ async function fallbackExtract(originalUrl: string): Promise<ArchiveEntry> {
       archiveUrl: "none",
       title,
       notes: "Archive retrieval unavailable; rendered via direct publisher extraction fallback.",
-      paragraphs: paras.length > 0 ? paras : ["No extractable long-form paragraph content was found."],
+      paragraphs: paras.length > 0 ? paras : ["No extractable long-form paragraph content was found on this source."],
       checkedAt: new Date().toISOString(),
     };
   } catch (error) {

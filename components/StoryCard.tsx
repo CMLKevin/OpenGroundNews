@@ -5,6 +5,12 @@ import { biasLabel, prettyDate } from "@/lib/format";
 import { BiasBar } from "@/components/BiasBar";
 
 export function StoryCard({ story }: { story: Story }) {
+  const chips = [
+    story.blindspot ? "Blindspot" : null,
+    story.local ? "Local" : null,
+    story.trending ? "Trending" : null,
+  ].filter(Boolean) as string[];
+
   return (
     <article className="story-card">
       <Image
@@ -19,17 +25,21 @@ export function StoryCard({ story }: { story: Story }) {
         <div className="story-meta">
           {story.topic} • {story.location} • Updated {prettyDate(story.updatedAt)}
         </div>
-        <div className="chip-row">
-          {story.blindspot ? <span className="chip">Blindspot</span> : null}
-          {story.local ? <span className="chip">Local</span> : null}
-          {story.trending ? <span className="chip">Trending</span> : null}
-        </div>
+        {chips.length > 0 ? (
+          <div className="chip-row">
+            {chips.map((chip) => (
+              <span className="chip" key={`${story.id}-${chip}`}>
+                {chip}
+              </span>
+            ))}
+          </div>
+        ) : null}
         <h3 className="story-title">
           <Link href={`/story/${story.slug}`}>{story.title}</Link>
         </h3>
         <BiasBar story={story} showLabels={false} />
         <p className="story-summary">{story.summary}</p>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div className="story-card-footer">
           <span className="pill">{biasLabel(story)} coverage</span>
           <span className="pill">{story.sourceCount} sources</span>
         </div>

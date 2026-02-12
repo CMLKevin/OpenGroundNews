@@ -6,7 +6,7 @@ import { prettyDate } from "@/lib/format";
 import { getDashboardStats, listStories } from "@/lib/store";
 
 type HomeProps = {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; edition?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -23,9 +23,9 @@ function scoreTags(stories: Awaited<ReturnType<typeof listStories>>) {
 }
 
 export default async function HomePage({ searchParams }: HomeProps) {
-  const { q } = await searchParams;
+  const { q, edition } = await searchParams;
   const [stories, stats] = await Promise.all([
-    listStories({ view: "all", limit: 48 }),
+    listStories({ view: "all", limit: 48, edition: edition?.trim() || undefined }),
     getDashboardStats(),
   ]);
 
@@ -84,8 +84,12 @@ export default async function HomePage({ searchParams }: HomeProps) {
               <strong>{stats.storyCount}</strong>
             </div>
             <div className="kpi">
-              <span>Sources</span>
-              <strong>{stats.sourceCount}</strong>
+              <span>Source articles</span>
+              <strong>{stats.sourceArticleCount}</strong>
+            </div>
+            <div className="kpi">
+              <span>Unique outlets</span>
+              <strong>{stats.uniqueOutletCount}</strong>
             </div>
             <div className="kpi">
               <span>Archive cache</span>
@@ -154,7 +158,9 @@ export default async function HomePage({ searchParams }: HomeProps) {
             <ol className="rail-list">
               {topStories.map((story) => (
                 <li key={story.id}>
-                  <Link href={`/story/${story.slug}`}>{story.title}</Link>
+                  <Link href={`/story/${story.slug}`} className="rail-link">
+                    {story.title}
+                  </Link>
                 </li>
               ))}
             </ol>
@@ -170,7 +176,9 @@ export default async function HomePage({ searchParams }: HomeProps) {
             <ul className="rail-list" style={{ listStyle: "none", paddingLeft: 0 }}>
               {blindspotStories.map((story) => (
                 <li key={story.id}>
-                  <Link href={`/story/${story.slug}`}>{story.title}</Link>
+                  <Link href={`/story/${story.slug}`} className="rail-link">
+                    {story.title}
+                  </Link>
                   <div className="story-meta">{story.bias.left}% L • {story.bias.center}% C • {story.bias.right}% R</div>
                 </li>
               ))}

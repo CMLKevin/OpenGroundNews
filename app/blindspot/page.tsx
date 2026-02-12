@@ -3,8 +3,13 @@ import { listStories } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
-export default async function BlindspotPage() {
-  const stories = await listStories({ view: "blindspot", limit: 24 });
+type BlindspotProps = {
+  searchParams: Promise<{ edition?: string }>;
+};
+
+export default async function BlindspotPage({ searchParams }: BlindspotProps) {
+  const { edition } = await searchParams;
+  const stories = await listStories({ view: "blindspot", limit: 24, edition: edition?.trim() || undefined });
 
   return (
     <main className="container" style={{ paddingTop: "1rem" }}>

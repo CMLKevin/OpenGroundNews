@@ -1,6 +1,6 @@
-export type BiasBucket = "left" | "center" | "right";
+export type BiasBucket = "left" | "center" | "right" | "unknown";
 
-export type FactualityBucket = "very-high" | "high" | "mixed" | "low" | "very-low";
+export type FactualityBucket = "very-high" | "high" | "mixed" | "low" | "very-low" | "unknown";
 
 export type SourceArticle = {
   id: string;
@@ -18,6 +18,7 @@ export type SourceArticle = {
 export type Story = {
   id: string;
   slug: string;
+  canonicalUrl?: string;
   title: string;
   summary: string;
   topic: string;

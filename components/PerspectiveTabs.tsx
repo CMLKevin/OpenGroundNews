@@ -5,17 +5,17 @@ import { Story } from "@/lib/types";
 
 type Perspective = "left" | "center" | "right";
 
-function buildPerspectiveText(story: Story, p: Perspective) {
-  const dominance =
-    p === "left" ? story.bias.left : p === "center" ? story.bias.center : story.bias.right;
+function buildPerspectiveText(story: Story, perspective: Perspective) {
+  const matching = story.sources
+    .filter((source) => source.bias === perspective && source.excerpt.trim().length > 0)
+    .slice(0, 3);
 
-  if (p === "left") {
-    return `${story.summary} Left-oriented framing in this story cluster tends to emphasize structural causes, public accountability, and policy response urgency. Current estimated share: ${dominance}%.`;
+  if (matching.length === 0) {
+    const label = perspective === "left" ? "Left" : perspective === "center" ? "Center" : "Right";
+    return `No ${label.toLowerCase()}-bucket excerpts are available for this story yet.`;
   }
-  if (p === "center") {
-    return `${story.summary} Center-oriented framing emphasizes chronology, verified claims, and incremental context from multiple institutions. Current estimated share: ${dominance}%.`;
-  }
-  return `${story.summary} Right-oriented framing in this story cluster tends to emphasize institutional overreach risks, fiscal/sovereignty concerns, and legal constraints. Current estimated share: ${dominance}%.`;
+
+  return matching.map((source) => `${source.outlet}: ${source.excerpt}`).join(" ");
 }
 
 export function PerspectiveTabs({ story }: { story: Story }) {
@@ -29,9 +29,27 @@ export function PerspectiveTabs({ story }: { story: Story }) {
         <h2 style={{ margin: 0 }}>Perspective Summary</h2>
       </div>
       <div className="chip-row" style={{ marginBottom: "0.7rem" }}>
-        <button className="btn" onClick={() => setActive("left")}>Left View</button>
-        <button className="btn" onClick={() => setActive("center")}>Center View</button>
-        <button className="btn" onClick={() => setActive("right")}>Right View</button>
+        <button
+          className={`btn perspective-btn ${active === "left" ? "is-active" : ""}`}
+          onClick={() => setActive("left")}
+          aria-pressed={active === "left"}
+        >
+          Left View
+        </button>
+        <button
+          className={`btn perspective-btn ${active === "center" ? "is-active" : ""}`}
+          onClick={() => setActive("center")}
+          aria-pressed={active === "center"}
+        >
+          Center View
+        </button>
+        <button
+          className={`btn perspective-btn ${active === "right" ? "is-active" : ""}`}
+          onClick={() => setActive("right")}
+          aria-pressed={active === "right"}
+        >
+          Right View
+        </button>
       </div>
       <p className="story-summary" style={{ fontSize: "0.98rem" }}>{text}</p>
     </section>

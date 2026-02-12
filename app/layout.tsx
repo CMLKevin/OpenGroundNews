@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { Bricolage_Grotesque, Newsreader } from "next/font/google";
 import { TopNav } from "@/components/TopNav";
 import "@/app/globals.css";
@@ -16,13 +17,18 @@ const serif = Newsreader({
 export const metadata: Metadata = {
   title: "OpenGroundNews",
   description: "Open-source Ground News alternative with perspective-aware aggregation.",
+  icons: {
+    icon: "/images/story-fallback.svg",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={`${sans.variable} ${serif.variable}`}>
-        <TopNav />
+        <Suspense fallback={<header className="topbar" />}>
+          <TopNav />
+        </Suspense>
         {children}
         <footer className="footer">
           <div className="container">

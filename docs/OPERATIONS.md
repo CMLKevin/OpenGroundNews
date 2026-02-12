@@ -3,6 +3,7 @@
 ## Environment
 Required:
 - `BROWSER_USE_API_KEY`
+- `OGN_API_KEY` (or `OPEN_GROUND_NEWS_API_KEY`) for protected write APIs
 
 Optional:
 - Rotation and session controls (see `docs/ROTATION_STRATEGIES.md`)

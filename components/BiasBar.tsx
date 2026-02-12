@@ -8,6 +8,7 @@ type BiasBarProps = {
 
 export function BiasBar({ story, showLabels = true }: BiasBarProps) {
   const bias = normalizeBiasPercentages(story.bias);
+  const hasData = bias.left + bias.center + bias.right > 0;
 
   return (
     <div className="biasbar-block">
@@ -17,8 +18,15 @@ export function BiasBar({ story, showLabels = true }: BiasBarProps) {
           ["--left-w" as string]: `${bias.left}%`,
           ["--center-w" as string]: `${bias.center}%`,
           ["--right-w" as string]: `${bias.right}%`,
+          ["--left-min" as string]: bias.left > 0 ? "3px" : "0px",
+          ["--center-min" as string]: bias.center > 0 ? "3px" : "0px",
+          ["--right-min" as string]: bias.right > 0 ? "3px" : "0px",
         }}
-        aria-label={`Bias distribution: ${bias.left}% left, ${bias.center}% center, ${bias.right}% right`}
+        aria-label={
+          hasData
+            ? `Bias distribution: ${bias.left}% left, ${bias.center}% center, ${bias.right}% right`
+            : "Bias distribution unavailable"
+        }
       >
         <span className="bias-left" />
         <span className="bias-center" />
