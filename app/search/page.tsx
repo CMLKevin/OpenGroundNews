@@ -6,6 +6,8 @@ import { SearchFilters } from "@/components/SearchFilters";
 import { db } from "@/lib/db";
 import { topicDisplayName } from "@/lib/topics";
 import { topicSlug } from "@/lib/lookup";
+import { DailyBriefingList } from "@/components/DailyBriefingList";
+import { listStories } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,7 @@ export default async function SearchPage({ searchParams }: Props) {
     time: timeFilter as any,
   });
   const shownArticleCount = result.stories.reduce((acc, s) => acc + (s.coverage?.totalSources ?? s.sourceCount ?? 0), 0);
+  const dailyBriefingStories = await listStories({ view: "all", limit: 6, edition: edition?.trim() || undefined });
   const discoveryStories = query
     ? []
     : await db.story
@@ -84,6 +87,10 @@ export default async function SearchPage({ searchParams }: Props) {
   return (
     <main className="container u-page-pad">
       <SearchBox initialQuery={query} edition={edition?.trim() || undefined} bias={biasFilter} time={timeFilter} tab={activeTab} />
+
+      <section className="u-mt-1">
+        <DailyBriefingList stories={dailyBriefingStories} title="Daily Briefing" />
+      </section>
 
       <section className="panel u-mt-1 u-grid u-grid-gap-065">
           <div className="chip-row u-flex u-justify-between u-items-center">

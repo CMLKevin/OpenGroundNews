@@ -6,6 +6,7 @@ import { StoryImage } from "@/components/StoryImage";
 
 export function StoryCard({ story }: { story: Story }) {
   const stale = Date.now() - +new Date(story.updatedAt) >= 7 * 86400000;
+  const isSingleSource = Math.max(story.coverage?.totalSources ?? 0, story.sourceCount ?? 0, story.sources?.length ?? 0) <= 1;
   const chips = [
     story.blindspot ? "Blindspot" : null,
     story.local ? "Local" : null,
@@ -54,7 +55,7 @@ export function StoryCard({ story }: { story: Story }) {
         </div>
         <div className="u-mt-06">
           <Link className="btn btn-external" href={`/story/${story.slug}`}>
-            See the Story
+            {isSingleSource ? "Read Article" : "See the Story"}
           </Link>
         </div>
       </div>

@@ -21,6 +21,20 @@ export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
 
   const earliest = withTime[0];
   const top = withTime.slice(0, 5);
+  const localityCounts = (sources || []).reduce(
+    (acc, source) => {
+      const key = source.locality || "unknown";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+  const dominantLocality = Object.entries(localityCounts)
+    .sort((a, b) => b[1] - a[1])[0]?.[0];
+  const localityNarrative =
+    dominantLocality && dominantLocality !== "unknown"
+      ? `Sources are mostly ${dominantLocality === "international" ? "international" : `out of ${dominantLocality}`}.`
+      : "Source locality metadata is still being enriched.";
 
   if (!earliest) {
     return (
@@ -63,6 +77,7 @@ export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
           </li>
         ))}
       </ul>
+      <p className="story-meta u-m0">{localityNarrative}</p>
     </section>
   );
 }

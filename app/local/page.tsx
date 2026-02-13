@@ -2,10 +2,12 @@ import { StoryCard } from "@/components/StoryCard";
 import { LocalFeedControls } from "@/components/LocalFeedControls";
 import { listStories } from "@/lib/store";
 import Link from "next/link";
-import { outletSlug } from "@/lib/lookup";
+import { outletSlug, topicSlug } from "@/lib/lookup";
 import { WeatherWidget } from "@/components/WeatherWidget";
 import { StoryListItem } from "@/components/StoryListItem";
 import { LocalPublishersList } from "@/components/LocalPublishersList";
+import { FollowToggle } from "@/components/FollowToggle";
+import { LocalAutoDetect } from "@/components/LocalAutoDetect";
 
 export const dynamic = "force-dynamic";
 
@@ -29,17 +31,53 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
       .flatMap((story) => story.sources)
       .reduce((acc, src) => {
         const slug = outletSlug(src.outlet);
-        const existing = acc.get(slug) || { slug, outlet: src.outlet, count: 0, localCount: 0, logoUrl: src.logoUrl, biasRating: src.biasRating, bias: src.bias };
+        const existing = acc.get(slug) || {
+          slug,
+          outlet: src.outlet,
+          count: 0,
+          localCount: 0,
+          logoUrl: src.logoUrl,
+          biasRating: src.biasRating,
+          bias: src.bias,
+          leftCount: 0,
+          centerCount: 0,
+          rightCount: 0,
+        };
         existing.count += 1;
         if (src.locality === "local") existing.localCount += 1;
         existing.logoUrl = existing.logoUrl || src.logoUrl;
         existing.biasRating = existing.biasRating || src.biasRating;
         existing.bias = existing.bias || src.bias;
+        if (src.bias === "left") existing.leftCount += 1;
+        if (src.bias === "center") existing.centerCount += 1;
+        if (src.bias === "right") existing.rightCount += 1;
         acc.set(slug, existing);
         return acc;
-      }, new Map<string, { slug: string; outlet: string; count: number; localCount: number; logoUrl?: string; biasRating?: string; bias?: string }>())
+      }, new Map<string, {
+        slug: string;
+        outlet: string;
+        count: number;
+        localCount: number;
+        logoUrl?: string;
+        biasRating?: string;
+        bias?: string;
+        leftCount: number;
+        centerCount: number;
+        rightCount: number;
+      }>())
       .values(),
   )
+    .map((outlet) => {
+      const explicit = String(outlet.biasRating || outlet.bias || "").toLowerCase();
+      if (explicit && explicit !== "unknown") return outlet;
+      const ranked = [
+        { key: "left", value: outlet.leftCount },
+        { key: "center", value: outlet.centerCount },
+        { key: "right", value: outlet.rightCount },
+      ].sort((a, b) => b.value - a.value);
+      const derived = ranked[0]?.value > 0 ? ranked[0].key : "unknown";
+      return { ...outlet, bias: derived };
+    })
     .sort((a, b) => b.localCount - a.localCount || b.count - a.count || a.outlet.localeCompare(b.outlet))
     .slice(0, 28);
 
@@ -48,6 +86,7 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
 
   return (
     <main className="container u-pt-1">
+      <LocalAutoDetect />
       <section className="panel u-grid u-grid-gap-07">
         <div className="section-title u-pt-0">
           <div className="u-flex u-flex-gap-06 u-items-center">
@@ -56,16 +95,19 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
             </span>
             <div className="u-grid u-grid-gap-015">
               <h1 className="u-m0 u-font-serif">
-                {hasSpecificLocation ? `Top ${locationLabel} News` : "Set Your Local Feed"}
+                {hasSpecificLocation ? `News about ${locationLabel}` : "Set Your Local Feed"}
               </h1>
               <span className="story-meta">
                 {stories.length} stories • {outletStats.length} publishers
               </span>
             </div>
           </div>
-          <Link className="btn" href="/my/manage">
-            {hasSpecificLocation ? "Change location" : "Set location"}
-          </Link>
+          <div className="u-flex u-flex-gap-05 u-items-center">
+            {hasSpecificLocation ? <FollowToggle kind="topic" slug={topicSlug(locationLabel)} label={locationLabel} variant="pill" /> : null}
+            <Link className="btn" href="/my/manage">
+              {hasSpecificLocation ? "Change location" : "Set location"}
+            </Link>
+          </div>
         </div>
         <p className="story-meta u-m0">
           {hasSpecificLocation
@@ -76,6 +118,8 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
 
       <section className="topic-shell u-mt-1 u-pb-2">
         <div className="u-grid u-grid-gap-085">
+          <WeatherWidget />
+
           <section className="panel">
             <div className="section-title u-pt-0">
               <h2 className="u-m0">{hasSpecificLocation ? `Top ${locationLabel} News` : "Top Local News"}</h2>
@@ -102,8 +146,6 @@ export default async function LocalPage({ searchParams }: LocalPageProps) {
         </div>
 
         <aside className="feed-rail sticky-rail">
-          <WeatherWidget />
-
           <LocalPublishersList publishers={outletStats} />
 
           <section className="panel">

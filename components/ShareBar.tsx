@@ -18,6 +18,7 @@ function Icon({ children }: { children: ReactNode }) {
 
 export function ShareBar({ title, url }: Props) {
   const [copied, setCopied] = useState(false);
+  const [status, setStatus] = useState<"" | "embed" | "hidden" | "reported">("");
 
   const links = useMemo(() => {
     const encodedUrl = encodeURIComponent(url);
@@ -36,6 +37,7 @@ export function ShareBar({ title, url }: Props) {
     try {
       await navigator.clipboard.writeText(url);
       setCopied(true);
+      setStatus("");
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
       try {
@@ -48,11 +50,34 @@ export function ShareBar({ title, url }: Props) {
         document.execCommand("copy");
         document.body.removeChild(ta);
         setCopied(true);
+        setStatus("");
         window.setTimeout(() => setCopied(false), 1200);
       } catch {
         setCopied(false);
       }
     }
+  }
+
+  async function copyEmbed() {
+    const safeTitle = title.replace(/"/g, "&quot;");
+    const embed = `<iframe src="${url}" title="${safeTitle}" width="640" height="360" loading="lazy"></iframe>`;
+    try {
+      await navigator.clipboard.writeText(embed);
+      setStatus("embed");
+      window.setTimeout(() => setStatus(""), 1400);
+    } catch {
+      setStatus("");
+    }
+  }
+
+  function markHidden() {
+    setStatus("hidden");
+    window.setTimeout(() => setStatus(""), 1400);
+  }
+
+  function markReported() {
+    setStatus("reported");
+    window.setTimeout(() => setStatus(""), 1400);
   }
 
   const items: Array<{ key: string; href?: string; onClick?: () => void; label: string; icon: React.ReactNode }> = [
@@ -66,6 +91,36 @@ export function ShareBar({ title, url }: Props) {
             fill="currentColor"
             d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1zm4 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2zm0 16H8V7h12v14z"
           />
+        </Icon>
+      ),
+    },
+    {
+      key: "embed",
+      onClick: copyEmbed,
+      label: status === "embed" ? "Embed code copied" : "Copy embed code",
+      icon: (
+        <Icon>
+          <path fill="currentColor" d="M8.6 16.6 3.9 12l4.7-4.6 1.4 1.4L6.8 12l3.2 3.2-1.4 1.4zm6.8 0-1.4-1.4 3.2-3.2-3.2-3.2 1.4-1.4 4.7 4.6-4.7 4.6z" />
+        </Icon>
+      ),
+    },
+    {
+      key: "hide",
+      onClick: markHidden,
+      label: status === "hidden" ? "Story hidden" : "Hide this story",
+      icon: (
+        <Icon>
+          <path fill="currentColor" d="M12 6c-7 0-10 6-10 6s3 6 10 6c1.8 0 3.3-.4 4.6-1.1l1.5 1.5 1.4-1.4L4.4 3.9 3 5.3l2 2C3.4 8.5 2.4 10 2 10.7L1.4 12l.6 1.3C2.7 14.7 5.7 18 12 18c2.2 0 4.2-.4 5.9-1.2l1.6 1.6 1.4-1.4-17-17-1.4 1.4 3 3A12.5 12.5 0 0 1 12 6zm0 2c2.2 0 4 1.8 4 4 0 .6-.1 1.1-.3 1.6l-5.3-5.3c.5-.2 1-.3 1.6-.3zm-4 4c0-.6.1-1.1.3-1.6l5.3 5.3c-.5.2-1 .3-1.6.3-2.2 0-4-1.8-4-4z" />
+        </Icon>
+      ),
+    },
+    {
+      key: "report",
+      onClick: markReported,
+      label: status === "reported" ? "Reported" : "Report this story",
+      icon: (
+        <Icon>
+          <path fill="currentColor" d="M4 3h2v18H4V3zm4 1h11l-2.5 4L19 12H8V4z" />
         </Icon>
       ),
     },

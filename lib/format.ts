@@ -74,6 +74,28 @@ export function prettyDate(value: string) {
   });
 }
 
+export function prettyRelativeDate(value: string, nowTs = Date.now()) {
+  const ts = Date.parse(String(value || ""));
+  if (!Number.isFinite(ts)) return "Unknown";
+  const deltaMs = ts - nowTs;
+  const absMs = Math.abs(deltaMs);
+
+  const units: Array<{ limit: number; unit: Intl.RelativeTimeFormatUnit; ms: number }> = [
+    { limit: 60 * 1000, unit: "second", ms: 1000 },
+    { limit: 60 * 60 * 1000, unit: "minute", ms: 60 * 1000 },
+    { limit: 24 * 60 * 60 * 1000, unit: "hour", ms: 60 * 60 * 1000 },
+    { limit: 7 * 24 * 60 * 60 * 1000, unit: "day", ms: 24 * 60 * 60 * 1000 },
+    { limit: 30 * 24 * 60 * 60 * 1000, unit: "week", ms: 7 * 24 * 60 * 60 * 1000 },
+    { limit: 365 * 24 * 60 * 60 * 1000, unit: "month", ms: 30 * 24 * 60 * 60 * 1000 },
+    { limit: Number.POSITIVE_INFINITY, unit: "year", ms: 365 * 24 * 60 * 60 * 1000 },
+  ];
+
+  const selected = units.find((entry) => absMs < entry.limit) || units[units.length - 1];
+  const valueForUnit = Math.round(deltaMs / selected.ms);
+  const rtf = new Intl.RelativeTimeFormat("en-US", { numeric: "auto" });
+  return rtf.format(valueForUnit, selected.unit);
+}
+
 export function biasLabel(story: Story) {
   if (story.bias.left + story.bias.center + story.bias.right <= 0) {
     return "No bias data";
@@ -195,6 +217,9 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
   if (unwrapped) return sanitizeStoryImageUrl(unwrapped, fallback);
 
   if (value.startsWith("//")) value = `https:${value}`;
+  if (value.startsWith("/images/cache/")) return value;
+  if (value.startsWith("/images/fallbacks/story-fallback-")) return value;
+  if (value === STORY_IMAGE_FALLBACK || value === STORY_IMAGE_FALLBACK_THUMB) return value;
   if (value.startsWith("/")) return fallback;
 
   try {
@@ -205,10 +230,6 @@ export function sanitizeStoryImageUrl(rawUrl?: string, fallback = STORY_IMAGE_FA
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
       return fallback;
     }
-    if (/(\.|^)ground\.news$/i.test(parsed.hostname) && parsed.pathname.toLowerCase().startsWith("/images/")) {
-      return fallback;
-    }
-
     return parsed.toString();
   } catch {
     return fallback;
@@ -246,9 +267,6 @@ function sanitizeAssetUrl(rawUrl?: string): string | undefined {
       .replace(/%5B[^\]]*%5D/gi, "");
     const parsed = new URL(repaired);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined;
-    if (/(\.|^)ground\.news$/i.test(parsed.hostname) && parsed.pathname.toLowerCase().startsWith("/images/")) {
-      return undefined;
-    }
     return parsed.toString();
   } catch {
     return undefined;

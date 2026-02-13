@@ -12,16 +12,20 @@ export function StoryListItem({
   dense?: boolean;
   showSummary?: boolean;
 }) {
+  const isSingleSource = Math.max(story.coverage?.totalSources ?? 0, story.sourceCount ?? 0, story.sources?.length ?? 0) <= 1;
+  const href = `/story/${encodeURIComponent(story.slug)}`;
   return (
-    <article className={`story-list-item ${dense ? "is-dense" : ""}`}>
+    <Link
+      href={href}
+      className={`story-list-item ${dense ? "is-dense" : ""}`}
+      aria-label={`${isSingleSource ? "Read article" : "See the story"}: ${story.title}`}
+    >
       <div className="story-list-item-main">
         <div className="story-meta">
           {story.topic} • {story.location} • Updated {prettyDate(story.updatedAt)} • {sourceCountLabel(story)}
         </div>
         <h3 className="story-list-item-title">
-          <Link href={`/story/${encodeURIComponent(story.slug)}`} className="story-list-item-link">
-            {story.title}
-          </Link>
+          <span className="story-list-item-link">{story.title}</span>
         </h3>
         {showSummary ? <p className="story-list-item-summary">{story.summary}</p> : null}
         <div className="story-list-item-bias" aria-label="Bias coverage">
@@ -36,11 +40,7 @@ export function StoryListItem({
             <span className="bias-meta-right">{story.bias.right}%</span>
           </div>
         </div>
-        <div className="u-mt-05">
-          <Link className="btn btn-external" href={`/story/${encodeURIComponent(story.slug)}`}>
-            See the Story
-          </Link>
-        </div>
+        <div className="story-list-item-cta">{isSingleSource ? "Read Article" : "See the Story"}</div>
       </div>
 
       <StoryImage
@@ -51,6 +51,6 @@ export function StoryListItem({
         height={100}
         unoptimized
       />
-    </article>
+    </Link>
   );
 }

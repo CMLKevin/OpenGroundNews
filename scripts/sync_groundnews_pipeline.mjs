@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import * as cheerio from "cheerio";
 import { chromium } from "playwright-core";
+import { Pool } from "pg";
 import { runGroundNewsScrape } from "./groundnews_scrape_cdp.mjs";
 import { createBrowserSession, stopBrowserSession, requireApiKey } from "./lib/browser_use_cdp.mjs";
 import { persistIngestionRun, persistStoriesToDb } from "./lib/gn/persist_db.mjs";
@@ -27,22 +28,32 @@ const FALLBACK_IMAGE_VARIANTS = [
 const IMAGE_CACHE_DIR = path.join(process.cwd(), "public", "images", "cache");
 const IMAGE_CACHE_MAX_BYTES = 5 * 1024 * 1024;
 const IMAGE_CACHE_TIMEOUT_MS = 15000;
+const STORY_HTTP_FETCH_TIMEOUT_MS = 18000;
+const STORY_IMAGE_REPAIR_CONCURRENCY = 8;
 const LOCK_TIMEOUT_MS = 15000;
 const LOCK_STALE_MS = 120000;
 const LOCK_WAIT_STEP_MS = 80;
 const SOURCE_FETCH_TIMEOUT_MS = 12000;
-const SOURCE_FETCH_CONCURRENCY = 4;
+const DEFAULT_SOURCE_FETCH_CONCURRENCY = 10;
+const DEFAULT_MAX_LINKS_PER_ROUTE = 900;
+const DEFAULT_SCROLL_PASSES = 6;
+const DEFAULT_FRONTPAGE_SCROLL_PASSES = 10;
+const DEFAULT_STORY_WORKERS = 3;
+const DEFAULT_MAX_DISCOVERED_ROUTES = 32;
+const DEFAULT_MAX_TOPIC_ROUTES = 24;
+const DISCOVERY_ROUTE_SEEDS = ["/", "/my", "/local", "/blindspot", "/rating-system", "/my/discover", "/search"];
 
 const TOPIC_ALIAS_RULES = [
   { slug: "us-news", label: "US News", aliases: ["us politics", "u.s. politics", "united states", "washington", "congress", "white house", "american politics"] },
   { slug: "world", label: "World", aliases: ["international", "global", "world news", "foreign affairs", "geopolitics"] },
   { slug: "science", label: "Science", aliases: ["science & technology", "research", "space", "biology", "physics"] },
-  { slug: "technology", label: "Technology", aliases: ["tech", "artificial intelligence", "ai", "cybersecurity", "internet"] },
+  { slug: "technology", label: "Technology", aliases: ["tech", "cybersecurity", "internet", "software"] },
+  { slug: "artificial-intelligence", label: "Artificial Intelligence", aliases: ["artificial intelligence", "ai", "generative ai", "machine learning", "large language model"] },
   { slug: "business", label: "Business", aliases: ["markets", "economy", "finance", "business & markets"] },
   { slug: "health", label: "Health", aliases: ["health & medicine", "medicine", "public health", "healthcare"] },
   { slug: "sports", label: "Sports", aliases: ["sport", "athletics", "football", "basketball", "baseball"] },
   { slug: "climate", label: "Climate", aliases: ["environment", "climate change", "global warming"] },
-  { slug: "entertainment", label: "Entertainment", aliases: ["music", "culture", "movies", "film", "television", "celebrity"] },
+  { slug: "entertainment", label: "Entertainment", aliases: ["music", "culture", "movies", "film", "television", "celebrity", "arts & entertainment"] },
   { slug: "politics", label: "Politics", aliases: ["government", "election", "policy", "law"] },
 ];
 
@@ -104,9 +115,11 @@ const TOPIC_ALIAS_TO_RULE = new Map();
 for (const rule of TOPIC_ALIAS_RULES) {
   TOPIC_ALIAS_TO_RULE.set(rule.slug, rule);
   TOPIC_ALIAS_TO_RULE.set(rule.label.toLowerCase(), rule);
+  TOPIC_ALIAS_TO_RULE.set(slugify(rule.label.replace(/&/g, "and")), rule);
   for (const alias of rule.aliases) {
     TOPIC_ALIAS_TO_RULE.set(String(alias).toLowerCase(), rule);
     TOPIC_ALIAS_TO_RULE.set(slugify(alias), rule);
+    TOPIC_ALIAS_TO_RULE.set(slugify(String(alias).replace(/&/g, "and")), rule);
   }
 }
 
@@ -431,15 +444,44 @@ const OUTLET_REFERENCE_DATA = new Map(
 );
 
 function parseArgs(argv) {
+  const envNumber = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  };
   const opts = {
-    routes: ["/"],
+    routes: DISCOVERY_ROUTE_SEEDS,
     storyLimit: 0,
     out: DEFAULT_OUT,
     articleAuditDir: DEFAULT_ARTICLE_AUDIT_DIR,
     articleAudit: true,
     refreshExisting: 0,
+    repairImagesOnly: false,
+    repairImageLimit: 0,
     sessionStoryBatchSize: 8,
     sessionMaxMs: 11 * 60 * 1000,
+    storyWorkerCount: Math.max(1, Math.round(envNumber(process.env.OGN_PIPELINE_STORY_WORKERS, DEFAULT_STORY_WORKERS))),
+    sourceFetchConcurrency: Math.max(
+      1,
+      Math.round(envNumber(process.env.OGN_PIPELINE_SOURCE_FETCH_CONCURRENCY, DEFAULT_SOURCE_FETCH_CONCURRENCY)),
+    ),
+    maxLinksPerRoute: Math.max(
+      200,
+      Math.round(envNumber(process.env.OGN_PIPELINE_MAX_LINKS_PER_ROUTE, DEFAULT_MAX_LINKS_PER_ROUTE)),
+    ),
+    scrollPasses: Math.max(2, Math.round(envNumber(process.env.OGN_PIPELINE_SCROLL_PASSES, DEFAULT_SCROLL_PASSES))),
+    frontpageScrollPasses: Math.max(
+      4,
+      Math.round(envNumber(process.env.OGN_PIPELINE_FRONTPAGE_SCROLL_PASSES, DEFAULT_FRONTPAGE_SCROLL_PASSES)),
+    ),
+    expandRoutes: process.env.OGN_PIPELINE_ROUTE_EXPANSION !== "0",
+    maxDiscoveredRoutes: Math.max(
+      4,
+      Math.round(envNumber(process.env.OGN_PIPELINE_MAX_DISCOVERED_ROUTES, DEFAULT_MAX_DISCOVERED_ROUTES)),
+    ),
+    maxTopicRoutes: Math.max(
+      0,
+      Math.round(envNumber(process.env.OGN_PIPELINE_MAX_TOPIC_ROUTES, DEFAULT_MAX_TOPIC_ROUTES)),
+    ),
     silent: true,
   };
 
@@ -460,6 +502,20 @@ function parseArgs(argv) {
       i += 1;
     } else if (a === "--frontpage-only") {
       opts.routes = ["/"];
+    } else if (a === "--scroll-passes" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.scrollPasses = Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : opts.scrollPasses;
+      i += 1;
+    } else if (a === "--frontpage-scroll-passes" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.frontpageScrollPasses =
+        Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : opts.frontpageScrollPasses;
+      i += 1;
+    } else if (a === "--max-links-per-route" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.maxLinksPerRoute =
+        Number.isFinite(parsed) && parsed > 0 ? Math.max(50, Math.round(parsed)) : opts.maxLinksPerRoute;
+      i += 1;
     } else if (a === "--article-audit-dir" && argv[i + 1]) {
       opts.articleAuditDir = argv[i + 1];
       i += 1;
@@ -469,6 +525,12 @@ function parseArgs(argv) {
       const parsed = Number(argv[i + 1]);
       opts.refreshExisting = Number.isFinite(parsed) && parsed > 0 ? Math.max(0, Math.round(parsed)) : 0;
       i += 1;
+    } else if (a === "--repair-images-only") {
+      opts.repairImagesOnly = true;
+    } else if (a === "--repair-image-limit" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.repairImageLimit = Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : 0;
+      i += 1;
     } else if (a === "--session-story-batch" && argv[i + 1]) {
       const parsed = Number(argv[i + 1]);
       opts.sessionStoryBatchSize = Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : 8;
@@ -477,6 +539,27 @@ function parseArgs(argv) {
       const minutes = Number(argv[i + 1]);
       opts.sessionMaxMs = Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60 * 1000) : 11 * 60 * 1000;
       i += 1;
+    } else if (a === "--story-workers" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.storyWorkerCount =
+        Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : opts.storyWorkerCount;
+      i += 1;
+    } else if (a === "--source-fetch-concurrency" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.sourceFetchConcurrency =
+        Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : opts.sourceFetchConcurrency;
+      i += 1;
+    } else if (a === "--max-discovered-routes" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.maxDiscoveredRoutes =
+        Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : opts.maxDiscoveredRoutes;
+      i += 1;
+    } else if (a === "--max-topic-routes" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.maxTopicRoutes = Number.isFinite(parsed) && parsed >= 0 ? Math.max(0, Math.round(parsed)) : opts.maxTopicRoutes;
+      i += 1;
+    } else if (a === "--no-route-expansion") {
+      opts.expandRoutes = false;
     } else if (a === "--verbose") {
       opts.silent = false;
     }
@@ -582,6 +665,209 @@ async function writeStoreAtomic(store) {
   await fs.rename(tempPath, STORE_PATH);
 }
 
+async function loadRefreshCandidatesFromDb(limit) {
+  const max = Math.max(1, Math.round(Number(limit) || 0));
+  if (!process.env.DATABASE_URL || max <= 0) return [];
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const sql = `
+      SELECT "canonicalUrl", "slug"
+      FROM "Story"
+      WHERE (
+          LOWER(COALESCE("imageUrl", '')) LIKE '%webmetaimg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
+        )
+      ORDER BY "updatedAt" ASC
+      LIMIT $1
+    `;
+    const result = await pool.query(sql, [max]);
+    return Array.from(
+      new Set(
+        (result.rows || [])
+          .map((row) => {
+            const canonical = normalizeExternalUrl(row?.canonicalUrl);
+            if (canonical && canonical.includes("ground.news/article/")) return canonical;
+            const slug = normalizeText(row?.slug || "");
+            if (!slug) return null;
+            return normalizeExternalUrl(`https://ground.news/article/${slug}`);
+          })
+          .filter(Boolean),
+      ),
+    );
+  } catch {
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
+async function loadPlaceholderStoryRowsFromDb(limit) {
+  const max = Math.max(1, Math.round(Number(limit) || 0));
+  if (!process.env.DATABASE_URL || max <= 0) return [];
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const sql = `
+      SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
+      FROM "Story"
+      WHERE (
+          LOWER(COALESCE("imageUrl", '')) LIKE '%webmetaimg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
+        )
+      ORDER BY "updatedAt" ASC
+      LIMIT $1
+    `;
+    const result = await pool.query(sql, [max]);
+    return (result.rows || []).map((row) => ({
+      id: normalizeText(row?.id || ""),
+      slug: normalizeText(row?.slug || ""),
+      title: normalizeText(row?.title || ""),
+      canonicalUrl: normalizeExternalUrl(row?.canonicalUrl),
+      imageUrl: normalizeText(row?.imageUrl || ""),
+      updatedAt: normalizeText(row?.updatedAt || ""),
+    }));
+  } catch {
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
+async function countPlaceholderStoriesInDb() {
+  if (!process.env.DATABASE_URL) return 0;
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const sql = `
+      SELECT COUNT(*)::int AS count
+      FROM "Story"
+      WHERE (
+          LOWER(COALESCE("imageUrl", '')) LIKE '%webmetaimg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
+        )
+    `;
+    const result = await pool.query(sql);
+    return Number(result.rows?.[0]?.count || 0);
+  } catch {
+    return 0;
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
+async function loadLikelyBrokenImageStoryRowsFromDb(limit) {
+  const max = Math.max(1, Math.round(Number(limit) || 0));
+  if (!process.env.DATABASE_URL || max <= 0) return [];
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const sql = `
+      SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
+      FROM "Story"
+      WHERE (
+        LOWER(COALESCE("imageUrl", '')) LIKE 'https://media.gettyimages.com/%?b=1%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE 'http://media.gettyimages.com/%?b=1%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE 'https://img.youtube.com/%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE 'http://img.youtube.com/%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE '%democratandchronicle.com/gcdn/%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE '/images/cache/%'
+      )
+      ORDER BY "updatedAt" DESC
+      LIMIT $1
+    `;
+    const result = await pool.query(sql, [max]);
+    const mapped = [];
+    for (const row of result.rows || []) {
+      const imageUrl = normalizeText(row?.imageUrl || "");
+      if (imageUrl.startsWith("/images/cache/")) {
+        const localPath = path.join(process.cwd(), "public", imageUrl.replace(/^\/+/, ""));
+        try {
+          const stat = await fs.stat(localPath);
+          // Small/missing cache files are usually icon/skeleton captures, not story art.
+          if (stat.size > 7000) {
+            continue;
+          }
+        } catch {
+          // Missing cache files should be considered broken.
+        }
+      }
+      mapped.push({
+        id: normalizeText(row?.id || ""),
+        slug: normalizeText(row?.slug || ""),
+        title: normalizeText(row?.title || ""),
+        canonicalUrl: normalizeExternalUrl(row?.canonicalUrl),
+        imageUrl,
+        updatedAt: normalizeText(row?.updatedAt || ""),
+      });
+    }
+    return mapped;
+  } catch {
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
+async function loadDuplicateCacheImageStoryRows(limit) {
+  const max = Math.max(1, Math.round(Number(limit) || 0));
+  if (!process.env.DATABASE_URL || max <= 0) return [];
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const result = await pool.query(
+      `SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
+       FROM "Story"
+       WHERE LOWER(COALESCE("imageUrl", '')) LIKE '/images/cache/%'
+       ORDER BY "updatedAt" DESC
+       LIMIT 300`,
+    );
+    const rows = result.rows || [];
+    const hashToRows = new Map();
+    for (const row of rows) {
+      const imageUrl = normalizeText(row?.imageUrl || "");
+      if (!imageUrl.startsWith("/images/cache/")) continue;
+      const localPath = path.join(process.cwd(), "public", imageUrl.replace(/^\/+/, ""));
+      try {
+        const bytes = await fs.readFile(localPath);
+        const digest = crypto.createHash("sha256").update(bytes).digest("hex");
+        const bucket = hashToRows.get(digest) || [];
+        bucket.push({
+          id: normalizeText(row?.id || ""),
+          slug: normalizeText(row?.slug || ""),
+          title: normalizeText(row?.title || ""),
+          canonicalUrl: normalizeExternalUrl(row?.canonicalUrl),
+          imageUrl,
+          updatedAt: normalizeText(row?.updatedAt || ""),
+          byteSize: bytes.length,
+        });
+        hashToRows.set(digest, bucket);
+      } catch {
+        // Missing cache files are handled by the general broken-image loader.
+      }
+    }
+
+    const duplicates = [];
+    for (const bucket of hashToRows.values()) {
+      if ((bucket || []).length < 5) continue;
+      duplicates.push(...bucket);
+    }
+
+    return duplicates
+      .sort((a, b) => +new Date(b.updatedAt || 0) - +new Date(a.updatedAt || 0))
+      .slice(0, max)
+      .map(({ byteSize: _byteSize, ...rest }) => rest);
+  } catch {
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
 function stableId(value, prefix) {
   const hash = crypto.createHash("sha256").update(value).digest("hex").slice(0, 16);
   return `${prefix}-${hash}`;
@@ -639,7 +925,9 @@ function toSlugFromUrl(url, fallbackTitle = "") {
 }
 
 function normalizeText(value) {
-  return (value || "").replace(/\s+/g, " ").trim();
+  return String(value ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function summarizeText(input, fallback = "Summary unavailable.") {
@@ -742,6 +1030,18 @@ function isGroundNewsUrl(url) {
   }
 }
 
+function isPlaceholderStoryImageUrl(value) {
+  const lower = normalizeText(value).toLowerCase();
+  if (!lower) return true;
+  if (lower.includes("webmetaimg")) return true;
+  if (lower.includes("/images/story-fallback.svg")) return true;
+  if (lower.includes("/images/story-fallback-thumb.svg")) return true;
+  if (lower.includes("/images/fallbacks/story-fallback-")) return true;
+  if (lower.includes("ground.news/images/story-fallback")) return true;
+  if (lower.includes("ground.news/images/story-fallback-thumb")) return true;
+  return false;
+}
+
 function sanitizeImageUrl(raw, baseUrl) {
   const value = sanitizeCdnPathArtifacts(normalizeText(raw));
   if (!value) return fallbackImageForSeed(baseUrl || "story");
@@ -773,6 +1073,7 @@ function sanitizeImageUrl(raw, baseUrl) {
   try {
     const parsed = new URL(value, baseUrl);
     if (!/^https?:$/i.test(parsed.protocol)) return fallbackImageForSeed(baseUrl || "story");
+    if (isPlaceholderStoryImageUrl(parsed.toString())) return fallbackImageForSeed(baseUrl || "story");
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
       return fallbackImageForSeed(baseUrl || "story");
     }
@@ -781,15 +1082,390 @@ function sanitizeImageUrl(raw, baseUrl) {
     if (lowerPath.includes("webmetaimg") || (lowerPath.includes("webmeta") && lowerPath.includes("img"))) {
       return fallbackImageForSeed(baseUrl || "story");
     }
-    if (/(\.|^)ground\.news$/i.test(parsed.hostname) && lowerPath.startsWith("/images/")) {
-      return fallbackImageForSeed(baseUrl || "story");
-    }
     const lowerHref = parsed.toString().toLowerCase();
     if (lowerHref.includes("webmetaimg")) return fallbackImageForSeed(baseUrl || "story");
     return parsed.toString();
   } catch {
     return fallbackImageForSeed(baseUrl || "story");
   }
+}
+
+function sanitizePossiblyEscapedUrl(raw) {
+  const value = String(raw || "")
+    .replace(/\\u0026/gi, "&")
+    .replace(/\\u003d/gi, "=")
+    .replace(/\\\//g, "/")
+    .replace(/&amp;/gi, "&")
+    .replace(/\\\\/g, "\\")
+    .replace(/^['"(]+/, "")
+    .replace(/[)"',;\\]+$/, "")
+    .trim();
+  return sanitizeCdnPathArtifacts(value);
+}
+
+function isLikelyDecorativeImageUrl(url) {
+  const lower = normalizeText(url).toLowerCase();
+  if (!lower) return true;
+  if (lower.includes("/assets/flags/")) return true;
+  if (lower.includes("/assets/lettericons/")) return true;
+  if (lower.includes("/assets/topfeededitions/")) return true;
+  if (lower.includes("/interests/")) return true;
+  if (lower.includes("/interest/")) return true;
+  if (lower.includes("/interest-covers/")) return true;
+  if (lower.includes("ground.news/images/cache/")) return true;
+  if (lower.includes("getty-logo")) return true;
+  if (lower.includes("/favicon")) return true;
+  if (lower.includes("/apple-touch-icon")) return true;
+  if (lower.includes("logo-no-outline")) return true;
+  if (lower.includes("/logo.") || lower.includes("/logos/")) return true;
+  return false;
+}
+
+function normalizeExternalImageCandidate(raw, baseUrl) {
+  const candidate = sanitizePossiblyEscapedUrl(raw);
+  if (!candidate) return "";
+  const sanitized = sanitizeImageUrl(candidate, baseUrl);
+  if (!sanitized) return "";
+  if (sanitized.startsWith("/images/")) return "";
+  if (isPlaceholderStoryImageUrl(sanitized)) return "";
+  if (isLikelyDecorativeImageUrl(sanitized)) return "";
+  return sanitized;
+}
+
+function normalizeStoryImageCandidate(raw, baseUrl) {
+  const clean = sanitizePossiblyEscapedUrl(raw);
+  if (!clean) return "";
+  if (clean.startsWith("/images/cache/")) return clean;
+  return normalizeExternalImageCandidate(clean, baseUrl);
+}
+
+function absoluteGroundCacheToLocalPath(raw) {
+  const value = normalizeText(raw);
+  if (!value) return "";
+  if (value.startsWith("/images/cache/")) return value;
+  try {
+    const parsed = new URL(value);
+    const host = parsed.hostname.toLowerCase();
+    if (host !== "ground.news" && host !== "www.ground.news") return "";
+    if (!parsed.pathname.startsWith("/images/cache/")) return "";
+    return parsed.pathname;
+  } catch {
+    return "";
+  }
+}
+
+function scoreImageCandidate(url) {
+  const clean = normalizeText(url).toLowerCase();
+  if (!clean) return Number.NEGATIVE_INFINITY;
+  let score = 0;
+  if (clean.includes("/images/cache/")) score += 80;
+  if (/(\.jpe?g|\.png|\.webp|\.gif)(\?|$)/i.test(clean)) score += 40;
+  if (clean.includes("cdn")) score += 8;
+  if (clean.includes("media.gettyimages.com")) score += 15;
+  if (clean.includes("web-api-cdn.ground.news/api/v04/images/story/")) score += 10;
+  if (clean.includes("thumbnail")) score -= 6;
+  if (clean.includes("hqdefault.jpg")) score -= 8;
+  if (isLikelyDecorativeImageUrl(clean)) score -= 80;
+  return score;
+}
+
+function extractGroundStoryImageCandidatesFromHtml(html, storyUrl) {
+  if (!html) return [];
+  const candidates = [];
+  const pushCandidate = (raw) => {
+    const normalized = normalizeExternalImageCandidate(raw, storyUrl);
+    if (!normalized) return;
+    candidates.push(normalized);
+  };
+
+  try {
+    const $ = cheerio.load(html);
+    pushCandidate($("meta[property='og:image']").attr("content") || "");
+    pushCandidate($("meta[name='twitter:image']").attr("content") || "");
+    pushCandidate($("meta[name='twitter:image:src']").attr("content") || "");
+    $("link[rel='preload'][as='image']").each((_, el) => {
+      pushCandidate($(el).attr("href") || "");
+    });
+    $("img[src]").each((_, el) => {
+      pushCandidate($(el).attr("src") || "");
+      pushCandidate($(el).attr("data-src") || "");
+      pushCandidate($(el).attr("data-original") || "");
+    });
+  } catch {
+    // Ignore HTML parse failures and continue with regex extraction.
+  }
+
+  const plainMatches = html.match(/https?:\/\/[^\s"'<>\\]+/g) || [];
+  for (const match of plainMatches.slice(0, 1200)) pushCandidate(match);
+  const escapedMatches = html.match(/https?:\\\/\\\/[^\s"'<>]+/g) || [];
+  for (const match of escapedMatches.slice(0, 1200)) pushCandidate(match);
+
+  const structured = extractStructuredFromNextFlightHtml(html);
+  for (const source of structured?.sources || []) {
+    pushCandidate(source?.imageUrl || "");
+  }
+
+  const deduped = dedupeOrdered(candidates);
+  return deduped.sort((a, b) => scoreImageCandidate(b) - scoreImageCandidate(a) || a.localeCompare(b));
+}
+
+async function fetchStoryImageCandidatesViaHttp(storyUrl, sourceMetadataCache, sourceFetchConcurrency = DEFAULT_SOURCE_FETCH_CONCURRENCY) {
+  try {
+    const response = await fetch(storyUrl, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(STORY_HTTP_FETCH_TIMEOUT_MS),
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml",
+        referer: "https://ground.news/",
+      },
+    });
+    if (!response.ok) return { status: response.status, candidates: [] };
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("text/html")) return { status: response.status, candidates: [] };
+
+    const html = await response.text();
+    const candidates = extractGroundStoryImageCandidatesFromHtml(html, storyUrl);
+
+    const structured = extractStructuredFromNextFlightHtml(html);
+    const sourceUrls = dedupeOrdered(
+      (structured?.sources || [])
+        .map((source) => normalizeExternalUrl(source?.url))
+        .filter(Boolean),
+    ).slice(0, 20);
+
+    const sourceImages = await mapWithConcurrency(
+      sourceUrls,
+      Math.max(1, Math.min(8, sourceFetchConcurrency || DEFAULT_SOURCE_FETCH_CONCURRENCY)),
+      async (sourceUrl) => {
+        const sourceMeta = await fetchSourceMetadata(sourceUrl, sourceMetadataCache);
+        return normalizeExternalImageCandidate(sourceMeta?.imageUrl || "", sourceUrl);
+      },
+    );
+    return {
+      status: response.status,
+      candidates: dedupeOrdered([...candidates, ...sourceImages.filter(Boolean)]).sort(
+        (a, b) => scoreImageCandidate(b) - scoreImageCandidate(a) || a.localeCompare(b),
+      ),
+    };
+  } catch {
+    return { status: 0, candidates: [] };
+  }
+}
+
+async function isImageUrlReachable(url) {
+  const external = normalizeExternalUrl(url);
+  if (!external) return false;
+  try {
+    const response = await fetch(external, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(Math.min(IMAGE_CACHE_TIMEOUT_MS, 9000)),
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        referer: "https://ground.news/",
+      },
+    });
+    if (!response.ok) return false;
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    return contentType.startsWith("image/");
+  } catch {
+    return false;
+  }
+}
+
+async function normalizeAbsoluteGroundCacheUrlsInDb() {
+  if (!process.env.DATABASE_URL) return 0;
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const rows = await pool.query(
+      `SELECT "id", "imageUrl" FROM "Story" WHERE LOWER(COALESCE("imageUrl", '')) LIKE 'http%://ground.news/images/cache/%' OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://www.ground.news/images/cache/%'`,
+    );
+    let updated = 0;
+    for (const row of rows.rows || []) {
+      const localPath = absoluteGroundCacheToLocalPath(row?.imageUrl || "");
+      if (!localPath) continue;
+      await pool.query(`UPDATE "Story" SET "imageUrl" = $1 WHERE "id" = $2`, [localPath, row.id]);
+      updated += 1;
+    }
+    return updated;
+  } catch {
+    return 0;
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
+async function cachedStoryImageLooksHealthy(localImagePath) {
+  const clean = normalizeText(localImagePath);
+  if (!clean.startsWith("/images/cache/")) return false;
+  const absolute = path.join(process.cwd(), "public", clean.replace(/^\/+/, ""));
+  try {
+    const stat = await fs.stat(absolute);
+    return stat.size > 7000;
+  } catch {
+    return false;
+  }
+}
+
+async function repairPlaceholderStoryImagesViaHttp({
+  limit,
+  silent = true,
+  sourceMetadataCache = new Map(),
+  sourceFetchConcurrency = DEFAULT_SOURCE_FETCH_CONCURRENCY,
+}) {
+  if (!process.env.DATABASE_URL) {
+    return {
+      attempted: 0,
+      repaired: 0,
+      unresolved: 0,
+      failed: 0,
+      pruned: 0,
+      normalizedCacheUrls: 0,
+      remainingPlaceholders: 0,
+    };
+  }
+  const normalizedCacheUrls = await normalizeAbsoluteGroundCacheUrlsInDb();
+  const max = Math.max(1, Math.round(Number(limit) || 0));
+  const placeholderRows = await loadPlaceholderStoryRowsFromDb(max);
+  const brokenRows = await loadLikelyBrokenImageStoryRowsFromDb(max);
+  const duplicateCacheRows = await loadDuplicateCacheImageStoryRows(max);
+  const rowById = new Map();
+  for (const row of [...placeholderRows, ...brokenRows, ...duplicateCacheRows]) {
+    if (!row?.id) continue;
+    if (!rowById.has(row.id)) rowById.set(row.id, row);
+  }
+  const rows = Array.from(rowById.values()).slice(0, max);
+  if (rows.length === 0) {
+    return {
+      attempted: 0,
+      repaired: 0,
+      unresolved: 0,
+      failed: 0,
+      pruned: 0,
+      normalizedCacheUrls,
+      remainingPlaceholders: 0,
+    };
+  }
+
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const updatedStoreBySlug = new Map();
+  const staleStoryIds = [];
+  let repaired = 0;
+  let failed = 0;
+  let unresolved = 0;
+
+  try {
+    await mapWithConcurrency(rows, Math.max(1, STORY_IMAGE_REPAIR_CONCURRENCY), async (row, idx) => {
+      const canonical = normalizeExternalUrl(row.canonicalUrl || "");
+      const storyUrl = canonical || normalizeExternalUrl(`https://ground.news/article/${row.slug}`);
+      if (!storyUrl) {
+        unresolved += 1;
+        return;
+      }
+      if (!silent) {
+        console.log(`[image-repair] ${idx + 1}/${rows.length} ${row.slug || storyUrl}`);
+      }
+
+      try {
+        const httpResult = await fetchStoryImageCandidatesViaHttp(storyUrl, sourceMetadataCache, sourceFetchConcurrency);
+        const candidates = httpResult.candidates || [];
+        if (httpResult.status >= 400 && httpResult.status < 500) {
+          staleStoryIds.push(row.id);
+          unresolved += 1;
+          return;
+        }
+        if (candidates.length === 0) {
+          unresolved += 1;
+          return;
+        }
+
+        let finalImage = "";
+        for (const candidate of candidates) {
+          const cached = await cacheStoryImage(candidate, row.slug || row.id || shortHash(storyUrl, 12));
+          const normalized = normalizeStoryImageCandidate(cached || candidate, storyUrl);
+          if (!normalized) continue;
+          if (normalized.startsWith("/images/cache/")) {
+            if (!(await cachedStoryImageLooksHealthy(normalized))) {
+              continue;
+            }
+            finalImage = normalized;
+            break;
+          }
+          if (await isImageUrlReachable(normalized)) {
+            finalImage = normalized;
+            break;
+          }
+        }
+
+        if (!finalImage) {
+          unresolved += 1;
+          return;
+        }
+
+        await pool.query(
+          `UPDATE "Story" SET "imageUrl" = $1, "lastRefreshedAt" = NOW() WHERE "id" = $2`,
+          [finalImage, row.id],
+        );
+        repaired += 1;
+        if (row.slug) {
+          updatedStoreBySlug.set(row.slug, {
+            imageUrl: finalImage,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      } catch {
+        failed += 1;
+      }
+    });
+  } finally {
+    await pool.end().catch(() => {});
+  }
+
+  let pruned = 0;
+  if (staleStoryIds.length > 0) {
+    const prunePool = new Pool({ connectionString: process.env.DATABASE_URL });
+    try {
+      const uniqueIds = dedupeOrdered(staleStoryIds);
+      if (uniqueIds.length > 0) {
+        await prunePool.query(`DELETE FROM "Story" WHERE "id" = ANY($1::text[])`, [uniqueIds]);
+        pruned = uniqueIds.length;
+      }
+    } catch {
+      // Ignore prune failures; image repair results are still usable.
+    } finally {
+      await prunePool.end().catch(() => {});
+    }
+  }
+
+  if (process.env.OGN_PIPELINE_WRITE_JSON === "1" && updatedStoreBySlug.size > 0) {
+    await withStoreLock(async () => {
+      const store = await readStoreSafe();
+      store.stories = (store.stories || []).map((story) => {
+        const patch = updatedStoreBySlug.get(normalizeText(story?.slug || ""));
+        if (!patch) return story;
+        return {
+          ...story,
+          imageUrl: patch.imageUrl,
+          updatedAt: patch.updatedAt,
+        };
+      });
+      await writeStoreAtomic(store);
+    });
+  }
+
+  const remainingPlaceholders = await countPlaceholderStoriesInDb();
+  return {
+    attempted: rows.length,
+    repaired,
+    unresolved,
+    failed,
+    pruned,
+    normalizedCacheUrls,
+    remainingPlaceholders,
+  };
 }
 
 function sanitizeTag(tag) {
@@ -965,6 +1641,123 @@ function normalizeExternalUrl(value) {
   } catch {
     return null;
   }
+}
+
+function dedupeOrdered(values) {
+  const seen = new Set();
+  const out = [];
+  for (const value of values || []) {
+    const key = String(value || "");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(key);
+  }
+  return out;
+}
+
+function normalizeGroundNewsRoute(value) {
+  const raw = normalizeText(value);
+  if (!raw) return null;
+  try {
+    const parsed = raw.startsWith("/")
+      ? new URL(raw, "https://ground.news")
+      : new URL(raw);
+    const host = parsed.hostname.toLowerCase();
+    if (!(host === "ground.news" || host.endsWith(".ground.news"))) return null;
+    const pathname = sanitizeCdnPathArtifacts(parsed.pathname || "/");
+    if (!pathname.startsWith("/")) return null;
+    if (/\/article\//i.test(pathname)) return null;
+    if (/\/_next\//i.test(pathname)) return null;
+    const query = parsed.search ? parsed.search : "";
+    const route = `${pathname}${query}`.replace(/\/+$/, "");
+    return route || "/";
+  } catch {
+    return null;
+  }
+}
+
+function collectCandidateRoutesFromScrape(scrapeOutput) {
+  const routes = [];
+  for (const routeResult of scrapeOutput?.routes || []) {
+    if (routeResult?.status !== "ok") continue;
+    routes.push(normalizeGroundNewsRoute(routeResult.routeUrl));
+    routes.push(normalizeGroundNewsRoute(routeResult.finalUrl));
+    for (const link of routeResult.topicLinks || []) routes.push(normalizeGroundNewsRoute(link));
+    for (const link of routeResult.sourceLinks || []) routes.push(normalizeGroundNewsRoute(link));
+  }
+  return dedupeOrdered(routes.filter(Boolean));
+}
+
+function collectCandidateRoutesFromHomepage(snapshot) {
+  if (!snapshot || typeof snapshot !== "object") return [];
+  const candidates = [];
+  for (const link of snapshot.topicLinks || []) candidates.push(normalizeGroundNewsRoute(link));
+  for (const link of snapshot.outletLinks || []) candidates.push(normalizeGroundNewsRoute(link));
+  for (const heading of snapshot.topicPills || []) {
+    const normalized = normalizeText(heading);
+    if (!normalized || normalized.length < 2 || normalized.length > 80) continue;
+    const directTopicRule = normalizeTopicRule(normalized);
+    if (directTopicRule?.slug) {
+      candidates.push(`/interest/${directTopicRule.slug}`);
+      continue;
+    }
+    const slug = slugify(normalized.replace(/&/g, "and"));
+    if (slug && slug.length >= 2) candidates.push(`/interest/${slug}`);
+  }
+  return dedupeOrdered(candidates.filter(Boolean));
+}
+
+function deriveExpandedRoutes(baseRoutes, scrapeOutput, homepageSnapshot, options) {
+  const normalizedBase = dedupeOrdered((baseRoutes || []).map((route) => normalizeGroundNewsRoute(route)).filter(Boolean));
+  const topicSeedRoutes = TOPIC_ALIAS_RULES.map((rule) => `/interest/${rule.slug}`);
+  const discovered = dedupeOrdered([
+    ...DISCOVERY_ROUTE_SEEDS,
+    ...topicSeedRoutes,
+    ...collectCandidateRoutesFromScrape(scrapeOutput),
+    ...collectCandidateRoutesFromHomepage(homepageSnapshot),
+  ].map((route) => normalizeGroundNewsRoute(route)).filter(Boolean));
+
+  const baseSet = new Set(normalizedBase);
+  const uniqueDiscovered = discovered.filter((route) => !baseSet.has(route));
+  const scoreRoute = (route) => {
+    if (route === "/") return 110;
+    if (route.startsWith("/interest/")) return 100;
+    if (route.startsWith("/my/discover/source")) return 90;
+    if (route.startsWith("/source/")) return 80;
+    if (route.startsWith("/blindspot")) return 75;
+    if (route.startsWith("/local")) return 70;
+    if (route.startsWith("/my/discover")) return 65;
+    if (route.startsWith("/my")) return 55;
+    if (route.startsWith("/search")) return 45;
+    return 30;
+  };
+
+  const sorted = uniqueDiscovered.sort((a, b) => scoreRoute(b) - scoreRoute(a) || a.localeCompare(b));
+  const maxTopicRoutes = Math.max(0, Number(options.maxTopicRoutes || 0));
+  const topicRoutes = sorted.filter((route) => route.startsWith("/interest/")).slice(0, maxTopicRoutes);
+  const nonTopicRoutes = sorted.filter((route) => !route.startsWith("/interest/"));
+  const merged = dedupeOrdered([...nonTopicRoutes, ...topicRoutes]);
+  const maxDiscoveredRoutes = Math.max(1, Number(options.maxDiscoveredRoutes || DEFAULT_MAX_DISCOVERED_ROUTES));
+  return merged.slice(0, maxDiscoveredRoutes);
+}
+
+function mergeScrapeOutputs(outputs) {
+  const valid = (outputs || []).filter(Boolean);
+  const routeEntries = [];
+  const allStoryLinks = [];
+  for (const output of valid) {
+    for (const route of output.routes || []) routeEntries.push(route);
+    for (const link of output.allStoryLinks || []) allStoryLinks.push(link);
+  }
+  const dedupedStoryLinks = dedupeOrdered(allStoryLinks.map(normalizeExternalUrl).filter(Boolean));
+  return {
+    generatedAt: new Date().toISOString(),
+    mode: "browser_use_remote_cdp:merged",
+    routeCount: routeEntries.length,
+    uniqueStoryLinkCount: dedupedStoryLinks.length,
+    allStoryLinks: dedupedStoryLinks,
+    routes: routeEntries,
+  };
 }
 
 function normalizeAssetUrl(value, baseUrl = "") {
@@ -1986,7 +2779,10 @@ async function collectHomepageSnapshot(page, options, auditState) {
   await clickTopProceedToStory(page);
   await dismissGroundNewsCookies(page);
 
-  for (let i = 0; i < 6; i += 1) {
+  const scrollPasses = Number.isFinite(options.frontpageScrollPasses) && options.frontpageScrollPasses > 0
+    ? Math.max(1, Math.round(options.frontpageScrollPasses))
+    : DEFAULT_FRONTPAGE_SCROLL_PASSES;
+  for (let i = 0; i < scrollPasses; i += 1) {
     await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
     await page.waitForTimeout(700);
     await dismissGroundNewsCookies(page);
@@ -3017,6 +3813,9 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
   const descriptionFallback =
     sanitizeSummaryText(candidate.description || sourceMeta.title || sourceMeta.excerpt || "") ||
     `${outlet} coverage sourced from publisher metadata.`;
+  const candidateImage = normalizeExternalImageCandidate(candidate.imageUrl || "", normalizedUrl);
+  const metaImage = normalizeExternalImageCandidate(sourceMeta.imageUrl || "", normalizedUrl);
+  const sourceImage = candidateImage || metaImage || undefined;
 
   const baseSource = {
     id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
@@ -3024,7 +3823,7 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
     url: normalizedUrl,
     headline: sanitizeSummaryText(sourceMeta.title || ""),
     byline: normalizeText(candidate.byline || ""),
-    imageUrl: sanitizeImageUrl(sourceMeta.imageUrl || "", normalizedUrl),
+    imageUrl: sourceImage,
     language: normalizeText(candidate.language || ""),
     canonicalHash: shortHash(normalizedUrl, 24),
     excerpt,
@@ -3051,7 +3850,15 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
   return applyReferenceToSource(baseSource);
 }
 
-async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, auditState, articleOrdinal) {
+async function enrichStory(
+  page,
+  storyUrl,
+  linkSignals,
+  sourceMetadataCache,
+  auditState,
+  articleOrdinal,
+  sourceFetchConcurrency = DEFAULT_SOURCE_FETCH_CONCURRENCY,
+) {
   const rendered = await extractStoryFromDom(page, storyUrl, auditState, articleOrdinal);
   const renderedHtml = await page.content().catch(() => "");
   const nextData = renderedHtml ? extractNextDataFromHtml(renderedHtml) : null;
@@ -3125,8 +3932,9 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
   }
   const candidates = Array.from(candidateByUrl.values());
 
+  const fetchConcurrency = Math.max(1, Math.round(sourceFetchConcurrency || DEFAULT_SOURCE_FETCH_CONCURRENCY));
   let enrichedSources = (
-    await mapWithConcurrency(candidates, SOURCE_FETCH_CONCURRENCY, (candidate) =>
+    await mapWithConcurrency(candidates, fetchConcurrency, (candidate) =>
       enrichSourceCandidate(slug, candidate, sourceMetadataCache, storyUrl),
     )
   )
@@ -3192,16 +4000,56 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
     location: rendered.location,
   });
 
-  let storyImageCandidate = sanitizeImageUrl(rendered.imageUrl, storyUrl);
-  if (storyImageCandidate.startsWith("/images/")) {
-    for (const source of enrichedSources.slice(0, 4)) {
-      const sourceMeta = await fetchSourceMetadata(source.url, sourceMetadataCache);
-      const sourceImage = sanitizeImageUrl(sourceMeta.imageUrl || "", source.url);
-      if (sourceImage && !sourceImage.startsWith("/images/")) {
-        storyImageCandidate = sourceImage;
-        break;
-      }
+  const seededStoryImage = sanitizeImageUrl(rendered.imageUrl, storyUrl);
+  const imageCandidatePool = [];
+  if (seededStoryImage && !isPlaceholderStoryImageUrl(seededStoryImage) && !seededStoryImage.startsWith("/images/")) {
+    imageCandidatePool.push(seededStoryImage);
+  }
+
+  for (const source of enrichedSources || []) {
+    const fromSource = sanitizeImageUrl(source.imageUrl || "", source.url);
+    if (!fromSource) continue;
+    if (isPlaceholderStoryImageUrl(fromSource)) continue;
+    if (fromSource.startsWith("/images/")) continue;
+    imageCandidatePool.push(fromSource);
+  }
+
+  if (imageCandidatePool.length === 0 || isPlaceholderStoryImageUrl(seededStoryImage) || seededStoryImage.startsWith("/images/")) {
+    const sourceMetaList = await mapWithConcurrency(
+      (enrichedSources || []).slice(0, 20),
+      Math.max(1, Math.min(8, sourceFetchConcurrency || DEFAULT_SOURCE_FETCH_CONCURRENCY)),
+      async (source) => {
+        const sourceMeta = await fetchSourceMetadata(source.url, sourceMetadataCache);
+        const sourceImage = sanitizeImageUrl(sourceMeta.imageUrl || "", source.url);
+        return sourceImage && !isPlaceholderStoryImageUrl(sourceImage) ? sourceImage : "";
+      },
+    );
+    for (const sourceImage of sourceMetaList) {
+      if (!sourceImage) continue;
+      if (sourceImage.startsWith("/images/")) continue;
+      imageCandidatePool.push(sourceImage);
     }
+  }
+
+  if (imageCandidatePool.length === 0 || isPlaceholderStoryImageUrl(seededStoryImage) || seededStoryImage.startsWith("/images/")) {
+    const httpResult = await fetchStoryImageCandidatesViaHttp(storyUrl, sourceMetadataCache, sourceFetchConcurrency);
+    for (const candidate of httpResult.candidates || []) {
+      const normalized = normalizeExternalImageCandidate(candidate, storyUrl);
+      if (!normalized) continue;
+      imageCandidatePool.push(normalized);
+    }
+  }
+
+  let storyImageCandidate = imageCandidatePool.find(Boolean) || seededStoryImage;
+  if (!storyImageCandidate || isPlaceholderStoryImageUrl(storyImageCandidate)) {
+    storyImageCandidate = fallbackImageForSeed(slug);
+  }
+  if (process.env.OGN_IMAGE_DEBUG === "1") {
+    const seededKind = isPlaceholderStoryImageUrl(seededStoryImage) ? "placeholder" : "ok";
+    const selectedKind = isPlaceholderStoryImageUrl(storyImageCandidate) ? "placeholder" : "ok";
+    console.log(
+      `[image-debug] ${slug} seeded=${seededKind} pool=${imageCandidatePool.length} selected=${selectedKind} selectedUrl=${storyImageCandidate}`,
+    );
   }
   const imageUrl = await cacheStoryImage(storyImageCandidate, slug);
 
@@ -3399,16 +4247,107 @@ function normalizeStoryRecordForStore(story) {
   };
 }
 
+function prioritizeStoryLinks({ scrapeLinks, homepageLinks, homepageTopStoryLinks, linkSignals }) {
+  const scoreByLink = new Map();
+  const bump = (links, delta) => {
+    for (const raw of links || []) {
+      const link = normalizeExternalUrl(raw);
+      if (!link) continue;
+      scoreByLink.set(link, (scoreByLink.get(link) || 0) + delta);
+    }
+  };
+
+  bump(scrapeLinks, 20);
+  bump(homepageTopStoryLinks, 55);
+  bump(homepageLinks, 85);
+
+  for (const [link, signals] of linkSignals.entries()) {
+    if (!scoreByLink.has(link)) continue;
+    if (signals.trending) scoreByLink.set(link, scoreByLink.get(link) + 15);
+    if (signals.blindspot) scoreByLink.set(link, scoreByLink.get(link) + 12);
+    if (signals.local) scoreByLink.set(link, scoreByLink.get(link) + 8);
+  }
+
+  return Array.from(scoreByLink.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([link]) => link);
+}
+
+function isRecoverableBrowserError(message) {
+  return /(target page, context or browser has been closed|websocket|session closed|connection closed|page has been closed|browser has been closed|target closed|connection reset|protocol error)/i.test(
+    String(message || ""),
+  );
+}
+
 export async function runGroundNewsIngestion(opts = {}) {
-  requireApiKey();
   const startedAt = new Date().toISOString();
   const options = {
     ...parseArgs([]),
     ...opts,
   };
+  if (!options.repairImagesOnly) {
+    requireApiKey();
+  }
   const limit = Number.isFinite(options.storyLimit) && options.storyLimit > 0 ? options.storyLimit : Infinity;
   const refreshExisting = Number.isFinite(options.refreshExisting) && options.refreshExisting > 0 ? options.refreshExisting : 0;
+  const repairImageLimit =
+    Number.isFinite(options.repairImageLimit) && options.repairImageLimit > 0
+      ? Math.max(1, Math.round(options.repairImageLimit))
+      : 0;
   const effectiveLimit = Number.isFinite(limit) ? limit + refreshExisting : Infinity;
+  if (options.repairImagesOnly) {
+    const imageRepairLimit = repairImageLimit || refreshExisting || (Number.isFinite(limit) ? limit : 150);
+    const imageRepairStats = await repairPlaceholderStoryImagesViaHttp({
+      limit: imageRepairLimit,
+      silent: options.silent,
+      sourceFetchConcurrency:
+        Number.isFinite(options.sourceFetchConcurrency) && options.sourceFetchConcurrency > 0
+          ? Math.round(options.sourceFetchConcurrency)
+          : DEFAULT_SOURCE_FETCH_CONCURRENCY,
+    });
+    await persistIngestionRun({
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      status: "ok",
+      mode: "groundnews-story-image-http-repair",
+      routeCount: 0,
+      uniqueStoryLinks: imageRepairStats.attempted || 0,
+      ingestedStories: imageRepairStats.repaired || 0,
+      errors: {
+        attempted: imageRepairStats.attempted || 0,
+        repaired: imageRepairStats.repaired || 0,
+        unresolved: imageRepairStats.unresolved || 0,
+        failed: imageRepairStats.failed || 0,
+        remainingPlaceholders: imageRepairStats.remainingPlaceholders || 0,
+      },
+    }).catch(() => {});
+
+    return {
+      ok: true,
+      mode: "groundnews-story-image-http-repair",
+      output: options.out,
+      imageRepair: imageRepairStats,
+    };
+  }
+
+  let preRepairStats = null;
+  if (refreshExisting > 0 || repairImageLimit > 0) {
+    const preRepairLimit = repairImageLimit || Math.max(25, Math.min(refreshExisting, 200));
+    preRepairStats = await repairPlaceholderStoryImagesViaHttp({
+      limit: preRepairLimit,
+      silent: options.silent,
+      sourceFetchConcurrency:
+        Number.isFinite(options.sourceFetchConcurrency) && options.sourceFetchConcurrency > 0
+          ? Math.round(options.sourceFetchConcurrency)
+          : DEFAULT_SOURCE_FETCH_CONCURRENCY,
+    });
+    if (!options.silent) {
+      console.log(
+        `pre-repair placeholder images: repaired ${preRepairStats.repaired}/${preRepairStats.attempted}, remaining=${preRepairStats.remainingPlaceholders}`,
+      );
+    }
+  }
+
   const auditState = {
     enabled: Boolean(options.articleAudit),
     dir: resolveAuditDir(options.articleAuditDir),
@@ -3425,21 +4364,31 @@ export async function runGroundNewsIngestion(opts = {}) {
     await fs.mkdir(path.join(auditState.dir, "articles"), { recursive: true });
   }
 
-  const scrape = await runGroundNewsScrape({
-    routes: options.routes,
+  const normalizedBaseRoutes = dedupeOrdered(
+    (Array.isArray(options.routes) ? options.routes : ["/"]).map((route) => normalizeGroundNewsRoute(route)).filter(Boolean),
+  );
+  const scrapeInputRoutes = normalizedBaseRoutes.length > 0 ? normalizedBaseRoutes : ["/"];
+  const initialScrape = await runGroundNewsScrape({
+    routes: scrapeInputRoutes,
     out: options.out,
-    scrollPasses: 4,
-    maxLinksPerRoute: 400,
+    scrollPasses: options.scrollPasses,
+    maxLinksPerRoute: options.maxLinksPerRoute,
     silent: options.silent,
   });
 
-  const linkSignals = computeLinkSignals(scrape);
-  const scrapeLinks = Array.from(new Set(scrape.allStoryLinks.map(normalizeExternalUrl).filter(Boolean)));
-  let links = scrapeLinks.slice(0, effectiveLimit);
+  let scrapeOutput = initialScrape;
+  let linkSignals = new Map();
+  let links = [];
   let homepageSnapshot = null;
 
   const stories = [];
   const sourceMetadataCache = new Map();
+  let sourceFetchConcurrency = Math.max(
+    1,
+    Number.isFinite(options.sourceFetchConcurrency) && options.sourceFetchConcurrency > 0
+      ? Math.round(options.sourceFetchConcurrency)
+      : DEFAULT_SOURCE_FETCH_CONCURRENCY,
+  );
 
   try {
     {
@@ -3460,18 +4409,53 @@ export async function runGroundNewsIngestion(opts = {}) {
       }
     }
 
-    const homepageLinks = Array.from(new Set((homepageSnapshot?.discoveredLinks || []).map(normalizeExternalUrl).filter(Boolean)));
-    const chosenDiscoveryLinks = homepageLinks.length > 0 ? homepageLinks : scrapeLinks;
-    links = chosenDiscoveryLinks.slice(0, effectiveLimit);
-    for (const homeLink of homepageSnapshot?.discoveredLinks || []) {
+    if (options.expandRoutes) {
+      const expandedRoutes = deriveExpandedRoutes(scrapeInputRoutes, initialScrape, homepageSnapshot, options);
+      if (expandedRoutes.length > 0) {
+        if (!options.silent) {
+          console.log(`route expansion: scraping ${expandedRoutes.length} additional route(s)`);
+        }
+        const expandedScrape = await runGroundNewsScrape({
+          routes: expandedRoutes,
+          out: options.out,
+          scrollPasses: options.scrollPasses,
+          maxLinksPerRoute: options.maxLinksPerRoute,
+          silent: options.silent,
+        });
+        scrapeOutput = mergeScrapeOutputs([initialScrape, expandedScrape]);
+      }
+    }
+
+    linkSignals = computeLinkSignals(scrapeOutput);
+    const scrapeLinks = dedupeOrdered((scrapeOutput?.allStoryLinks || []).map(normalizeExternalUrl).filter(Boolean));
+    const homepageLinks = dedupeOrdered((homepageSnapshot?.discoveredLinks || []).map(normalizeExternalUrl).filter(Boolean));
+    const homepageTopStoryLinks = dedupeOrdered(
+      (homepageSnapshot?.topStoryCards || []).map((card) => normalizeExternalUrl(card?.href)).filter(Boolean),
+    );
+
+    for (const homeLink of homepageLinks) {
       const existing = linkSignals.get(homeLink) || { trending: false, blindspot: false, local: false };
       linkSignals.set(homeLink, { ...existing, trending: true });
     }
+    for (const cardLink of homepageTopStoryLinks) {
+      const existing = linkSignals.get(cardLink) || { trending: false, blindspot: false, local: false };
+      linkSignals.set(cardLink, { ...existing, trending: true });
+    }
+
+    const prioritizedLinks = prioritizeStoryLinks({
+      scrapeLinks,
+      homepageLinks,
+      homepageTopStoryLinks,
+      linkSignals,
+    });
+    links = prioritizedLinks.slice(0, effectiveLimit);
 
     if (!options.silent) {
       console.log(`front-page discovered links: ${(homepageSnapshot?.discoveredLinks || []).length}`);
+      console.log(`front-page top cards: ${homepageTopStoryLinks.length}`);
+      console.log(`route-scraped links: ${scrapeLinks.length} (across ${scrapeOutput.routeCount || 0} routes)`);
       if (!homepageLinks.length) {
-        console.log("front-page discovery returned 0 links; falling back to route scrape links");
+        console.log("front-page discovery returned 0 links; using route-scraped article links");
       }
       console.log(`article links selected for enrichment: ${links.length}`);
     }
@@ -3483,13 +4467,13 @@ export async function runGroundNewsIngestion(opts = {}) {
         finishedAt: new Date().toISOString(),
         status: "error",
         mode: "groundnews-frontpage-individual-article-pipeline",
-        routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+        routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
         uniqueStoryLinks: 0,
         ingestedStories: 0,
         errors: {
           reason: "No story links discovered",
-          scrapeUniqueStoryLinkCount: scrape.uniqueStoryLinkCount,
-          scrapeRouteCount: scrape.routeCount,
+          scrapeUniqueStoryLinkCount: scrapeOutput.uniqueStoryLinkCount,
+          scrapeRouteCount: scrapeOutput.routeCount,
         },
       }).catch(() => {});
       throw new Error("Ingestion failed: no story links discovered.");
@@ -3499,97 +4483,160 @@ export async function runGroundNewsIngestion(opts = {}) {
       const store = await readStoreSafe();
       const suspicious = new Set(["Israel-Gaza", "Top Stories"]);
       const refreshTagPattern = new RegExp(process.env.OGN_REFRESH_TAG_FILTER || "valentine|olympics|pam bondi", "i");
-      const refreshCandidates = store.stories
-        .filter((story) => normalizeText(story.canonicalUrl || "").includes("ground.news/article/"))
+      const suspiciousCandidates = store.stories
+        .filter((story) => normalizeText(story.canonicalUrl || "").includes("ground.news/article/") || normalizeText(story.slug || ""))
         .filter((story) => suspicious.has(normalizeText(story.topic)) || (story.tags || []).some((t) => refreshTagPattern.test(String(t))))
         .sort((a, b) => +new Date(a.updatedAt || 0) - +new Date(b.updatedAt || 0))
-        .map((story) => normalizeExternalUrl(story.canonicalUrl))
-        .filter(Boolean)
-        .slice(0, refreshExisting);
+        .map((story) => normalizeExternalUrl(story.canonicalUrl) || normalizeExternalUrl(`https://ground.news/article/${story.slug}`))
+        .filter(Boolean);
+
+      const placeholderCandidatesFromStore = store.stories
+        .filter((story) => normalizeText(story.canonicalUrl || "").includes("ground.news/article/") || normalizeText(story.slug || ""))
+        .filter((story) => isPlaceholderStoryImageUrl(story.imageUrl || ""))
+        .sort((a, b) => +new Date(a.updatedAt || 0) - +new Date(b.updatedAt || 0))
+        .map((story) => normalizeExternalUrl(story.canonicalUrl) || normalizeExternalUrl(`https://ground.news/article/${story.slug}`))
+        .filter(Boolean);
+
+      const placeholderCandidatesFromDb = await loadRefreshCandidatesFromDb(refreshExisting * 2);
+      const refreshCandidates = dedupeOrdered([
+        ...placeholderCandidatesFromDb,
+        ...placeholderCandidatesFromStore,
+        ...suspiciousCandidates,
+      ]).slice(0, refreshExisting);
 
       if (refreshCandidates.length > 0) {
         const mergedLinks = Array.from(new Set([...links, ...refreshCandidates]));
         links = mergedLinks.slice(0, effectiveLimit);
         if (!options.silent) {
-          console.log(`refreshing ${refreshCandidates.length} existing story page(s) with suspicious topic/tags`);
+          console.log(`refreshing ${refreshCandidates.length} existing story page(s) (placeholder images + suspicious topic/tags)`);
         }
       }
     }
 
-    let articleIndex = 0;
-    let batchNumber = 0;
+    const workerCount = Math.max(
+      1,
+      Math.min(
+        links.length || 1,
+        Number.isFinite(options.storyWorkerCount) && options.storyWorkerCount > 0
+          ? Math.round(options.storyWorkerCount)
+          : DEFAULT_STORY_WORKERS,
+      ),
+    );
+    sourceFetchConcurrency = Math.max(
+      1,
+      Number.isFinite(options.sourceFetchConcurrency) && options.sourceFetchConcurrency > 0
+        ? Math.round(options.sourceFetchConcurrency)
+        : DEFAULT_SOURCE_FETCH_CONCURRENCY,
+    );
+    const workQueue = links.map((link, ordinal) => ({ link, ordinal }));
+    const retryQueue = [];
+    let queueIndex = 0;
     const recoverableRetries = new Map();
-    while (articleIndex < links.length) {
-      batchNumber += 1;
-      const batchStartedAt = Date.now();
-      let batchBrowser = null;
-      let batchSessionId = null;
-      let processedInBatch = 0;
-      let restartBatch = false;
+    let completedCount = 0;
+    let failedCount = 0;
+
+    const claimJob = () => {
+      if (retryQueue.length > 0) return retryQueue.shift();
+      if (queueIndex >= workQueue.length) return null;
+      const job = workQueue[queueIndex];
+      queueIndex += 1;
+      return job;
+    };
+
+    async function runStoryWorker(workerId) {
+      let sessionId = null;
+      let browser = null;
+      let page = null;
+      let sessionStartedAt = 0;
+      let processedInSession = 0;
+      let sessionCounter = 0;
+
+      async function closeSession() {
+        if (browser) await browser.close().catch(() => {});
+        if (sessionId) await stopBrowserSession(sessionId);
+        sessionId = null;
+        browser = null;
+        page = null;
+        sessionStartedAt = 0;
+        processedInSession = 0;
+      }
+
+      async function ensureSession() {
+        const shouldRotate =
+          page &&
+          (processedInSession >= options.sessionStoryBatchSize || Date.now() - sessionStartedAt >= options.sessionMaxMs);
+        if (shouldRotate) {
+          await closeSession();
+        }
+        if (page) return;
+        sessionCounter += 1;
+        const session = await createBrowserSession(
+          {},
+          { rotationKey: `groundnews:frontpage-enrich:worker:${workerId}:session:${sessionCounter}` },
+        );
+        sessionId = session.id;
+        if (!session.cdpUrl) throw new Error("Browser Use did not return cdpUrl for article enrichment.");
+        browser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 60000 });
+        const context = browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1440, height: 900 } }));
+        page = await context.newPage();
+        sessionStartedAt = Date.now();
+      }
 
       try {
-        const session = await createBrowserSession({}, { rotationKey: `groundnews:frontpage-enrich:batch:${batchNumber}` });
-        batchSessionId = session.id;
-        if (!session.cdpUrl) throw new Error("Browser Use did not return cdpUrl for article enrichment.");
-        batchBrowser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 60000 });
-        const context = batchBrowser.contexts()[0] ?? (await batchBrowser.newContext({ viewport: { width: 1440, height: 900 } }));
-        const page = await context.newPage();
-
-        while (articleIndex < links.length) {
-          if (processedInBatch >= options.sessionStoryBatchSize) break;
-          if (Date.now() - batchStartedAt >= options.sessionMaxMs) break;
-
-          const link = links[articleIndex];
+        while (true) {
+          const job = claimJob();
+          if (!job) break;
+          const { link, ordinal } = job;
+          await ensureSession();
           if (!options.silent) {
-            console.log(`[batch ${batchNumber}] article ${articleIndex + 1}/${links.length}: ${link}`);
+            console.log(`[worker ${workerId}] article ${completedCount + 1}/${links.length}: ${link}`);
           }
           try {
-            const story = await enrichStory(page, link, linkSignals, sourceMetadataCache, auditState, articleIndex);
+            const story = await enrichStory(
+              page,
+              link,
+              linkSignals,
+              sourceMetadataCache,
+              auditState,
+              ordinal,
+              sourceFetchConcurrency,
+            );
             stories.push(story);
-            articleIndex += 1;
-            processedInBatch += 1;
+            processedInSession += 1;
+            completedCount += 1;
           } catch (error) {
             const message = error instanceof Error ? error.message : "unknown";
-            const recoverable = /(target page, context or browser has been closed|websocket|session closed|connection closed|page has been closed|browser has been closed)/i.test(
-              message,
-            );
-            if (recoverable) {
+            if (isRecoverableBrowserError(message)) {
               const attempts = (recoverableRetries.get(link) || 0) + 1;
               recoverableRetries.set(link, attempts);
-              if (attempts >= 3) {
+              await closeSession();
+              if (attempts < 3) {
                 if (!options.silent) {
-                  console.error(`failed to enrich ${link}: ${message} (giving up after ${attempts} attempts)`);
+                  console.warn(
+                    `[worker ${workerId}] transient browser failure on ${link}; retrying in a fresh session (attempt ${attempts}/3)`,
+                  );
                 }
-                articleIndex += 1;
-                processedInBatch += 1;
-              } else {
-                if (!options.silent) {
-                  console.warn(`transient browser failure on ${link}; restarting session and retrying (attempt ${attempts}/3)`);
-                }
-                restartBatch = true;
-                break;
+                retryQueue.push(job);
+                continue;
               }
-              continue;
+              if (!options.silent) {
+                console.error(`[worker ${workerId}] failed to enrich ${link}: ${message} (giving up after ${attempts} attempts)`);
+              }
+            } else if (!options.silent) {
+              console.error(`[worker ${workerId}] failed to enrich ${link}: ${message}`);
             }
-            if (!options.silent) {
-              console.error(`failed to enrich ${link}: ${message}`);
-            }
-            articleIndex += 1;
-            processedInBatch += 1;
+            failedCount += 1;
+            completedCount += 1;
           }
         }
       } finally {
-        if (batchBrowser) await batchBrowser.close().catch(() => {});
-        await stopBrowserSession(batchSessionId);
+        await closeSession();
       }
+    }
 
-      if (!options.silent) {
-        const elapsedSec = Math.round((Date.now() - batchStartedAt) / 1000);
-        console.log(`[batch ${batchNumber}] processed ${processedInBatch} articles in ${elapsedSec}s`);
-        if (restartBatch) {
-          console.log(`[batch ${batchNumber}] restarting early after transient browser/session closure`);
-        }
-      }
+    await Promise.all(Array.from({ length: workerCount }, (_, idx) => runStoryWorker(idx + 1)));
+    if (!options.silent) {
+      console.log(`story enrichment finished: ${stories.length} stories captured, ${failedCount} failed links`);
     }
   } finally {
     if (auditState.enabled) {
@@ -3612,7 +4659,7 @@ export async function runGroundNewsIngestion(opts = {}) {
         lastRunAt: new Date().toISOString(),
         lastMode: "groundnews-frontpage-individual-article-pipeline",
         storyCount: store.stories.length,
-        routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+        routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
         notes: `Synced ${stories.length} stories from ${links.length} article link(s) (refreshExisting=${refreshExisting})`,
       };
       await writeStoreAtomic(store);
@@ -3629,12 +4676,19 @@ export async function runGroundNewsIngestion(opts = {}) {
     finishedAt: new Date().toISOString(),
     status: "ok",
     mode: "groundnews-frontpage-individual-article-pipeline",
-    routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+    routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
     uniqueStoryLinks: links.length,
     ingestedStories: stories.length,
     errors: {
       homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
+      scrapeUniqueStoryLinkCount: scrapeOutput.uniqueStoryLinkCount || 0,
+      scrapeRouteCount: scrapeOutput.routeCount || 0,
+      sourceFetchConcurrency,
+      storyWorkers: options.storyWorkerCount,
       auditEnabled: Boolean(auditState.enabled),
+      imagePreRepairAttempted: preRepairStats?.attempted || 0,
+      imagePreRepairRepaired: preRepairStats?.repaired || 0,
+      imagePreRepairRemaining: preRepairStats?.remainingPlaceholders || 0,
     },
   }).catch(() => {});
 
@@ -3643,10 +4697,11 @@ export async function runGroundNewsIngestion(opts = {}) {
     ingestedStories: stories.length,
     scrapedLinks: links.length,
     totalStories: normalizedStories.length,
-    routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+    routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
     homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
     output: options.out,
     articleAuditDir: auditState.enabled ? auditState.dir : null,
+    imagePreRepair: preRepairStats,
   };
 }
 

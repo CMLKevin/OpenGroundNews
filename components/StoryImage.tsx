@@ -19,23 +19,29 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
     return pickStoryFallbackImage(String(alt || "story"), { kind });
   }, [fallbackSrc, rest.width, rest.height, alt]);
 
-  const normalizedSrc = useMemo(() => {
+  const { normalizedSrc, directExternalSrc } = useMemo(() => {
     const clean = (src || "").trim();
-    if (!clean || clean === STORY_IMAGE_FALLBACK) return derivedFallback;
+    if (!clean || clean === STORY_IMAGE_FALLBACK) {
+      return { normalizedSrc: derivedFallback, directExternalSrc: "" };
+    }
     const lower = clean.toLowerCase();
     // Ground News "webMetaImg" endpoints bake bias bars into the image; treat as unusable to avoid
     // duplicating our own bias bars and to fix rounding artifacts in the UI.
-    if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) return derivedFallback;
-    // Never render Ground News-hosted placeholder assets directly; they frequently 403 or show GN branding.
-    if (lower.includes("ground.news/images/")) return derivedFallback;
-    if (/^https?:\/\//i.test(clean)) return buildImageProxyUrl(clean);
-    return clean;
+    if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) {
+      return { normalizedSrc: derivedFallback, directExternalSrc: "" };
+    }
+    if (/^https?:\/\//i.test(clean)) {
+      return { normalizedSrc: buildImageProxyUrl(clean), directExternalSrc: clean };
+    }
+    return { normalizedSrc: clean, directExternalSrc: "" };
   }, [src, derivedFallback]);
   const [activeSrc, setActiveSrc] = useState(normalizedSrc);
+  const [triedDirectExternal, setTriedDirectExternal] = useState(false);
 
   useEffect(() => {
     setActiveSrc(normalizedSrc);
-  }, [normalizedSrc]);
+    setTriedDirectExternal(false);
+  }, [normalizedSrc, directExternalSrc]);
 
   return (
     <Image
@@ -43,6 +49,11 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
       src={activeSrc}
       alt={alt}
       onError={() => {
+        if (!triedDirectExternal && directExternalSrc && activeSrc !== directExternalSrc) {
+          setActiveSrc(directExternalSrc);
+          setTriedDirectExternal(true);
+          return;
+        }
         if (activeSrc !== derivedFallback) setActiveSrc(derivedFallback);
       }}
     />

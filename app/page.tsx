@@ -11,6 +11,10 @@ import { TopNewsStories } from "@/components/TopNewsStories";
 import { BlindspotWidget } from "@/components/BlindspotWidget";
 import { StoryCard } from "@/components/StoryCard";
 import { outletSlug, topicSlug } from "@/lib/lookup";
+import { db } from "@/lib/db";
+import { topicDisplayName } from "@/lib/topics";
+import { FollowToggle } from "@/components/FollowToggle";
+import { NewsletterSignup } from "@/components/NewsletterSignup";
 
 type HomeProps = {
   searchParams: Promise<{ q?: string; edition?: string; view?: string; bias?: string; tag?: string; page?: string }>;
@@ -27,6 +31,15 @@ export default async function HomePage({ searchParams }: HomeProps) {
     listStories({ view: "all", limit: 500, edition: edition?.trim() || undefined }),
     getCurrentUser(),
   ]);
+  const followedTopics = currentUser
+    ? await db.follow
+        .findMany({
+          where: { userId: currentUser.id, kind: "topic" },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        })
+        .catch(() => [])
+    : [];
   const isAdmin = currentUser?.role === "admin";
 
   const query = (q ?? "").trim().toLowerCase();
@@ -95,6 +108,41 @@ export default async function HomePage({ searchParams }: HomeProps) {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
     .slice(0, 6);
 
+  const storiesByTopic = tagged.reduce((acc, story) => {
+    const primary = topicSlug(story.topic);
+    if (!acc.has(primary)) acc.set(primary, { slug: primary, label: topicDisplayName(story.topic), stories: [] as typeof tagged });
+    const primaryBucket = acc.get(primary)!;
+    if (!primaryBucket.stories.some((s) => s.slug === story.slug)) primaryBucket.stories.push(story);
+
+    for (const tagValue of story.tags || []) {
+      const slug = topicSlug(tagValue);
+      if (!slug || slug === primary) continue;
+      if (!acc.has(slug)) acc.set(slug, { slug, label: topicDisplayName(tagValue), stories: [] as typeof tagged });
+      const bucket = acc.get(slug)!;
+      if (!bucket.stories.some((s) => s.slug === story.slug)) bucket.stories.push(story);
+    }
+    return acc;
+  }, new Map<string, { slug: string; label: string; stories: typeof tagged }>());
+
+  const prioritizedTopics = followedTopics.map((f) => String(f.slug || "").toLowerCase()).filter(Boolean);
+  const selectedTopicSlugs = [
+    ...prioritizedTopics,
+    ...Array.from(storiesByTopic.values())
+      .sort((a, b) => b.stories.length - a.stories.length || a.label.localeCompare(b.label))
+      .map((item) => item.slug),
+  ]
+    .filter((slug, idx, arr) => arr.indexOf(slug) === idx)
+    .slice(0, 5);
+  const topicSections = selectedTopicSlugs
+    .map((slug) => storiesByTopic.get(slug))
+    .filter(Boolean)
+    .map((item) => ({
+      slug: item!.slug,
+      label: item!.label,
+      stories: item!.stories.slice(0, 6),
+    }))
+    .filter((item) => item.stories.length >= 2);
+
   const paramsForPage = (nextPage: number) => {
     const params = new URLSearchParams();
     if (q?.trim()) params.set("q", q.trim());
@@ -110,6 +158,15 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
   return (
     <main className="container">
+      <section className="panel home-promo-banner u-mt-1">
+        <div className="section-title u-pt-0">
+          <h2 className="u-m0">See every side of every news story</h2>
+          <Link className="btn" href="/get-started">
+            Get Started
+          </Link>
+        </div>
+      </section>
+
       <section className="home-hero-grid">
         <div className="home-hero-left">
           <DailyBriefingList stories={topStories} />
@@ -142,8 +199,54 @@ export default async function HomePage({ searchParams }: HomeProps) {
           <MyNewsBiasWidget />
           <DailyLocalNewsWidget />
           <BlindspotWidget stories={blindspotStories} />
+          <section className="panel">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Blindspot Report</h2>
+              <span className="story-meta">Weekly newsletter</span>
+            </div>
+            <NewsletterSignup list="blindspot" />
+          </section>
+          <section className="panel">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Similar News Topics</h2>
+            </div>
+            <ul className="topic-list">
+              {exploreTopics.slice(0, 8).map((topic) => (
+                <li className="topic-item" key={`side-topic-${topic.key}`}>
+                  <span className="topic-avatar">{topic.label.slice(0, 1).toUpperCase()}</span>
+                  <Link href={`/interest/${encodeURIComponent(topic.key)}`} className="u-no-underline">
+                    {topicDisplayName(topic.label)}
+                  </Link>
+                  <FollowToggle kind="topic" slug={topic.key} label={topic.label} />
+                </li>
+              ))}
+            </ul>
+          </section>
+          <Link className="btn btn-external" href="/blindspot">
+            View Blindspot Feed
+          </Link>
         </aside>
       </section>
+
+      {topicSections.length > 0 ? (
+        <section className="u-grid u-grid-gap-085 u-mb-1">
+          {topicSections.map((section) => (
+            <section className="panel" key={`topic-section-${section.slug}`}>
+              <div className="section-title u-pt-0">
+                <h2 className="u-m0">{section.label} News</h2>
+                <Link className="story-meta" href={`/interest/${encodeURIComponent(section.slug)}`}>
+                  See all
+                </Link>
+              </div>
+              <div className="grid">
+                {section.stories.slice(0, 4).map((story) => (
+                  <StoryCard key={`topic-section-story-${story.slug}`} story={story} />
+                ))}
+              </div>
+            </section>
+          ))}
+        </section>
+      ) : null}
 
       {query ? (
         <p className="note u-mb-1">

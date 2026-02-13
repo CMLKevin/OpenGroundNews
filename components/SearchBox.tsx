@@ -3,14 +3,42 @@
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
+import { FollowToggle } from "@/components/FollowToggle";
 
 type SuggestResponse = {
   ok: boolean;
   q: string;
-  stories: Array<{ slug: string; title: string; topic: string; location: string }>;
+  stories: Array<{
+    slug: string;
+    title: string;
+    topic: string;
+    location: string;
+    imageUrl?: string;
+    sourceCount?: number;
+    updatedAt?: string;
+  }>;
   topics: Array<{ slug: string; label: string; count: number }>;
-  outlets: Array<{ slug: string; label: string }>;
+  outlets: Array<{ slug: string; label: string; logoUrl?: string | null }>;
 };
+
+function highlightQuery(text: string, query: string) {
+  const value = String(text || "");
+  const needle = String(query || "").trim();
+  if (!needle) return value;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(${escaped})`, "ig");
+  const chunks = value.split(re);
+  const needleLower = needle.toLowerCase();
+  return chunks.map((chunk, idx) =>
+    chunk.toLowerCase() === needleLower ? (
+      <mark className="search-highlight" key={`hl-${idx}`}>
+        {chunk}
+      </mark>
+    ) : (
+      <span key={`tx-${idx}`}>{chunk}</span>
+    ),
+  );
+}
 
 export function SearchBox({
   initialQuery,
@@ -130,16 +158,20 @@ export function SearchBox({
               <div className="story-meta u-mb-035">
                 Topics
               </div>
-              <div className="chip-row">
+              <div className="suggest-rich-list">
                 {suggest.topics.map((t) => (
-                  <Link
-                    key={t.slug}
-                    className="pill"
-                    href={`/interest/${encodeURIComponent(t.slug)}`}
-                    onClick={() => setOpen(false)}
-                  >
-                    {t.label} ({t.count})
-                  </Link>
+                  <div key={t.slug} className="suggest-rich-item">
+                    <Link
+                      className="suggest-rich-main"
+                      href={`/interest/${encodeURIComponent(t.slug)}`}
+                      onClick={() => setOpen(false)}
+                    >
+                      <span className="topic-avatar">{t.label.slice(0, 1).toUpperCase()}</span>
+                      <span>{t.label}</span>
+                      <span className="story-meta">{t.count.toLocaleString()} stories</span>
+                    </Link>
+                    <FollowToggle kind="topic" slug={t.slug} label={t.label} />
+                  </div>
                 ))}
               </div>
             </div>
@@ -150,16 +182,21 @@ export function SearchBox({
               <div className="story-meta u-mb-035">
                 Sources
               </div>
-              <div className="chip-row">
+              <div className="suggest-rich-list">
                 {suggest.outlets.map((o) => (
-                  <Link
-                    key={o.slug}
-                    className="pill"
-                    href={`/source/${encodeURIComponent(o.slug)}`}
-                    onClick={() => setOpen(false)}
-                  >
-                    {o.label}
-                  </Link>
+                  <div key={o.slug} className="suggest-rich-item">
+                    <Link
+                      className="suggest-rich-main"
+                      href={`/source/${encodeURIComponent(o.slug)}`}
+                      onClick={() => setOpen(false)}
+                    >
+                      <span className="topic-avatar">
+                        {o.logoUrl ? <img src={String(o.logoUrl)} alt={o.label} className="u-avatar-24" /> : o.label.slice(0, 1).toUpperCase()}
+                      </span>
+                      <span>{o.label}</span>
+                    </Link>
+                    <FollowToggle kind="outlet" slug={o.slug} label={o.label} />
+                  </div>
                 ))}
               </div>
             </div>
@@ -178,9 +215,13 @@ export function SearchBox({
                     href={`/story/${encodeURIComponent(s.slug)}`}
                     onClick={() => setOpen(false)}
                   >
-                    <span className="suggest-item-main">{s.title}</span>
+                    <span className="suggest-item-main">
+                      {s.imageUrl ? <img src={s.imageUrl} alt={s.title} className="suggest-story-thumb" /> : null}
+                      <span>{highlightQuery(s.title, q)}</span>
+                    </span>
                     <span className="suggest-item-sub">
                       {s.topic} • {s.location}
+                      {typeof s.sourceCount === "number" ? ` • ${s.sourceCount} sources` : ""}
                     </span>
                   </Link>
                 ))}

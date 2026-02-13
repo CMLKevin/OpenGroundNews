@@ -111,7 +111,7 @@ model UserPrefs {
   localLabel String?
   localLat   Float?
   localLon   Float?
-  theme      ThemePreference @default(dark)
+  theme      ThemePreference @default(light)
   notifyDailyBriefing Boolean @default(false)
   notifyBlindspot     Boolean @default(false)
   notifyFollowed      Boolean @default(false)

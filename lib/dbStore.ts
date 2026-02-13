@@ -13,6 +13,10 @@ type CacheEntry<T> = {
 
 const storeCache = new Map<string, CacheEntry<any>>();
 
+function normalizeText(value: string) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
 function cacheGet<T>(key: string): T | null {
   const item = storeCache.get(key);
   if (!item) return null;
@@ -299,7 +303,19 @@ export async function listStoriesByTopicSlug(slug: string, params?: { limit?: nu
       return inferTopicSlugFromText(text, story.topic) === needle;
     });
   }
-  return filtered.slice(0, params?.limit ?? 2000);
+  const deduped = Array.from(
+    filtered.reduce((acc, story) => {
+      const canonical = normalizeText(story.canonicalUrl || "").toLowerCase();
+      const title = normalizeText(story.title || "").toLowerCase();
+      const key = canonical || `${story.slug}|${title}`;
+      const prev = acc.get(key);
+      if (!prev || +new Date(story.updatedAt) > +new Date(prev.updatedAt)) {
+        acc.set(key, story);
+      }
+      return acc;
+    }, new Map<string, Story>()).values(),
+  );
+  return deduped.slice(0, params?.limit ?? 2000);
 }
 
 export async function listStoriesByOutletSlug(slug: string, params?: { limit?: number; edition?: string }): Promise<Story[]> {

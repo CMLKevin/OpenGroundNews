@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { compactHost, prettyDate } from "@/lib/format";
+import { compactHost, prettyDate, prettyRelativeDate } from "@/lib/format";
 import { SourceArticle } from "@/lib/types";
 import { outletSlug } from "@/lib/lookup";
 import { FollowToggle } from "@/components/FollowToggle";
@@ -234,16 +234,16 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
                       </Link>
                     </strong>
                     <span className="story-meta">
-                      {src.publishedAt ? `${prettyDate(src.publishedAt)} • ` : ""}
+                      {src.publishedAt ? `${prettyRelativeDate(src.publishedAt)} (${prettyDate(src.publishedAt)}) • ` : ""}
                       {src.locality ?? "Locality unavailable"}
                     </span>
                   </div>
                 </div>
                 <div className="chip-row source-chip-row u-items-center">
                   <span className={`chip ${biasToneClass(src.biasRating || src.bias)}`}>
-                    {src.bias === "unknown" ? "Unclassified" : (src.biasRating || src.bias)}
+                    {src.bias === "unknown" ? "Unclassified" : String(src.biasRating || src.bias).replace(/-/g, " ")}
                   </span>
-                  <span className="chip">{src.factuality === "unknown" ? "Not rated" : src.factuality}</span>
+                  <span className="chip">{src.factuality === "unknown" ? "Not rated" : String(src.factuality).replace(/-/g, " ")}</span>
                   <FollowToggle kind="outlet" slug={outletSlug(src.outlet)} label={src.outlet} />
                 </div>
               </div>
@@ -253,6 +253,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
               <p className="story-summary source-excerpt">{src.excerpt}</p>
               <div className="story-meta">
                 Ownership: {normalizeOwnership(src.ownership)} • Paywall: {src.paywall ?? "unknown"}
+                {typeof src.repostedBy === "number" && src.repostedBy > 0 ? ` • Reposted by ${src.repostedBy} other sources` : ""}
               </div>
               <div className="u-flex u-flex-gap-05 u-wrap">
                 <Link className="btn" href={href}>

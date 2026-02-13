@@ -5,17 +5,46 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LogoLockup } from "@/components/LogoLockup";
 import { DEFAULT_EDITION, EDITIONS } from "@/lib/constants";
+import { FollowToggle } from "@/components/FollowToggle";
 
 const EDITION_KEY = "ogn_edition";
 const THEME_KEY = "ogn_theme";
+const EDITION_COOKIE_KEY = "ogn_edition";
 
 type SuggestResponse = {
   ok: boolean;
   q: string;
-  stories: Array<{ slug: string; title: string; topic: string; location: string }>;
+  stories: Array<{
+    slug: string;
+    title: string;
+    topic: string;
+    location: string;
+    imageUrl?: string;
+    sourceCount?: number;
+    updatedAt?: string;
+  }>;
   topics: Array<{ slug: string; label: string; count: number }>;
-  outlets: Array<{ slug: string; label: string }>;
+  outlets: Array<{ slug: string; label: string; logoUrl?: string | null }>;
 };
+
+function highlightQuery(text: string, query: string) {
+  const value = String(text || "");
+  const needle = String(query || "").trim();
+  if (!needle) return value;
+  const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(`(${escaped})`, "ig");
+  const chunks = value.split(re);
+  const needleLower = needle.toLowerCase();
+  return chunks.map((chunk, idx) =>
+    chunk.toLowerCase() === needleLower ? (
+      <mark className="search-highlight" key={`hl-${idx}`}>
+        {chunk}
+      </mark>
+    ) : (
+      <span key={`tx-${idx}`}>{chunk}</span>
+    ),
+  );
+}
 
 function initials(email: string) {
   const handle = (email || "").split("@")[0] || "?";
@@ -24,7 +53,7 @@ function initials(email: string) {
 
 export function TopNavClient() {
   const [edition, setEdition] = useState(DEFAULT_EDITION);
-  const [theme, setTheme] = useState<"dark" | "light" | "auto">("dark");
+  const [theme, setTheme] = useState<"dark" | "light" | "auto">("light");
   const [user, setUser] = useState<null | { id: string; email: string; role: "user" | "admin" }>(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
@@ -44,11 +73,13 @@ export function TopNavClient() {
     if (fromQuery && EDITIONS.includes(fromQuery as (typeof EDITIONS)[number])) {
       setEdition(fromQuery);
       window.localStorage.setItem(EDITION_KEY, fromQuery);
+      document.cookie = `${EDITION_COOKIE_KEY}=${encodeURIComponent(fromQuery)}; Path=/; Max-Age=31536000; SameSite=Lax`;
       return;
     }
     const saved = window.localStorage.getItem(EDITION_KEY);
     if (saved && EDITIONS.includes(saved as (typeof EDITIONS)[number])) {
       setEdition(saved);
+      document.cookie = `${EDITION_COOKIE_KEY}=${encodeURIComponent(saved)}; Path=/; Max-Age=31536000; SameSite=Lax`;
     }
   }, [searchParams]);
 
@@ -60,7 +91,7 @@ export function TopNavClient() {
       const saved = window.localStorage.getItem(THEME_KEY) as any;
       const fromLocal = saved === "light" || saved === "dark" || saved === "auto" ? saved : "";
 
-      const next = (fromCookie || fromLocal || "dark") as "light" | "dark" | "auto";
+      const next = (fromCookie || fromLocal || "light") as "light" | "dark" | "auto";
       setTheme(next);
       document.documentElement.dataset.theme = next;
 
@@ -112,6 +143,7 @@ export function TopNavClient() {
   function updateEdition(nextEdition: string) {
     setEdition(nextEdition);
     window.localStorage.setItem(EDITION_KEY, nextEdition);
+    document.cookie = `${EDITION_COOKIE_KEY}=${encodeURIComponent(nextEdition)}; Path=/; Max-Age=31536000; SameSite=Lax`;
 
     const params = new URLSearchParams(searchParams.toString());
     params.set("edition", nextEdition);
@@ -183,7 +215,7 @@ export function TopNavClient() {
         Home
       </Link>
       <Link className={pathname.startsWith("/my") ? "is-active" : ""} href={hrefWithEdition("/my")}>
-        For You
+        For You <span className="for-you-dot" aria-hidden="true" />
       </Link>
       <Link className={pathname.startsWith("/my-news-bias") ? "is-active" : ""} href={hrefWithEdition("/my-news-bias")}>
         My Bias
@@ -250,8 +282,14 @@ export function TopNavClient() {
                         href={`/story/${encodeURIComponent(s.slug)}`}
                         onClick={() => setSuggestOpen(false)}
                       >
-                        <span className="suggest-item-main">{s.title}</span>
-                        <span className="suggest-item-sub">{s.topic} • {s.location}</span>
+                        <span className="suggest-item-main">
+                          {s.imageUrl ? <img src={s.imageUrl} alt={s.title} className="suggest-story-thumb" /> : null}
+                          <span>{highlightQuery(s.title, q)}</span>
+                        </span>
+                        <span className="suggest-item-sub">
+                          {s.topic} • {s.location}
+                          {typeof s.sourceCount === "number" ? ` • ${s.sourceCount} sources` : ""}
+                        </span>
                       </Link>
                     ))}
                   </div>
@@ -260,16 +298,20 @@ export function TopNavClient() {
                 {suggest.topics.length > 0 ? (
                   <div className="suggest-section">
                     <div className="suggest-title">Topics</div>
-                    <div className="chip-row">
+                    <div className="suggest-rich-list">
                       {suggest.topics.map((t) => (
-                        <Link
-                          key={t.slug}
-                          className="pill"
-                          href={`/interest/${encodeURIComponent(t.slug)}`}
-                          onClick={() => setSuggestOpen(false)}
-                        >
-                          {t.label} ({t.count})
-                        </Link>
+                        <div key={t.slug} className="suggest-rich-item">
+                          <Link
+                            className="suggest-rich-main"
+                            href={`/interest/${encodeURIComponent(t.slug)}`}
+                            onClick={() => setSuggestOpen(false)}
+                          >
+                            <span className="topic-avatar">{t.label.slice(0, 1).toUpperCase()}</span>
+                            <span>{t.label}</span>
+                            <span className="story-meta">{t.count.toLocaleString()} stories</span>
+                          </Link>
+                          <FollowToggle kind="topic" slug={t.slug} label={t.label} />
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -278,16 +320,21 @@ export function TopNavClient() {
                 {suggest.outlets.length > 0 ? (
                   <div className="suggest-section">
                     <div className="suggest-title">Sources</div>
-                    <div className="chip-row">
+                    <div className="suggest-rich-list">
                       {suggest.outlets.map((o) => (
-                        <Link
-                          key={o.slug}
-                          className="pill"
-                          href={`/source/${encodeURIComponent(o.slug)}`}
-                          onClick={() => setSuggestOpen(false)}
-                        >
-                          {o.label}
-                        </Link>
+                        <div key={o.slug} className="suggest-rich-item">
+                          <Link
+                            className="suggest-rich-main"
+                            href={`/source/${encodeURIComponent(o.slug)}`}
+                            onClick={() => setSuggestOpen(false)}
+                          >
+                            <span className="topic-avatar">
+                              {o.logoUrl ? <img src={String(o.logoUrl)} alt={o.label} className="u-avatar-24" /> : o.label.slice(0, 1).toUpperCase()}
+                            </span>
+                            <span>{o.label}</span>
+                          </Link>
+                          <FollowToggle kind="outlet" slug={o.slug} label={o.label} />
+                        </div>
                       ))}
                     </div>
                   </div>
@@ -320,7 +367,12 @@ export function TopNavClient() {
         </button>
 
         <label className="story-meta nav-desktop-only u-grid u-grid-gap-02">
-          Edition
+          <span className="nav-edition-label">
+            <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+              <path fill="currentColor" d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm7.9 9h-3.1a15.6 15.6 0 0 0-1.2-5 8 8 0 0 1 4.3 5zM12 4c1 1.3 2 3.8 2.5 7H9.5C10 7.8 11 5.3 12 4zM8.4 6a15.6 15.6 0 0 0-1.2 5H4.1a8 8 0 0 1 4.3-5zM4.1 13h3.1a15.6 15.6 0 0 0 1.2 5 8 8 0 0 1-4.3-5zm7.9 7c-1-1.3-2-3.8-2.5-7h5c-.5 3.2-1.5 5.7-2.5 7zm3.6-2a15.6 15.6 0 0 0 1.2-5h3.1a8 8 0 0 1-4.3 5z" />
+            </svg>
+            {edition}: Edition
+          </span>
           <select
             className="select-control"
             value={edition}
@@ -378,7 +430,7 @@ export function TopNavClient() {
             className="btn nav-desktop-only"
             href={`/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`}
           >
-            Sign in
+            My Account
           </Link>
         )}
       </div>
@@ -409,6 +461,18 @@ export function TopNavClient() {
             </div>
 
             <div className="nav-drawer-section">
+              <div className="nav-drawer-title">Topic Categories</div>
+              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
+                <Link href="/interest/politics">International Politics</Link>
+                <Link href="/interest/business">Finance</Link>
+                <Link href="/interest/science">Science</Link>
+                <Link href="/interest/technology">Technology</Link>
+                <Link href="/interest/health">Health</Link>
+                <Link href="/interest/sports">Sports</Link>
+              </div>
+            </div>
+
+            <div className="nav-drawer-section">
               <div className="nav-drawer-title">More</div>
               <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
                 <Link href="/rating-system">Rating system</Link>
@@ -433,7 +497,7 @@ export function TopNavClient() {
             <div className="nav-drawer-section">
               <div className="nav-drawer-title">Preferences</div>
               <label className="story-meta u-grid u-grid-gap-02">
-                Edition
+                <span className="nav-edition-label">{edition}: Edition</span>
                 <select className="select-control" value={edition} onChange={(e) => updateEdition(e.target.value)}>
                   {EDITIONS.map((item) => (
                     <option key={item} value={item}>
@@ -473,9 +537,18 @@ export function TopNavClient() {
                   href={`/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`}
                   onClick={() => setMenuOpen(false)}
                 >
-                  Sign in
+                  My Account
                 </Link>
               )}
+            </div>
+
+            <div className="nav-drawer-section">
+              <div className="nav-drawer-title">Contact Us</div>
+              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
+                <Link href="/help">Help Center</Link>
+                <Link href="/about/methodology">About OpenGroundNews</Link>
+                <a href={`mailto:${process.env.NEXT_PUBLIC_OGN_SUPPORT_EMAIL || "support@opengroundnews.com"}`}>Email support</a>
+              </div>
             </div>
           </aside>
         </div>

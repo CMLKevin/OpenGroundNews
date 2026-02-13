@@ -41,7 +41,7 @@ function SourceColumn({
   sources,
 }: {
   title: string;
-  tone: "left" | "center" | "right";
+  tone: "far-left" | "lean-left" | "center" | "lean-right" | "far-right" | "unknown";
   sources: SourceArticle[];
 }) {
   const visible = sources.slice(0, 7);
@@ -60,11 +60,31 @@ function SourceColumn({
   );
 }
 
+function sourceTier(source: SourceArticle) {
+  const explicit = String(source.biasRating || "").trim().toLowerCase().replace(/_/g, "-");
+  if (explicit === "far-left" || explicit === "left") return "far-left";
+  if (explicit === "lean-left") return "lean-left";
+  if (explicit === "center") return "center";
+  if (explicit === "lean-right") return "lean-right";
+  if (explicit === "right" || explicit === "far-right") return "far-right";
+  if (source.bias === "left") return "far-left";
+  if (source.bias === "center") return "center";
+  if (source.bias === "right") return "far-right";
+  return "unknown";
+}
+
 export function BiasDistributionPanel({ story }: Props) {
   const left = story.sources.filter((s) => s.bias === "left");
   const center = story.sources.filter((s) => s.bias === "center");
   const right = story.sources.filter((s) => s.bias === "right");
-  const unknown = story.sources.filter((s) => s.bias === "unknown");
+  const byTier = {
+    "far-left": story.sources.filter((s) => sourceTier(s) === "far-left"),
+    "lean-left": story.sources.filter((s) => sourceTier(s) === "lean-left"),
+    center: story.sources.filter((s) => sourceTier(s) === "center"),
+    "lean-right": story.sources.filter((s) => sourceTier(s) === "lean-right"),
+    "far-right": story.sources.filter((s) => sourceTier(s) === "far-right"),
+    unknown: story.sources.filter((s) => sourceTier(s) === "unknown"),
+  };
 
   const leftPct = pct(story.bias.left);
   const centerPct = pct(story.bias.center);
@@ -90,13 +110,6 @@ export function BiasDistributionPanel({ story }: Props) {
     { side: "Right", value: rightPct },
   ].sort((a, b) => b.value - a.value)[0];
 
-  const totalCoverage = story.coverage?.totalSources ?? story.sourceCount;
-  const trackedByCoverage =
-    (story.coverage?.leaningLeft ?? left.length) +
-    (story.coverage?.center ?? center.length) +
-    (story.coverage?.leaningRight ?? right.length);
-  const untrackedCount = Math.max(unknown.length, totalCoverage - trackedByCoverage);
-
   return (
     <section className="panel bias-dist-panel">
       <div className="section-title u-pt-0">
@@ -118,24 +131,13 @@ export function BiasDistributionPanel({ story }: Props) {
         </div>
       </div>
 
-      <div className="bias-columns">
-        <SourceColumn title="Left" tone="left" sources={left} />
-        <SourceColumn title="Center" tone="center" sources={center} />
-        <SourceColumn title="Right" tone="right" sources={right} />
-      </div>
-
-      <div className="bias-untracked">
-        <h3>Untracked bias</h3>
-        <div className="bias-untracked-row">
-          {unknown.slice(0, 8).map((source) => (
-            <SourceBadge key={source.id} source={source} />
-          ))}
-          {untrackedCount > unknown.slice(0, 8).length ? (
-            <span className="bias-source-badge bias-source-badge-more">
-              +{untrackedCount - unknown.slice(0, 8).length}
-            </span>
-          ) : null}
-        </div>
+      <div className="bias-columns bias-columns-six">
+        <SourceColumn title="Far Left" tone="far-left" sources={byTier["far-left"]} />
+        <SourceColumn title="Lean Left" tone="lean-left" sources={byTier["lean-left"]} />
+        <SourceColumn title="Center" tone="center" sources={byTier.center} />
+        <SourceColumn title="Lean Right" tone="lean-right" sources={byTier["lean-right"]} />
+        <SourceColumn title="Far Right" tone="far-right" sources={byTier["far-right"]} />
+        <SourceColumn title="Untracked" tone="unknown" sources={byTier.unknown} />
       </div>
     </section>
   );

@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       OR: [{ title: { contains: q, mode: "insensitive" } }, { summary: { contains: q, mode: "insensitive" } }],
     },
     orderBy: { updatedAt: "desc" },
-    select: { slug: true, title: true, topic: true, location: true, updatedAt: true },
+    select: { slug: true, title: true, topic: true, location: true, updatedAt: true, imageUrl: true, sourceCount: true },
     take: 8,
   });
 
@@ -34,16 +34,23 @@ export async function GET(request: NextRequest) {
   const outletRows = await db.outlet.findMany({
     where: { name: { contains: q, mode: "insensitive" } },
     orderBy: { name: "asc" },
-    select: { slug: true, name: true },
+    select: { slug: true, name: true, logoUrl: true },
     take: 8,
   });
 
   return NextResponse.json({
     ok: true,
     q,
-    stories: storyRows.map((r) => ({ slug: r.slug, title: r.title, topic: r.topic, location: r.location })),
+    stories: storyRows.map((r) => ({
+      slug: r.slug,
+      title: r.title,
+      topic: r.topic,
+      location: r.location,
+      imageUrl: r.imageUrl,
+      sourceCount: r.sourceCount,
+      updatedAt: r.updatedAt.toISOString(),
+    })),
     topics: Array.from(topicCounts.values()).sort((a, b) => b.count - a.count).slice(0, 8),
-    outlets: outletRows.map((o) => ({ slug: outletSlug(o.name) || o.slug, label: o.name })),
+    outlets: outletRows.map((o) => ({ slug: outletSlug(o.name) || o.slug, label: o.name, logoUrl: o.logoUrl })),
   });
 }
-

@@ -52,8 +52,10 @@ export function LocalPublishersList({ publishers }: { publishers: Publisher[] })
               {o.outlet}
             </Link>
             <span className="topic-item-right">
-              <span className="bias-pill">
-                {String(o.biasRating || o.bias || "unknown").replace(/_/g, "-")}
+              <span className={`bias-pill ${String(o.biasRating || o.bias || "unknown").includes("left") ? "bias-tone-left" : String(o.biasRating || o.bias || "unknown").includes("right") ? "bias-tone-right" : String(o.biasRating || o.bias || "unknown").includes("center") ? "bias-tone-center" : "bias-tone-unknown"}`}>
+                {String(o.biasRating || o.bias || "unknown").replace(/_/g, "-") === "unknown"
+                  ? "Untracked bias"
+                  : String(o.biasRating || o.bias || "unknown").replace(/_/g, "-")}
               </span>
               <span className="story-meta">{o.localCount ? `${o.localCount} local` : `${o.count}`}</span>
             </span>

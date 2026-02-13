@@ -22,8 +22,7 @@ type Props = {
 function initials(label: string) {
   const words = (label || "").trim().split(/\s+/).filter(Boolean);
   if (words.length === 0) return "?";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return `${words[0][0]}${words[1][0]}`.toUpperCase();
+  return words[0].slice(0, 1).toUpperCase();
 }
 
 function weightedBias(stories: Awaited<ReturnType<typeof listStoriesByTopicSlug>>) {
@@ -163,6 +162,17 @@ export default async function InterestPage({ params, searchParams }: Props) {
     ].sort((a, b) => b.value - a.value);
     return ranked[0]?.value > 0 ? ranked[0].label : "unknown";
   };
+  const outletBiasDisplayLabel = (key: string) => {
+    const value = outletBiasLabel(key).toLowerCase();
+    if (value.includes("far-left")) return "Far Left";
+    if (value.includes("lean-left")) return "Lean Left";
+    if (value === "left") return "Left";
+    if (value.includes("far-right")) return "Far Right";
+    if (value.includes("lean-right")) return "Lean Right";
+    if (value === "right") return "Right";
+    if (value === "center") return "Center";
+    return "Untracked bias";
+  };
 
   const sourceCards = stories.flatMap((s) => s.sources || []);
   const factualityCounts = {
@@ -201,6 +211,18 @@ export default async function InterestPage({ params, searchParams }: Props) {
   )
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 12);
+  const localPublishers = Array.from(
+    sourceCards
+      .filter((source) => source.locality === "local")
+      .reduce((acc, source) => {
+        const key = outletSlug(source.outlet);
+        acc.set(key, { slug: key, outlet: source.outlet, count: (acc.get(key)?.count || 0) + 1 });
+        return acc;
+      }, new Map<string, { slug: string; outlet: string; count: number }>())
+      .values(),
+  )
+    .sort((a, b) => b.count - a.count || a.outlet.localeCompare(b.outlet))
+    .slice(0, 8);
 
   const hrefFor = (next: Record<string, string | undefined>) => {
     const params = new URLSearchParams();
@@ -231,7 +253,9 @@ export default async function InterestPage({ params, searchParams }: Props) {
         <div className="story-meta">
           {stories.length} stories • Updated {prettyDate(lead.updatedAt)}
         </div>
-        <p className="u-m0 u-text-soft">A topic hub showing coverage splits and the outlets contributing the most source cards.</p>
+        <p className="story-meta u-m0">
+          Stay current on {displayTag}: {stories.length.toLocaleString()} stories tracked in this feed sample over the past 3 months.
+        </p>
         <BiasBar story={{ ...lead, bias }} showLabels={true} />
       </section>
 
@@ -255,22 +279,25 @@ export default async function InterestPage({ params, searchParams }: Props) {
               <span className="story-meta">{blindspots.length ? "From this topic" : "No candidates"}</span>
             </div>
             {blindspots.length ? (
-              <div className="blindspot-topic-grid">
-                {blindspots.slice(0, 4).map((story) => (
+              <div className="blindspot-topic-grid blindspot-topic-grid-3">
+                {blindspots.slice(0, 2).map((story) => (
                   <BlindspotStoryCard key={story.id} story={story} />
                 ))}
+                <article className="panel blindspot-newsletter-card">
+                  <div className="section-title u-pt-0">
+                    <h3 className="u-m0">Blindspot Report</h3>
+                  </div>
+                  <p className="story-meta u-m0">Get weekly blindspot stories in your inbox.</p>
+                  <div className="u-mt-075">
+                    <NewsletterSignup list="blindspot" />
+                  </div>
+                </article>
               </div>
             ) : (
               <p className="story-meta u-m0">
                 No blindspot candidates in this topic sample yet.
               </p>
             )}
-            <div className="u-mt-075">
-              <div className="story-meta u-mb-04">
-                Get the Blindspot Report
-              </div>
-              <NewsletterSignup list="blindspot" />
-            </div>
           </section>
 
           {hasLatest ? (
@@ -339,7 +366,7 @@ export default async function InterestPage({ params, searchParams }: Props) {
                   </Link>
                   <span className="topic-item-right">
                     <span className="bias-pill">
-                      {outletBiasLabel(o.key)}
+                      {outletBiasDisplayLabel(o.key)}
                     </span>
                     <span className="story-meta">{o.count}</span>
                   </span>
@@ -429,6 +456,30 @@ export default async function InterestPage({ params, searchParams }: Props) {
 
           <section className="panel">
             <div className="section-title u-pt-0">
+              <h2 className="u-m0">Local News Publishers</h2>
+              <span className="story-meta">Nearby coverage</span>
+            </div>
+            {localPublishers.length > 0 ? (
+              <ul className="topic-list">
+                {localPublishers.map((publisher) => (
+                  <li key={publisher.slug} className="topic-item">
+                    <span className="topic-avatar">{initials(publisher.outlet)}</span>
+                    <Link href={`/source/${publisher.slug}`} className="u-no-underline">
+                      {publisher.outlet}
+                    </Link>
+                    <span className="story-meta">{publisher.count}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="story-meta u-m0">
+                No local publisher metadata for this topic yet.
+              </p>
+            )}
+          </section>
+
+          <section className="panel">
+            <div className="section-title u-pt-0">
               <h2 className="u-m0">Explore</h2>
             </div>
             <div className="chip-row">
@@ -441,7 +492,7 @@ export default async function InterestPage({ params, searchParams }: Props) {
             </div>
           </section>
 
-          <section className="panel">
+          <section className="panel suggest-source-card">
             <div className="section-title u-pt-0">
               <h2 className="u-m0">Suggest a source</h2>
               <span className="story-meta">Help improve coverage</span>

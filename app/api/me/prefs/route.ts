@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
         localLabel: localLabel ?? null,
         localLat: localLat ?? null,
         localLon: localLon ?? null,
-        theme: theme ?? "dark",
+        theme: theme ?? "light",
         notifyDailyBriefing: notifyDailyBriefing ?? false,
         notifyBlindspot: notifyBlindspot ?? false,
         notifyFollowed: notifyFollowed ?? false,

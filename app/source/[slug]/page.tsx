@@ -135,7 +135,7 @@ export default async function SourcePage({ params, searchParams }: Props) {
         <div className="story-meta">
           {stories.length} stories • {samples.length} source cards • {latestSeen ? `Latest source: ${prettyDate(latestSeen)}` : "Latest source: unknown"}
         </div>
-        <div className="source-profile">
+        <div className="source-profile" id="bias-ratings">
           <div className="source-profile-row">
             <div className="source-profile-label">Bias rating</div>
             <div className="source-profile-value">

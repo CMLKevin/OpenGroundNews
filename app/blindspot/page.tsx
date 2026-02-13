@@ -1,6 +1,5 @@
 import { BlindspotStoryCard } from "@/components/BlindspotStoryCard";
 import { BlindspotHeader } from "@/components/BlindspotHeader";
-import { NewsletterSignup } from "@/components/NewsletterSignup";
 import { listStories } from "@/lib/store";
 import { computeBlindspotInfo } from "@/lib/blindspot";
 
@@ -63,10 +62,10 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
           />
         </div>
 
-        <div className="panel u-p-075 u-grid u-grid-gap-06">
+        <div className="panel blindspot-intro-banner u-p-075 u-grid u-grid-gap-06">
           <div className="section-title u-pt-0">
-            <h2 className="u-m0">New to Blindspot?</h2>
-            <a className="btn" href="/rating-system">
+            <h2 className="u-m0">New to the Blindspot feed?</h2>
+            <a className="btn" href="/blindspot/about">
               Find out more
             </a>
           </div>
@@ -75,12 +74,14 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
           </p>
         </div>
 
-        <div className="panel u-p-075 u-grid u-grid-gap-06">
+        <div className="panel blindspot-newsletter-banner u-p-075 u-grid u-grid-gap-06">
           <div className="section-title u-pt-0">
             <h2 className="u-m0">Blindspot Report newsletter</h2>
             <span className="story-meta">Email updates</span>
           </div>
-          <NewsletterSignup list="blindspot" />
+          <a className="btn" href="/newsletters/blindspot-report">
+            Sign up for the Blindspot Report newsletter
+          </a>
         </div>
 
         <div className="chip-row">
@@ -110,7 +111,6 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
         <div className="blindspot-col">
           <div className="section-title u-pt-0">
             <h2 className="u-m0">For the Left</h2>
-            <span className="story-meta">{forLeft.length}</span>
           </div>
           <p className="story-meta u-mb-07">
             News stories that had little to no reporting on the Left.
@@ -134,7 +134,6 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
         <div className="blindspot-col">
           <div className="section-title u-pt-0">
             <h2 className="u-m0">For the Right</h2>
-            <span className="story-meta">{forRight.length}</span>
           </div>
           <p className="story-meta u-mb-07">
             News stories that had little to no reporting on the Right.

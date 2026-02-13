@@ -7,9 +7,9 @@ const tabs = [
   { href: "/my", label: "My Feed" },
   { href: "/my/discover", label: "Discover" },
   { href: "/my/custom-feeds", label: "Custom Feeds" },
-  { href: "/my/saved", label: "Saved" },
+  { href: "/my/saved", label: "Saved Stories" },
   { href: "/my/citations", label: "Citations" },
-  { href: "/my/manage", label: "Manage" },
+  { href: "/my/manage", label: "Manage Sources & Topics" },
 ];
 
 export function MyTabs() {
@@ -28,4 +28,3 @@ export function MyTabs() {
     </nav>
   );
 }
-

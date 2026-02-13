@@ -1,7 +1,7 @@
 :root {
   --font-page-title-size: clamp(2.1rem, 4.2vw, 2.625rem);
   --font-page-title-weight: 800;
-  --font-section-title-size: clamp(1.3rem, 2.2vw, 1.5rem);
+  --font-section-title-size: clamp(1.45rem, 2.8vw, 2rem);
   --font-section-title-weight: 800;
 
   --card-bg: #ffffff;
@@ -14,7 +14,7 @@
   --bias-right: #406699;
   --bias-far-right: #204986;
 
-  --subscribe-accent: #2d6a4f;
+  --subscribe-accent: #262626;
 }
 
 html[data-theme="dark"] {

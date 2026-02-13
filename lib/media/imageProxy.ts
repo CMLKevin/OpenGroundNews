@@ -9,7 +9,7 @@ const IMAGE_TIMEOUT_MS = Math.max(1000, Number(process.env.IMAGE_PROXY_TIMEOUT_M
 const IMAGE_MAX_BYTES = Math.max(10_000, Number(process.env.IMAGE_PROXY_MAX_BYTES || 6_000_000));
 const CACHE_DIR = path.join(process.cwd(), "output", "cache", "images");
 
-const BLOCKED_HOSTS = new Set(["ground.news", "www.ground.news"]);
+const BLOCKED_HOSTS = new Set<string>();
 
 function cacheKeyForUrl(url: string) {
   const hash = createHash("sha256").update(url).digest("hex");

@@ -17,7 +17,10 @@ import { ReadingTracker } from "@/components/ReadingTracker";
 import { BrokeTheNewsPanel } from "@/components/BrokeTheNewsPanel";
 import { SummaryFeedbackLink } from "@/components/SummaryFeedbackLink";
 import { SaveStoryToggle } from "@/components/SaveStoryToggle";
-import { prettyDate, slugify, sourceCountLabel } from "@/lib/format";
+import { FactualityPanel } from "@/components/FactualityPanel";
+import { OwnershipPanel } from "@/components/OwnershipPanel";
+import { LinkedSummary } from "@/components/LinkedSummary";
+import { prettyDate, prettyRelativeDate, slugify, sourceCountLabel } from "@/lib/format";
 import { readArchiveForUrl } from "@/lib/archive";
 import { getStoryBySlug, listStories } from "@/lib/store";
 
@@ -90,7 +93,13 @@ export default async function StoryPage({ params, searchParams }: Props) {
           <ReadingTracker storySlug={story.slug} bias={story.bias} />
           <div className="story-meta-row">
             <div className="story-meta">
-              {story.topic} • {story.location} • Published {prettyDate(story.publishedAt)} • Updated {prettyDate(story.updatedAt)}
+              <Link href={`/interest/${slugify(story.topic)}`}>{story.topic}</Link>
+              {" • "}
+              <Link href={`/interest/${slugify(story.location)}`}>{story.location}</Link>
+              {" • "}
+              Published {prettyRelativeDate(story.publishedAt)}
+              {" • "}
+              Updated {prettyRelativeDate(story.updatedAt)}
             </div>
             <div className="u-flex u-flex-gap-055 u-items-center">
               <SaveStoryToggle storySlug={story.slug} />
@@ -120,21 +129,8 @@ export default async function StoryPage({ params, searchParams }: Props) {
             {story.blindspot ? <span className="story-stat-pill">Blindspot candidate</span> : null}
             {story.trending ? <span className="story-stat-pill">Trending</span> : null}
             {story.local ? <span className="story-stat-pill">Local perspective</span> : null}
-            {story.canonicalUrl ? (
-              <a
-                className="btn btn-external"
-                href={story.canonicalUrl}
-                target="_blank"
-                rel="noreferrer"
-                title="Opens the source Ground News coverage page in a new tab"
-              >
-                Open Ground News source
-              </a>
-            ) : null}
           </div>
-          <p className="story-summary u-text-098">
-            {story.summary}
-          </p>
+          <LinkedSummary summary={story.summary} tags={story.tags} />
           <SummaryFeedbackLink storySlug={story.slug} url={shareUrl} />
 
           <KeyPointsPanel story={story} />
@@ -143,12 +139,12 @@ export default async function StoryPage({ params, searchParams }: Props) {
 
           <TimelinePanel story={story} />
 
-          {story.podcastReferences?.length ? (
+          {story.podcasts?.length || story.podcastReferences?.length ? (
             <section className="panel u-grid u-grid-gap-05">
               <div className="section-title u-pt-0">
                 <h2 className="u-m0">Podcasts & Opinions</h2>
               </div>
-              <PodcastCards entries={story.podcastReferences} />
+              <PodcastCards entries={story.podcasts && story.podcasts.length > 0 ? story.podcasts : story.podcastReferences || []} />
             </section>
           ) : null}
 
@@ -173,7 +169,7 @@ export default async function StoryPage({ params, searchParams }: Props) {
         <aside className="feed-rail">
           <section className="panel">
             <div className="section-title u-pt-0">
-              <h2 className="u-m0">At a Glance</h2>
+              <h2 className="u-m0">Coverage Details</h2>
             </div>
             <div className="kpi-strip">
               <div className="kpi">
@@ -182,10 +178,10 @@ export default async function StoryPage({ params, searchParams }: Props) {
               </div>
               <div className="kpi">
                 <span>Last Updated</span>
-                <strong className="u-text-096">{prettyDate(story.updatedAt)}</strong>
+                <strong className="u-text-096">{prettyRelativeDate(story.updatedAt)}</strong>
               </div>
               <div className="kpi">
-                <span>Left</span>
+                <span>Leaning Left</span>
                 <strong>{coverageLeft}</strong>
               </div>
               <div className="kpi">
@@ -193,13 +189,15 @@ export default async function StoryPage({ params, searchParams }: Props) {
                 <strong>{coverageCenter}</strong>
               </div>
               <div className="kpi">
-                <span>Right</span>
+                <span>Leaning Right</span>
                 <strong>{coverageRight}</strong>
               </div>
             </div>
           </section>
 
           <BiasDistributionPanel story={story} />
+          <FactualityPanel sources={story.sources} />
+          <OwnershipPanel sources={story.sources} />
           <BrokeTheNewsPanel sources={story.sources} />
           <DailyBriefingList stories={dailyBriefing} title="More Stories" />
           <SimilarTopicsPanel story={story} />

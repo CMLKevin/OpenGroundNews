@@ -51,7 +51,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const cookieStore = await cookies();
   const cookieTheme = cookieStore.get("ogn_theme")?.value || "";
   const initialTheme: "light" | "dark" | "auto" =
-    cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "auto" ? (cookieTheme as any) : "dark";
+    cookieTheme === "light" || cookieTheme === "dark" || cookieTheme === "auto" ? (cookieTheme as any) : "light";
 
   return (
     <html lang="en" data-theme={initialTheme} suppressHydrationWarning className={`${bricolage.variable} ${newsreader.variable}`}>

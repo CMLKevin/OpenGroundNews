@@ -10,6 +10,7 @@ type WeatherResponse =
         temperatureC: number;
         apparentTemperatureC: number;
         windSpeedKph: number;
+        weatherCode?: number;
         label: string;
         time?: string;
       };
@@ -34,6 +35,21 @@ export function WeatherWidget() {
   const [loading, setLoading] = useState(false);
 
   const daily = data && "ok" in data && data.ok ? data.daily || [] : [];
+
+  function iconForCode(code: number | null | undefined) {
+    if (code == null) return "·";
+    if (code === 0) return "☀";
+    if (code === 1 || code === 2) return "⛅";
+    if (code === 3) return "☁";
+    if (code === 45 || code === 48) return "🌫";
+    if (code === 51 || code === 53 || code === 55) return "🌦";
+    if (code === 61 || code === 63 || code === 65) return "🌧";
+    if (code === 66 || code === 67) return "🌧";
+    if (code === 71 || code === 73 || code === 75 || code === 77 || code === 85 || code === 86) return "❄";
+    if (code === 80 || code === 81 || code === 82) return "🌧";
+    if (code === 95 || code === 96 || code === 99) return "⛈";
+    return "☁";
+  }
 
   function dayLabel(value: string) {
     const ts = Date.parse(value);
@@ -77,6 +93,8 @@ export function WeatherWidget() {
         <p className="story-meta u-m0">
           Select a suggested location to show current conditions.
         </p>
+      ) : loading && !data ? (
+        <p className="story-meta u-m0">Loading local weather...</p>
       ) : data?.ok ? (
         <div className="u-grid u-grid-gap-075">
           <div className="kpi-strip">
@@ -94,7 +112,7 @@ export function WeatherWidget() {
             </div>
             <div className="kpi">
               <span>Sky</span>
-              <strong className="u-text-105">{data.current.label}</strong>
+              <strong className="u-text-105">{iconForCode(data.current.weatherCode)} {data.current.label}</strong>
             </div>
           </div>
 
@@ -103,7 +121,9 @@ export function WeatherWidget() {
               {daily.slice(0, 7).map((d) => (
                 <div className="weather-day" key={d.date}>
                   <div className="weather-day-name">{dayLabel(d.date)}</div>
-                  <div className="weather-day-sky">{d.label}</div>
+                  <div className="weather-day-sky">
+                    <span className="weather-day-icon" aria-hidden="true">{iconForCode(d.weatherCode)}</span> {d.label}
+                  </div>
                   <div className="weather-day-temps">
                     <span className="weather-temp-max">{d.maxC == null ? "—" : `${Math.round(d.maxC)}°`}</span>
                     <span className="weather-temp-min">{d.minC == null ? "—" : `${Math.round(d.minC)}°`}</span>

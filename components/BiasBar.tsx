@@ -9,6 +9,7 @@ type BiasBarProps = {
 export function BiasBar({ story, showLabels = true }: BiasBarProps) {
   const bias = normalizeBiasPercentages(story.bias);
   const hasData = bias.left + bias.center + bias.right > 0;
+  const minLabelWidth = 18;
 
   return (
     <div className="biasbar-block">
@@ -28,23 +29,17 @@ export function BiasBar({ story, showLabels = true }: BiasBarProps) {
             : "Bias distribution unavailable"
         }
       >
-        <span className="bias-left" />
-        <span className="bias-center" />
-        <span className="bias-right" />
+        <span className="bias-left">{showLabels && hasData && bias.left >= minLabelWidth ? `Left ${bias.left}%` : ""}</span>
+        <span className="bias-center">{showLabels && hasData && bias.center >= minLabelWidth ? `Center ${bias.center}%` : ""}</span>
+        <span className="bias-right">{showLabels && hasData && bias.right >= minLabelWidth ? `Right ${bias.right}%` : ""}</span>
       </div>
 
       {showLabels ? (
-        hasData ? (
-          <div className="biasbar-meta">
-            <span className="bias-meta-left">{bias.left}% left</span>
-            <span className="bias-meta-center">{bias.center}% center</span>
-            <span className="bias-meta-right">{bias.right}% right</span>
-          </div>
-        ) : (
+        !hasData ? (
           <div className="biasbar-meta">
             <span className="story-meta">Bias data unavailable</span>
           </div>
-        )
+        ) : null
       ) : null}
     </div>
   );

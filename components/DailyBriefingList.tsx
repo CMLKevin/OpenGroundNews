@@ -5,6 +5,7 @@ import type { Story } from "@/lib/types";
 
 export function DailyBriefingList({ stories, title = "Daily Briefing" }: { stories: Story[]; title?: string }) {
   const visible = stories.slice(0, 6);
+  const bulletStories = stories.slice(6, 10).length > 0 ? stories.slice(6, 10) : visible.slice(1, 4);
   const origVals = stories
     .slice(0, 6)
     .map((s) => (typeof s.originalReportingPct === "number" ? s.originalReportingPct : null))
@@ -51,6 +52,15 @@ export function DailyBriefingList({ stories, title = "Daily Briefing" }: { stori
           </li>
         ))}
       </ol>
+      {bulletStories.length > 0 ? (
+        <ul className="daily-briefing-bullets">
+          {bulletStories.map((story) => (
+            <li key={`briefing-bullet-${story.id}`}>
+              <Link href={`/story/${story.slug}`}>{story.title}</Link>
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </section>
   );
 }

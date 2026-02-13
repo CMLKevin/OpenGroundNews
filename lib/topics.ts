@@ -40,8 +40,14 @@ const TOPIC_DEFS: TopicDef[] = [
   {
     slug: "technology",
     label: "Technology",
-    aliases: ["tech", "ai", "artificial intelligence", "cybersecurity", "software", "internet"],
-    keywords: ["technology", "tech", "ai", "software", "internet", "cybersecurity"],
+    aliases: ["tech", "cybersecurity", "software", "internet"],
+    keywords: ["technology", "tech", "software", "internet", "cybersecurity"],
+  },
+  {
+    slug: "artificial-intelligence",
+    label: "Artificial Intelligence",
+    aliases: ["ai", "artificial intelligence", "generative ai", "machine learning", "large language model"],
+    keywords: ["artificial intelligence", "ai", "machine learning", "generative ai", "llm"],
   },
   {
     slug: "business",
@@ -76,7 +82,7 @@ const TOPIC_DEFS: TopicDef[] = [
   {
     slug: "entertainment",
     label: "Entertainment",
-    aliases: ["culture", "music", "movies", "film", "tv", "celebrity", "arts"],
+    aliases: ["culture", "music", "movies", "film", "tv", "celebrity", "arts", "arts & entertainment"],
     keywords: ["entertainment", "music", "movie", "film", "tv", "celebrity", "arts"],
   },
 ];
@@ -87,9 +93,13 @@ const ALIAS_TO_SLUG = new Map<string, string>();
 for (const topic of TOPIC_DEFS) {
   ALIAS_TO_SLUG.set(topic.slug, topic.slug);
   ALIAS_TO_SLUG.set(topic.label.toLowerCase(), topic.slug);
+  ALIAS_TO_SLUG.set(slugify(topic.label.replace(/&/g, "and")), topic.slug);
+  ALIAS_TO_SLUG.set(slugify(topic.label.replace(/\band\b/gi, "&")), topic.slug);
   for (const alias of topic.aliases) {
     ALIAS_TO_SLUG.set(alias.toLowerCase(), topic.slug);
     ALIAS_TO_SLUG.set(slugify(alias), topic.slug);
+    ALIAS_TO_SLUG.set(slugify(alias.replace(/&/g, "and")), topic.slug);
+    ALIAS_TO_SLUG.set(slugify(alias.replace(/\band\b/gi, "&")), topic.slug);
   }
 }
 
@@ -136,4 +146,3 @@ export function topicMatchesSlug(input: string, slug: string) {
   if (!target) return false;
   return canonicalTopicSlug(input) === target;
 }
-
