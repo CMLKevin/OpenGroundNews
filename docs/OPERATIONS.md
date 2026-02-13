@@ -115,6 +115,18 @@ npm run db:import-json
 npm run ingest:groundnews
 ```
 
+Pass-through tuning flags are supported when needed:
+
+```bash
+npm run ingest:groundnews -- --verbose --no-article-audit --source-fetch-concurrency 20
+```
+
+If Browser Use returns concurrent-session `429` errors, clear stale CDP sessions first:
+
+```bash
+npm run browseruse:stop-active-browsers
+```
+
 ### Scrape-only run
 
 ```bash
@@ -181,6 +193,7 @@ Use external scheduler (cron/GitHub Actions/CI runner) to invoke these commands 
 - Reduce session concurrency
 - Increase `BROWSER_USE_CREATE_RETRIES`
 - Adjust rotation profile/proxy pool (see `ROTATION_STRATEGIES.md`)
+- Stop stale browser sessions: `npm run browseruse:stop-active-browsers`
 
 ### Ingestion endpoint unauthorized
 - Ensure both are present for `/api/ingest/groundnews`:

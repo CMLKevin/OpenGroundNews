@@ -15,6 +15,7 @@
     "db:studio": "prisma studio",
     "db:import-json": "node scripts/db_import_json.mjs",
     "groundnews:scrape": "node scripts/groundnews_scrape_cdp.mjs",
+    "browseruse:stop-active-browsers": "node scripts/browser_use_stop_active_browsers.mjs",
     "archive:verify": "node scripts/archive_verify_cdp.mjs",
     "archive:extract": "node scripts/archive_extract_cdp.mjs",
     "ingest:groundnews": "node scripts/ingest_groundnews.mjs",

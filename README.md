@@ -126,7 +126,8 @@ npm run test
 ### Ingestion + archive
 
 - `npm run groundnews:scrape` - scrape Ground News routes via Browser Use CDP
-- `npm run ingest:groundnews` - full pipeline runner with retries/checkpoint
+- `npm run ingest:groundnews` - full pipeline runner with retries/checkpoint (supports pass-through flags, e.g. `-- --verbose --no-article-audit`)
+- `npm run browseruse:stop-active-browsers` - stop stale Browser Use CDP sessions to recover from 429 concurrent-session limits
 - `npm run ingest:enrich-outlets` - backfill/enrich outlet metadata
 - `npm run archive:extract` - single archive-first extraction
 - `npm run archive:verify` - batch archive verification

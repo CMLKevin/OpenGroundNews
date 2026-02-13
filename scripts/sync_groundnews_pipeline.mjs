@@ -498,7 +498,7 @@ function routeSupportsEditionExpansion(routeUrl) {
   return route === "/";
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const envNumber = (value, fallback) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? parsed : fallback;
