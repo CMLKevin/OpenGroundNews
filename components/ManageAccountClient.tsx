@@ -42,6 +42,7 @@ export function ManageAccountClient() {
   const [me, setMe] = useState<Me>({ user: null });
   const [prefs, setPrefs] = useState<Prefs | null>(null);
   const [status, setStatus] = useState<string>("");
+  const [localEdition, setLocalEdition] = useState("International");
 
   const [location, setLocation] = useState<string>("");
   const [results, setResults] = useState<GeoResult[]>([]);
@@ -68,6 +69,8 @@ export function ManageAccountClient() {
         } else {
           const label = (window.localStorage.getItem("ogn_local_location") || "").trim();
           if (label) setLocation(label);
+          const savedEdition = (window.localStorage.getItem("ogn_edition") || "").trim();
+          if (savedEdition) setLocalEdition(savedEdition);
         }
       } catch {
         if (!alive) return;
@@ -118,6 +121,7 @@ export function ManageAccountClient() {
         setCookie("ogn_theme", partial.theme);
       }
       if (partial.edition) window.localStorage.setItem("ogn_edition", partial.edition);
+      if (partial.edition) setLocalEdition(partial.edition);
       if (partial.localLabel != null) {
         window.localStorage.setItem("ogn_local_location", String(partial.localLabel || ""));
         setCookie("ogn_local_label", String(partial.localLabel || ""));
@@ -180,7 +184,7 @@ export function ManageAccountClient() {
           Edition
           <select
             className="select-control"
-            value={prefs?.edition || window.localStorage.getItem("ogn_edition") || "International"}
+            value={prefs?.edition || localEdition || "International"}
             onChange={(e) => savePrefs({ edition: e.target.value })}
           >
             {["International", "United States", "Canada", "United Kingdom", "Europe"].map((e) => (

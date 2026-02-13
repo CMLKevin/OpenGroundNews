@@ -118,7 +118,7 @@ export function SearchBox({
     <div className="panel u-grid u-grid-gap-06" ref={wrapRef}>
       <div className="section-title u-pt-0">
         <h1 className="u-m0 u-font-serif">Search</h1>
-        <span className="story-meta">{loading ? "Loading..." : q.trim() ? "Suggestions" : "Type to search"}</span>
+        <span className="story-meta">{loading ? "Loading..." : q.trim() ? "Suggestions" : "Stories, topics, and sources"}</span>
       </div>
 
       <form

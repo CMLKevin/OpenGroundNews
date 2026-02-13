@@ -80,7 +80,7 @@ export default async function CalendarPage({ searchParams }: Props) {
             To
             <input className="input-control" type="date" name="to" defaultValue={to || ""} />
           </label>
-          <button className="btn" type="submit">Apply</button>
+          <button className="btn btn-primary calendar-apply-btn" type="submit">Apply</button>
         </form>
 
         <div className="chip-row">

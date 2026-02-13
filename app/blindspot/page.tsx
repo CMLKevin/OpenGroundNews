@@ -65,8 +65,8 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
         <div className="panel blindspot-intro-banner u-p-075 u-grid u-grid-gap-06">
           <div className="section-title u-pt-0">
             <h2 className="u-m0">New to the Blindspot feed?</h2>
-            <a className="btn" href="/blindspot/about">
-              Find out more
+            <a className="btn blindspot-intro-cta" href="/blindspot/about">
+              Learn how Blindspot works
             </a>
           </div>
           <p className="story-meta u-m0">
@@ -116,7 +116,7 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
             News stories that had little to no reporting on the Left.
           </p>
           <div className="grid u-grid-cols-2-gap-085">
-            {forLeft.length === 0 ? (
+            {forLeftVisible.length === 0 ? (
               <section className="panel">
                 <h3 className="u-mt-0">No blindspot stories found for the left.</h3>
                 <p className="story-meta u-m0">
@@ -139,7 +139,7 @@ export default async function BlindspotPage({ searchParams }: BlindspotProps) {
             News stories that had little to no reporting on the Right.
           </p>
           <div className="grid u-grid-cols-2-gap-085">
-            {forRight.length === 0 ? (
+            {forRightVisible.length === 0 ? (
               <section className="panel">
                 <h3 className="u-mt-0">No blindspot stories found for the right.</h3>
                 <p className="story-meta u-m0">

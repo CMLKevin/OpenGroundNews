@@ -95,7 +95,7 @@ export function CompareClient() {
         <span className="story-meta">Coverage overlap + bias profile</span>
       </div>
 
-      <div className="filters-grid">
+      <div className="compare-controls">
         <label className="story-meta u-grid u-grid-gap-02">
           Source A
           <input
@@ -116,20 +116,22 @@ export function CompareClient() {
             placeholder="e.g. Fox News"
           />
         </label>
-        <button
-          className="btn"
-          type="button"
-          onClick={() => {
-            setA(b);
-            setB(a);
-          }}
-          disabled={loading}
-        >
-          Swap
-        </button>
-        <button className="btn" type="button" onClick={runCompare} disabled={loading || !a.trim() || !b.trim()}>
-          {loading ? "Comparing..." : "Compare"}
-        </button>
+        <div className="compare-actions">
+          <button
+            className="btn"
+            type="button"
+            onClick={() => {
+              setA(b);
+              setB(a);
+            }}
+            disabled={loading}
+          >
+            Swap
+          </button>
+          <button className="btn btn-primary" type="button" onClick={runCompare} disabled={loading || !a.trim() || !b.trim()}>
+            {loading ? "Comparing..." : "Compare"}
+          </button>
+        </div>
       </div>
       <datalist id="compare-outlet-suggestions">
         {outletSuggestions.map((name) => (

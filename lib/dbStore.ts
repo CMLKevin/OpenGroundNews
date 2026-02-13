@@ -17,6 +17,21 @@ function normalizeText(value: string) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function dedupeStories(stories: Story[]) {
+  const byKey = new Map<string, Story>();
+  for (const story of stories) {
+    const canonical = normalizeText(story.canonicalUrl || "").toLowerCase();
+    const title = normalizeText(story.title || "").toLowerCase();
+    const topic = normalizeText(story.topic || "").toLowerCase();
+    const key = canonical || `${title}|${topic}` || story.slug;
+    const previous = byKey.get(key);
+    if (!previous || +new Date(story.updatedAt) > +new Date(previous.updatedAt)) {
+      byKey.set(key, story);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
 function cacheGet<T>(key: string): T | null {
   const item = storeCache.get(key);
   if (!item) return null;
@@ -294,6 +309,7 @@ export async function listStories(params?: {
     });
   }
 
+  stories = dedupeStories(stories);
   cacheSet(cacheKey, stories);
   return stories;
 }

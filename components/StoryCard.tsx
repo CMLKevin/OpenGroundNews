@@ -7,10 +7,13 @@ import { StoryImage } from "@/components/StoryImage";
 export function StoryCard({ story }: { story: Story }) {
   const stale = Date.now() - +new Date(story.updatedAt) >= 7 * 86400000;
   const isSingleSource = Math.max(story.coverage?.totalSources ?? 0, story.sourceCount ?? 0, story.sources?.length ?? 0) <= 1;
+  const hasBiasData = (story.bias.left || 0) + (story.bias.center || 0) + (story.bias.right || 0) > 0;
+  const summary = (story.summary || "").trim() || "Open the story to compare source coverage and perspective details.";
   const chips = [
     story.blindspot ? "Blindspot" : null,
     story.trending ? "Trending" : null,
     stale ? "Stale" : null,
+    !hasBiasData ? "Bias data unavailable" : null,
   ].filter(Boolean) as string[];
 
   return (
@@ -39,10 +42,10 @@ export function StoryCard({ story }: { story: Story }) {
         <h3 className="story-title">
           <Link href={`/story/${story.slug}`}>{story.title}</Link>
         </h3>
-        <BiasBar story={story} showLabels={false} />
-        <p className="story-summary">{story.summary}</p>
+        {hasBiasData ? <BiasBar story={story} showLabels={false} /> : null}
+        <p className="story-summary">{summary}</p>
         <div className="story-card-inline-meta">
-          <span>{biasLabel(story) === "No bias data" ? "Bias data unavailable" : `${biasLabel(story)} coverage`}</span>
+          <span>{hasBiasData ? `${biasLabel(story)} coverage` : "Coverage mix unavailable"}</span>
           <span className="utility-dot" aria-hidden="true">
             •
           </span>

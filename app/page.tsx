@@ -69,16 +69,31 @@ export default async function HomePage({ searchParams }: HomeProps) {
     ? biasFiltered.filter((story) => story.tags.some((storyTag) => storyTag.toLowerCase().includes(normalizedTag)))
     : biasFiltered;
 
-  const leadStory = pageNumber === 1 ? (tagged[0] ?? null) : null;
-  const topStories = tagged.slice(0, 6);
-  const blindspotStories = tagged.filter((s) => s.blindspot).slice(0, 6);
-  const heroListStories = leadStory ? tagged.slice(1, 1 + 10) : tagged.slice(0, 10);
-  const heroRenderedSlugs = new Set([leadStory?.slug, ...heroListStories.map((s) => s.slug)].filter(Boolean) as string[]);
-  const feedPool = tagged.filter((story) => !heroRenderedSlugs.has(story.slug));
+  const usedHomeSlugs = new Set<string>();
+  const pickUniqueStories = (pool: typeof tagged, limit: number) => {
+    const picked: typeof tagged = [];
+    for (const story of pool) {
+      const slug = String(story?.slug || "").trim();
+      if (!slug || usedHomeSlugs.has(slug)) continue;
+      usedHomeSlugs.add(slug);
+      picked.push(story);
+      if (picked.length >= limit) break;
+    }
+    return picked;
+  };
+
+  const leadStory = pageNumber === 1 ? (tagged.find((story) => Boolean(story?.slug)) ?? null) : null;
+  if (leadStory?.slug) usedHomeSlugs.add(leadStory.slug);
+
+  const topStories = pickUniqueStories(tagged, 6);
+  const topNewsStories = pickUniqueStories(tagged, 12);
+  const heroListStories = pickUniqueStories(tagged, 10);
+  const blindspotStories = pickUniqueStories(
+    tagged.filter((s) => s.blindspot),
+    6,
+  );
+
   const gridStart = (pageNumber - 1) * PAGE_SIZE;
-  const gridStories = feedPool.slice(gridStart, gridStart + PAGE_SIZE);
-  const cardStories = gridStories.slice(0, 4);
-  const listStoriesFeed = gridStories.slice(4);
 
   const exploreTopics = Array.from(
     tagged
@@ -106,7 +121,8 @@ export default async function HomePage({ searchParams }: HomeProps) {
     .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
     .slice(0, 6);
 
-  const storiesByTopic = tagged.reduce((acc, story) => {
+  const storiesForTopicSections = tagged.filter((story) => !usedHomeSlugs.has(story.slug));
+  const storiesByTopic = storiesForTopicSections.reduce((acc, story) => {
     const primary = topicSlug(story.topic);
     if (!acc.has(primary)) acc.set(primary, { slug: primary, label: topicDisplayName(story.topic), stories: [] as typeof tagged });
     const primaryBucket = acc.get(primary)!;
@@ -134,12 +150,21 @@ export default async function HomePage({ searchParams }: HomeProps) {
   const topicSections = selectedTopicSlugs
     .map((slug) => storiesByTopic.get(slug))
     .filter(Boolean)
-    .map((item) => ({
-      slug: item!.slug,
-      label: item!.label,
-      stories: item!.stories.slice(0, 6),
-    }))
+    .map((item) => {
+      const sectionStories = item!.stories.filter((story) => !usedHomeSlugs.has(story.slug)).slice(0, 6);
+      sectionStories.forEach((story) => usedHomeSlugs.add(story.slug));
+      return {
+        slug: item!.slug,
+        label: item!.label,
+        stories: sectionStories,
+      };
+    })
     .filter((item) => item.stories.length >= 2);
+
+  const feedPool = tagged.filter((story) => !usedHomeSlugs.has(story.slug));
+  const gridStories = feedPool.slice(gridStart, gridStart + PAGE_SIZE);
+  const cardStories = gridStories.slice(0, 4);
+  const listStoriesFeed = gridStories.slice(4);
 
   const paramsForPage = (nextPage: number) => {
     const params = new URLSearchParams();
@@ -166,7 +191,7 @@ export default async function HomePage({ searchParams }: HomeProps) {
         <div className="home-hero-left">
           <DailyBriefingList stories={topStories} />
           <div className="u-mt-1">
-            <TopNewsStories stories={tagged.slice(6, 18)} />
+            <TopNewsStories stories={topNewsStories} />
           </div>
         </div>
 

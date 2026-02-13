@@ -4,7 +4,10 @@ import { StoryImage } from "@/components/StoryImage";
 import { sourceCountLabel, storyReadTimeMinutes } from "@/lib/format";
 
 export function TopNewsStories({ stories }: { stories: Story[] }) {
-  const visible = stories.slice(0, 6);
+  const visible = stories
+    .filter((story, index, arr) => arr.findIndex((item) => item.slug === story.slug) === index)
+    .filter((story) => String(story.title || "").trim().length > 0)
+    .slice(0, 6);
   const totalArticles = visible.reduce((acc, s) => acc + (s.coverage?.totalSources ?? s.sourceCount ?? 0), 0);
 
   return (
@@ -17,7 +20,7 @@ export function TopNewsStories({ stories }: { stories: Story[] }) {
       </div>
       <ol className="rail-list rail-list-rich">
         {visible.map((story) => (
-          <li key={story.id}>
+          <li key={`${story.slug}-${story.id}`}>
             <Link href={`/story/${story.slug}`} className="rail-rich-link">
               <StoryImage src={story.imageUrl} alt={story.title} width={86} height={54} className="rail-thumb" unoptimized />
               <span>
@@ -29,8 +32,8 @@ export function TopNewsStories({ stories }: { stories: Story[] }) {
             </Link>
           </li>
         ))}
+        {visible.length === 0 ? <li className="story-meta">No top stories available yet.</li> : null}
       </ol>
     </section>
   );
 }
-

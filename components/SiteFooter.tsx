@@ -45,6 +45,7 @@ export async function SiteFooter() {
     {
       title: "Community",
       links: [
+        ["About", "/about"],
         ["Newsletters", "/newsletters"],
         ["Help", "/help"],
         ["Blog", "/blog"],

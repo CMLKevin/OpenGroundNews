@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 export function NewsletterSignup({ list = "blindspot" }: { list?: string }) {
   const [email, setEmail] = useState("");
-  const [frequency, setFrequency] = useState<"daily" | "weekly">("weekly");
+  const defaultFrequency = useMemo<"daily" | "twice-weekly" | "weekly">(() => {
+    if (list === "daily") return "daily";
+    if (list === "blindspot") return "twice-weekly";
+    return "weekly";
+  }, [list]);
+  const [frequency, setFrequency] = useState<"daily" | "twice-weekly" | "weekly">(defaultFrequency);
   const [status, setStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
+
+  useEffect(() => {
+    setFrequency(defaultFrequency);
+  }, [defaultFrequency]);
 
   async function submit() {
     const clean = email.trim();
@@ -49,9 +58,14 @@ export function NewsletterSignup({ list = "blindspot" }: { list?: string }) {
       </label>
       <label className="story-meta u-grid u-grid-gap-02">
         Frequency
-        <select className="select-control" value={frequency} onChange={(e) => setFrequency(e.target.value as any)}>
-          <option value="weekly">Weekly</option>
+        <select
+          className="select-control"
+          value={frequency}
+          onChange={(e) => setFrequency(e.target.value as "daily" | "twice-weekly" | "weekly")}
+        >
           <option value="daily">Daily</option>
+          <option value="twice-weekly">Twice weekly</option>
+          <option value="weekly">Weekly</option>
         </select>
       </label>
       <button className="btn" type="button" onClick={submit} disabled={status === "loading"}>

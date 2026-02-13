@@ -30,6 +30,17 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
     ) {
       return { normalizedSrc: derivedFallback, directExternalSrc: "" };
     }
+    const looksLikePath = clean.startsWith("/") && !/\s/.test(clean);
+    const looksLikeHttp = /^https?:\/\//i.test(clean);
+    if (!looksLikePath && !looksLikeHttp) {
+      return { normalizedSrc: derivedFallback, directExternalSrc: "" };
+    }
+    if (
+      lower.includes("ground.news") &&
+      (lower.includes("placeholder") || lower.includes("no-image") || lower.includes("image-unavailable"))
+    ) {
+      return { normalizedSrc: derivedFallback, directExternalSrc: "" };
+    }
     // Ground News "webMetaImg" endpoints bake bias bars into the image; treat as unusable to avoid
     // duplicating our own bias bars and to fix rounding artifacts in the UI.
     if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) {

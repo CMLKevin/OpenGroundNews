@@ -56,6 +56,7 @@ export function TopNavClient() {
   const [edition, setEdition] = useState(DEFAULT_EDITION);
   const [theme, setTheme] = useState<"dark" | "light" | "auto">("light");
   const [user, setUser] = useState<null | { id: string; email: string; role: "user" | "admin" }>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const [q, setQ] = useState("");
   const [suggest, setSuggest] = useState<SuggestResponse | null>(null);
@@ -127,11 +128,16 @@ export function TopNavClient() {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
         setSuggestOpen(false);
+        setMobileMenuOpen(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [pathname, searchParams]);
 
   function hrefWithEdition(target: string) {
     const params = new URLSearchParams();
@@ -213,8 +219,12 @@ export function TopNavClient() {
       <Link className={pathname === "/" ? "is-active" : ""} href={hrefWithEdition("/")}>
         Home
       </Link>
-      <Link className={pathname.startsWith("/my") ? "is-active" : ""} href={hrefWithEdition("/my")}>
-        For You <span className="for-you-dot" aria-hidden="true" />
+      <Link
+        className={pathname.startsWith("/my") ? "is-active" : ""}
+        href={hrefWithEdition("/my")}
+        title="For You has personalized updates"
+      >
+        For You <span className="for-you-dot" aria-hidden="true" title="Personalized updates" />
       </Link>
       <Link className={pathname.startsWith("/my-news-bias") ? "is-active" : ""} href={hrefWithEdition("/my-news-bias")}>
         My Bias
@@ -229,6 +239,7 @@ export function TopNavClient() {
       ) : null}
     </>
   );
+  const accountHref = `/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`;
 
   return (
     <div className="container topbar-main">
@@ -410,13 +421,92 @@ export function TopNavClient() {
             </button>
           </>
         ) : (
-          <Link
-            className="btn nav-desktop-only"
-            href={`/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`}
-          >
+          <Link className="btn nav-desktop-only" href={accountHref}>
             My Account
           </Link>
         )}
+        <button
+          type="button"
+          className={`btn mobile-menu-toggle ${mobileMenuOpen ? "is-open" : ""}`}
+          aria-expanded={mobileMenuOpen}
+          aria-controls="mobile-top-nav"
+          aria-label={mobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
+          onClick={() => setMobileMenuOpen((v) => !v)}
+        >
+          {mobileMenuOpen ? "Close" : "Menu"}
+        </button>
+      </div>
+
+      <div id="mobile-top-nav" className={`mobile-menu-sheet ${mobileMenuOpen ? "is-open" : ""}`}>
+        <nav className="mobile-menu-links" aria-label="Mobile primary">
+          <Link href={hrefWithEdition("/")} className={pathname === "/" ? "is-active" : ""}>
+            Home
+          </Link>
+          <Link href={hrefWithEdition("/my")} className={pathname.startsWith("/my") ? "is-active" : ""}>
+            For You
+          </Link>
+          <Link href={hrefWithEdition("/my-news-bias")} className={pathname.startsWith("/my-news-bias") ? "is-active" : ""}>
+            My Bias
+          </Link>
+          <Link href={hrefWithEdition("/blindspot")} className={pathname.startsWith("/blindspot") ? "is-active" : ""}>
+            Blindspot
+          </Link>
+          <Link href={hrefWithEdition("/compare")} className={pathname.startsWith("/compare") ? "is-active" : ""}>
+            Compare
+          </Link>
+          <Link href={hrefWithEdition("/calendar")} className={pathname.startsWith("/calendar") ? "is-active" : ""}>
+            Calendar
+          </Link>
+          <Link href={hrefWithEdition("/maps")} className={pathname.startsWith("/maps") ? "is-active" : ""}>
+            Maps
+          </Link>
+          <Link href={hrefWithEdition("/newsletters")} className={pathname.startsWith("/newsletters") ? "is-active" : ""}>
+            Newsletters
+          </Link>
+          {user?.role === "admin" ? (
+            <Link href={hrefWithEdition("/admin")} className={pathname.startsWith("/admin") ? "is-active" : ""}>
+              Admin
+            </Link>
+          ) : null}
+        </nav>
+
+        <label className="story-meta u-grid u-grid-gap-02">
+          Edition
+          <select className="select-control" value={edition} onChange={(e) => updateEdition(e.target.value)} aria-label="Edition">
+            {EDITIONS.map((item) => (
+              <option key={`mobile-edition-${item}`} value={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="theme-toggle" aria-label="Theme selector (mobile)">
+          <span className="story-meta">Theme:</span>
+          <button type="button" className={`theme-link ${theme === "light" ? "is-active" : ""}`} onClick={() => applyTheme("light")}>
+            Light
+          </button>
+          <span className="theme-dot" aria-hidden="true">|</span>
+          <button type="button" className={`theme-link ${theme === "dark" ? "is-active" : ""}`} onClick={() => applyTheme("dark")}>
+            Dark
+          </button>
+          <span className="theme-dot" aria-hidden="true">|</span>
+          <button type="button" className={`theme-link ${theme === "auto" ? "is-active" : ""}`} onClick={() => applyTheme("auto")}>
+            Auto
+          </button>
+        </div>
+
+        <div className="chip-row">
+          {user ? (
+            <button className="btn" type="button" onClick={logout} aria-label="Sign out">
+              Sign out
+            </button>
+          ) : (
+            <Link className="btn" href={accountHref}>
+              My Account
+            </Link>
+          )}
+        </div>
       </div>
     </div>
   );

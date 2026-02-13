@@ -106,6 +106,7 @@ export function FollowToggle({ kind, slug, label, variant = "icon" }: Props) {
       <button
         className={`btn perspective-btn ${followed ? "is-active" : ""}`}
         aria-label={aria}
+        title={aria}
         onClick={onToggle}
         type="button"
       >
@@ -115,7 +116,7 @@ export function FollowToggle({ kind, slug, label, variant = "icon" }: Props) {
   }
 
   return (
-    <button className="topic-action" aria-label={aria} onClick={onToggle} type="button">
+    <button className="topic-action" aria-label={aria} title={aria} onClick={onToggle} type="button">
       {text}
     </button>
   );

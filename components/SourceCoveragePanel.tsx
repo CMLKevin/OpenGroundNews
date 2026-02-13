@@ -34,7 +34,18 @@ const biasWeight: Record<string, number> = {
 
 function normalizeOwnership(value?: string) {
   const clean = (value || "").trim();
-  return clean || "Unlabeled";
+  if (!clean) return "";
+  if (clean.toLowerCase() === "unlabeled") return "";
+  return clean;
+}
+
+function normalizePaywall(value?: string) {
+  const clean = String(value || "").trim().toLowerCase();
+  if (!clean || clean === "unknown") return "";
+  if (clean === "none") return "No paywall";
+  if (clean === "soft") return "Soft paywall";
+  if (clean === "hard") return "Hard paywall";
+  return clean;
 }
 
 function biasToneClass(value?: string) {
@@ -64,7 +75,10 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
   }, [sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter, query, sources]);
 
   const ownershipOptions = useMemo(
-    () => Array.from(new Set(sources.map((s) => normalizeOwnership(s.ownership)))).sort((a, b) => a.localeCompare(b)),
+    () =>
+      Array.from(new Set(sources.map((s) => normalizeOwnership(s.ownership)).filter(Boolean))).sort((a, b) =>
+        a.localeCompare(b),
+      ),
     [sources],
   );
 
@@ -223,6 +237,14 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
       <div className="source-list">
         {paged.map((src) => {
           const href = `/story/${storySlug}?source=${encodeURIComponent(src.url)}`;
+          const locality = (src.locality || "").trim();
+          const ownership = normalizeOwnership(src.ownership);
+          const paywall = normalizePaywall(src.paywall);
+          const sourceMeta = [
+            ownership ? `Ownership: ${ownership}` : null,
+            paywall ? `Paywall: ${paywall}` : null,
+            typeof src.repostedBy === "number" && src.repostedBy > 0 ? `Reposted by ${src.repostedBy} other sources` : null,
+          ].filter(Boolean) as string[];
           return (
             <article key={src.id} className="source-item">
               <div className="source-head">
@@ -242,8 +264,8 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
                       </Link>
                     </strong>
                     <span className="story-meta">
-                      {src.publishedAt ? `${prettyRelativeDate(src.publishedAt)} (${prettyDate(src.publishedAt)}) • ` : ""}
-                      {src.locality ?? "Locality unavailable"}
+                      {src.publishedAt ? `${prettyRelativeDate(src.publishedAt)} (${prettyDate(src.publishedAt)})` : "Recent coverage"}
+                      {locality ? ` • ${locality}` : ""}
                     </span>
                   </div>
                 </div>
@@ -259,10 +281,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
                 {src.headline || src.excerpt.split(/[.?!]/)[0] || "Coverage excerpt"}
               </h3>
               <p className="story-summary source-excerpt">{src.excerpt}</p>
-              <div className="story-meta">
-                Ownership: {normalizeOwnership(src.ownership)} • Paywall: {src.paywall ?? "unknown"}
-                {typeof src.repostedBy === "number" && src.repostedBy > 0 ? ` • Reposted by ${src.repostedBy} other sources` : ""}
-              </div>
+              {sourceMeta.length ? <div className="story-meta">{sourceMeta.join(" • ")}</div> : null}
               <div className="u-flex u-flex-gap-05 u-wrap">
                 <Link className="btn" href={href}>
                   Read in OpenGroundNews Reader

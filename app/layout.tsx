@@ -5,6 +5,7 @@ import { TopNav } from "@/components/TopNav";
 import { TopNavSkeleton } from "@/components/TopNavSkeleton";
 import { MobileBottomNav } from "@/components/MobileBottomNav";
 import { SiteFooter } from "@/components/SiteFooter";
+import { AppBreadcrumbs } from "@/components/AppBreadcrumbs";
 import "@/app/globals.css";
 import { cookies } from "next/headers";
 
@@ -60,6 +61,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <Suspense fallback={<TopNavSkeleton />}>
           <TopNav />
         </Suspense>
+        <AppBreadcrumbs />
         {children}
         <MobileBottomNav />
         <SiteFooter />

@@ -79,9 +79,11 @@ export function PodcastCards({ entries }: { entries: Array<string | StoryPodcast
               ? remainder.split(":").slice(1).join(":").trim()
               : "");
         const artwork = provider === "youtube" && url ? youtubeThumb(url) : "";
+        if (!url) return null;
+        if (!label || /^unknown$/i.test(label)) return null;
         return { label, url, host, provider, quote, artwork, biasTone: biasToneFromText(`${label} ${quote}`) };
       })
-      .filter((c) => c.label);
+      .filter((c): c is NonNullable<typeof c> => Boolean(c));
   }, [entries]);
 
   if (cards.length === 0) return null;
@@ -102,13 +104,9 @@ export function PodcastCards({ entries }: { entries: Array<string | StoryPodcast
             </div>
             <strong className="podcast-title">{c.label}</strong>
             {c.quote ? <blockquote className="podcast-quote">“{c.quote}”</blockquote> : null}
-            {c.url ? (
-              <a className="btn" href={c.url} target="_blank" rel="noreferrer">
-                Listen to Full Episode
-              </a>
-            ) : (
-              <span className="story-meta">Link unavailable</span>
-            )}
+            <a className="btn" href={c.url} target="_blank" rel="noreferrer">
+              Listen to Full Episode
+            </a>
           </div>
         </article>
       ))}

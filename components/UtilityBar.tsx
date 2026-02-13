@@ -16,6 +16,15 @@ function UtilityIcon({ path }: { path: string }) {
   );
 }
 
+function normalizeLocalLabel(value: string) {
+  const clean = String(value || "").trim();
+  if (!clean) return "";
+  return clean
+    .replace(/\bU\.k\.\b/gi, "UK")
+    .replace(/\bU\.s\.\b/gi, "US")
+    .replace(/\bU\.a\.e\.\b/gi, "UAE");
+}
+
 export async function UtilityBar() {
   const todayLabel = new Date().toLocaleDateString("en-US", {
     weekday: "long",
@@ -29,7 +38,7 @@ export async function UtilityBar() {
 
   const user = await getCurrentUser();
   const prefs = user ? await db.userPrefs.findUnique({ where: { userId: user.id } }).catch(() => null) : null;
-  const localLabel = (prefs?.localLabel || guestLocalLabel || "").trim();
+  const localLabel = normalizeLocalLabel(prefs?.localLabel || guestLocalLabel || "");
 
   return (
     <div className="topbar-utility">

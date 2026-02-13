@@ -8,6 +8,21 @@ function normalize(value: string) {
   return (value || "").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function dedupeStories(stories: Story[]) {
+  const byKey = new Map<string, Story>();
+  for (const story of stories) {
+    const canonical = normalize(story.canonicalUrl || "");
+    const title = normalize(story.title || "");
+    const topic = normalize(story.topic || "");
+    const key = canonical || `${title}|${topic}` || story.slug;
+    const previous = byKey.get(key);
+    if (!previous || +new Date(story.updatedAt) > +new Date(previous.updatedAt)) {
+      byKey.set(key, story);
+    }
+  }
+  return Array.from(byKey.values());
+}
+
 function dominantBiasBucket(story: Story): "left" | "center" | "right" {
   const l = Number(story.bias?.left || 0) || 0;
   const c = Number(story.bias?.center || 0) || 0;
@@ -218,6 +233,8 @@ export async function searchStories(params: {
     const b = params.bias;
     stories = stories.filter((s) => dominantBiasBucket(s) === b);
   }
+
+  stories = dedupeStories(stories);
 
   const scored = stories
     .map((story) => ({ story, score: storyScore(story, tokens, q) }))

@@ -112,15 +112,15 @@ export function AuthForm({ mode }: { mode: Mode }) {
           </p>
         ) : null}
         <div className="chip-row">
-          <button className="btn" type="submit" disabled={loading}>
+          <button className="btn btn-primary" type="submit" disabled={loading}>
             {loading ? "Working..." : mode === "signup" ? "Create account" : "Sign in"}
           </button>
           {mode === "signup" ? (
-            <Link className="btn" href={`/login${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
+            <Link className="btn btn-secondary" href={`/login${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
               I already have an account
             </Link>
           ) : (
-            <Link className="btn" href={`/signup${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
+            <Link className="btn btn-secondary" href={`/signup${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
               Create account
             </Link>
           )}
