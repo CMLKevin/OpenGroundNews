@@ -1,6 +1,7 @@
 /* eslint-disable no-console */
 import crypto from "node:crypto";
 import { getDb, requireDatabaseUrl } from "../db_client.mjs";
+import { createOutletEnricher } from "./outlet_enrichment.mjs";
 
 function stableId(prefix, value) {
   const hash = crypto.createHash("sha256").update(String(value)).digest("hex").slice(0, 16);
@@ -60,6 +61,67 @@ function mapFactuality(v) {
   if (raw === "low") return "low";
   if (raw === "very-low") return "very_low";
   return "unknown";
+}
+
+function isUnknownOwnership(value) {
+  const v = String(value || "").toLowerCase().trim();
+  return !v || v === "unknown" || v === "unlabeled" || v === "unlabelled" || v === "unclassified" || v === "n/a";
+}
+
+function shouldPersistEnrichSource(src) {
+  const biasRating = mapBiasRating(src?.biasRating || src?.bias_rating || src?.biasRating7 || "");
+  const factuality = mapFactuality(src?.factuality || "");
+  const logoUrl = String(src?.logoUrl || "").trim();
+  const websiteUrl = String(src?.websiteUrl || "").trim();
+  const ownership = String(src?.ownership || "").trim();
+  return (
+    biasRating === "unknown" ||
+    factuality === "unknown" ||
+    isUnknownOwnership(ownership) ||
+    !logoUrl ||
+    !websiteUrl
+  );
+}
+
+function mergePersistEnrichedSource(src, enriched) {
+  if (!enriched || typeof enriched !== "object") return src;
+  const next = { ...src };
+
+  const incomingBias = String(enriched.bias || "").trim();
+  if (mapBias(next.bias) === "unknown" && mapBias(incomingBias) !== "unknown") next.bias = incomingBias;
+
+  const incomingBiasRating = String(enriched.biasRating || "").trim();
+  if (mapBiasRating(next.biasRating || next.bias_rating || next.biasRating7 || "") === "unknown" && mapBiasRating(incomingBiasRating) !== "unknown") {
+    next.biasRating = incomingBiasRating;
+  }
+
+  const incomingFactuality = String(enriched.factuality || "").trim();
+  if (mapFactuality(next.factuality || "") === "unknown" && mapFactuality(incomingFactuality) !== "unknown") {
+    next.factuality = incomingFactuality;
+  }
+
+  const incomingOwnership = String(enriched.ownership || "").trim();
+  if (isUnknownOwnership(next.ownership) && !isUnknownOwnership(incomingOwnership)) next.ownership = incomingOwnership;
+
+  if (!String(next.logoUrl || "").trim() && String(enriched.logoUrl || "").trim()) next.logoUrl = enriched.logoUrl;
+  if (!String(next.websiteUrl || "").trim() && String(enriched.websiteUrl || "").trim()) next.websiteUrl = enriched.websiteUrl;
+  if (!String(next.country || "").trim() && String(enriched.country || "").trim()) next.country = enriched.country;
+
+  const currentFounded = Number(next.foundedYear);
+  const incomingFounded = Number(enriched.foundedYear);
+  if (!Number.isFinite(currentFounded) && Number.isFinite(incomingFounded) && incomingFounded > 1500) {
+    next.foundedYear = Math.round(incomingFounded);
+  }
+
+  if (!String(next.description || "").trim() && String(enriched.description || "").trim()) next.description = enriched.description;
+  if (!String(next.groundNewsSourceSlug || next.sourceInfoSlug || "").trim() && String(enriched.groundNewsSourceSlug || "").trim()) {
+    next.groundNewsSourceSlug = enriched.groundNewsSourceSlug;
+  }
+  if (!String(next.groundNewsUrl || next.outletProfileUrl || "").trim() && String(enriched.groundNewsUrl || "").trim()) {
+    next.groundNewsUrl = enriched.groundNewsUrl;
+  }
+
+  return next;
 }
 
 function isWireOutlet(name) {
@@ -406,6 +468,58 @@ export async function persistStoriesToDb(stories, context = {}) {
     return;
   }
 
+  const persistEnrichmentEnabled = context.persistOutletEnrichment !== false && process.env.OGN_DB_PERSIST_OUTLET_ENRICHMENT !== "0";
+  const persistEnrichmentTimeoutMs = Math.max(
+    1000,
+    Number(process.env.OGN_DB_PERSIST_OUTLET_ENRICH_TIMEOUT_MS || process.env.OGN_PIPELINE_OUTLET_ENRICH_TIMEOUT_MS || 5000),
+  );
+  const persistEnricher = createOutletEnricher({
+    enabled: persistEnrichmentEnabled,
+    timeoutMs: persistEnrichmentTimeoutMs,
+    silent: true,
+  });
+
+  const storiesForPersist = [];
+  for (const story of safeStories) {
+    const incomingSources = Array.isArray(story?.sources) ? story.sources : [];
+    if (!persistEnrichmentEnabled || incomingSources.length === 0) {
+      storiesForPersist.push(story);
+      continue;
+    }
+    const enrichedSources = [];
+    for (const src of incomingSources) {
+      if (!src || typeof src !== "object") {
+        enrichedSources.push(src);
+        continue;
+      }
+      if (!shouldPersistEnrichSource(src)) {
+        enrichedSources.push(src);
+        continue;
+      }
+      try {
+        const enriched = await persistEnricher.enrich({
+          outlet: src.outlet || "",
+          url: src.url || "",
+          websiteUrl: src.websiteUrl || "",
+          logoUrl: src.logoUrl || "",
+          bias: src.bias || "unknown",
+          biasRating: src.biasRating || src.bias_rating || src.biasRating7 || "unknown",
+          factuality: src.factuality || "unknown",
+          ownership: src.ownership || "",
+          country: src.country || "",
+          foundedYear: src.foundedYear,
+          description: src.description || src.excerpt || "",
+          groundNewsUrl: src.groundNewsUrl || src.outletProfileUrl || "",
+          groundNewsSourceSlug: src.groundNewsSourceSlug || src.sourceInfoSlug || "",
+        });
+        enrichedSources.push(mergePersistEnrichedSource(src, enriched));
+      } catch {
+        enrichedSources.push(src);
+      }
+    }
+    storiesForPersist.push({ ...story, sources: enrichedSources });
+  }
+
   await db.$transaction(
     async (tx) => {
       const runStoryIds = [];
@@ -413,7 +527,7 @@ export async function persistStoriesToDb(stories, context = {}) {
       const relatedByStoryId = new Map();
       const ownershipByOutletId = new Map();
 
-      for (const story of safeStories) {
+      for (const story of storiesForPersist) {
         const slug = String(story.slug || "").trim();
         if (!slug) continue;
 

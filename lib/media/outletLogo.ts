@@ -67,5 +67,5 @@ export function outletLogoCandidates(opts: {
   if (providedLogo && !isLikelyWeakLogoUrl(providedLogo)) rawCandidates.push(providedLogo);
 
   const deduped = Array.from(new Set(rawCandidates.filter(Boolean)));
-  return deduped.map((url) => buildImageProxyUrl(url));
+  return deduped.map((url) => buildImageProxyUrl(url, { kind: "logo" }));
 }

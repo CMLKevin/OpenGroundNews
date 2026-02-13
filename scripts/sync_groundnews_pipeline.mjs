@@ -7,7 +7,7 @@ import path from "node:path";
 import * as cheerio from "cheerio";
 import { chromium } from "playwright-core";
 import { Pool } from "pg";
-import { runGroundNewsScrape } from "./groundnews_scrape_cdp.mjs";
+import { runGroundNewsScrape, DEFAULT_EDITIONS } from "./groundnews_scrape_cdp.mjs";
 import { createBrowserSession, stopBrowserSession, requireApiKey } from "./lib/browser_use_cdp.mjs";
 import { persistIngestionRun, persistStoriesToDb } from "./lib/gn/persist_db.mjs";
 import { createOutletEnricher } from "./lib/gn/outlet_enrichment.mjs";
@@ -43,6 +43,25 @@ const DEFAULT_STORY_WORKERS = 3;
 const DEFAULT_MAX_DISCOVERED_ROUTES = 32;
 const DEFAULT_MAX_TOPIC_ROUTES = 24;
 const DISCOVERY_ROUTE_SEEDS = ["/", "/my", "/local", "/blindspot", "/rating-system", "/my/discover", "/search"];
+const DEFAULT_EDITION_KEYS = Array.isArray(DEFAULT_EDITIONS) && DEFAULT_EDITIONS.length > 0
+  ? DEFAULT_EDITIONS.slice()
+  : ["international", "us", "uk", "canada", "europe"];
+
+const EDITION_LABELS = {
+  international: "International",
+  us: "US",
+  uk: "UK",
+  canada: "Canada",
+  europe: "Europe",
+};
+
+const EDITION_ALIASES = {
+  international: ["international", "international edition"],
+  us: ["us", "united states", "united states (us)"],
+  uk: ["uk", "united kingdom", "united kingdom (uk)"],
+  canada: ["canada"],
+  europe: ["europe", "eu", "european union"],
+};
 
 const TOPIC_ALIAS_RULES = [
   { slug: "us-news", label: "US News", aliases: ["us politics", "u.s. politics", "united states", "washington", "congress", "white house", "american politics"] },
@@ -444,6 +463,38 @@ const OUTLET_REFERENCE_DATA = new Map(
   ].flatMap((entry) => entry.match.map((key) => [key, entry])),
 );
 
+function normalizeEditionKey(value) {
+  const clean = String(value || "").trim().toLowerCase();
+  if (!clean) return "";
+  if (clean === "international" || clean === "int" || clean === "world") return "international";
+  if (clean === "us" || clean === "usa" || clean === "united states") return "us";
+  if (clean === "uk" || clean === "gb" || clean === "united kingdom") return "uk";
+  if (clean === "canada" || clean === "ca") return "canada";
+  if (clean === "europe" || clean === "eu" || clean === "european union") return "europe";
+  return "";
+}
+
+function normalizeEditionList(values) {
+  const input = Array.isArray(values) ? values : [];
+  const normalized = input
+    .map((value) => normalizeEditionKey(value))
+    .filter(Boolean);
+  return normalized.length > 0 ? dedupeOrdered(normalized) : DEFAULT_EDITION_KEYS.slice();
+}
+
+function editionLabel(key) {
+  return EDITION_LABELS[key] || key || "Unknown";
+}
+
+function editionAliases(key) {
+  return EDITION_ALIASES[key] || [key];
+}
+
+function routeSupportsEditionExpansion(routeUrl) {
+  const route = normalizeGroundNewsRoute(routeUrl) || "";
+  return route === "/";
+}
+
 function parseArgs(argv) {
   const envNumber = (value, fallback) => {
     const parsed = Number(value);
@@ -483,6 +534,16 @@ function parseArgs(argv) {
       0,
       Math.round(envNumber(process.env.OGN_PIPELINE_MAX_TOPIC_ROUTES, DEFAULT_MAX_TOPIC_ROUTES)),
     ),
+    scrapeSessionConcurrency: Math.max(
+      1,
+      Math.round(envNumber(process.env.OGN_SCRAPE_SESSION_CONCURRENCY, process.env.GROUNDNEWS_SCRAPE_SESSION_CONCURRENCY || 2)),
+    ),
+    editions: normalizeEditionList(
+      String(process.env.OGN_PIPELINE_EDITIONS || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+    ),
     outletEnrichment: process.env.OGN_PIPELINE_OUTLET_ENRICHMENT !== "0",
     outletEnrichmentTimeoutMs: Math.max(
       2500,
@@ -508,6 +569,17 @@ function parseArgs(argv) {
       i += 1;
     } else if (a === "--frontpage-only") {
       opts.routes = ["/"];
+      opts.editions = DEFAULT_EDITION_KEYS.slice();
+    } else if (a === "--editions" && argv[i + 1]) {
+      opts.editions = normalizeEditionList(
+        argv[i + 1]
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
+      i += 1;
+    } else if (a === "--single-edition") {
+      opts.editions = ["international"];
     } else if (a === "--scroll-passes" && argv[i + 1]) {
       const parsed = Number(argv[i + 1]);
       opts.scrollPasses = Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : opts.scrollPasses;
@@ -564,6 +636,11 @@ function parseArgs(argv) {
       const parsed = Number(argv[i + 1]);
       opts.maxTopicRoutes = Number.isFinite(parsed) && parsed >= 0 ? Math.max(0, Math.round(parsed)) : opts.maxTopicRoutes;
       i += 1;
+    } else if (a === "--scrape-session-concurrency" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.scrapeSessionConcurrency =
+        Number.isFinite(parsed) && parsed > 0 ? Math.max(1, Math.round(parsed)) : opts.scrapeSessionConcurrency;
+      i += 1;
     } else if (a === "--no-route-expansion") {
       opts.expandRoutes = false;
     } else if (a === "--no-outlet-enrichment") {
@@ -577,6 +654,7 @@ function parseArgs(argv) {
       opts.silent = false;
     }
   }
+  opts.editions = normalizeEditionList(opts.editions);
   return opts;
 }
 
@@ -2864,26 +2942,146 @@ async function expandSourceCards(page, maxClicks = 8) {
   }
 }
 
-async function collectHomepageSnapshot(page, options, auditState) {
-  const homepageUrl = "https://ground.news/";
-  await page.goto(homepageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await page.waitForTimeout(900);
-  await dismissGroundNewsCookies(page);
-  await clickTopProceedToStory(page);
-  await dismissGroundNewsCookies(page);
+function escapeRegexForUi(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
-  const scrollPasses = Number.isFinite(options.frontpageScrollPasses) && options.frontpageScrollPasses > 0
-    ? Math.max(1, Math.round(options.frontpageScrollPasses))
-    : DEFAULT_FRONTPAGE_SCROLL_PASSES;
-  for (let i = 0; i < scrollPasses; i += 1) {
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await page.waitForTimeout(700);
-    await dismissGroundNewsCookies(page);
+async function selectHomepageEditionViaSelectElement(page, editionKey) {
+  const aliases = editionAliases(editionKey).map((v) => String(v).toLowerCase());
+  return page.evaluate((labels) => {
+    const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+    const selects = Array.from(document.querySelectorAll("select"));
+    for (const select of selects) {
+      const options = Array.from(select.querySelectorAll("option"));
+      if (options.length < 3) continue;
+      const optionTexts = options.map((opt) => normalize(opt.textContent || ""));
+      const looksLikeEditionPicker = optionTexts.some((text) => text.includes("international")) && optionTexts.some((text) => text === "us" || text.includes("united states"));
+      if (!looksLikeEditionPicker) continue;
+      const target = options.find((opt) => {
+        const text = normalize(opt.textContent || "");
+        return labels.some((label) => text === label || text.includes(label));
+      });
+      if (!target) continue;
+      const value = target.getAttribute("value") ?? target.value;
+      if (value == null) continue;
+      select.value = String(value);
+      select.dispatchEvent(new Event("input", { bubbles: true }));
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    }
+    return false;
+  }, aliases);
+}
+
+async function selectHomepageEditionFromMenu(page, editionKey) {
+  const aliases = editionAliases(editionKey);
+  const triggers = [
+    page.getByRole("button", { name: /edition/i }),
+    page.getByRole("combobox", { name: /edition/i }),
+    page.locator("button:has-text('Edition')"),
+    page.locator("[aria-label*='Edition']"),
+    page.locator("text=/International Edition|US Edition|UK Edition|Canada Edition|Europe/i"),
+  ];
+  let opened = false;
+  let triggerTop = null;
+  for (const trigger of triggers) {
+    try {
+      const count = await trigger.count();
+      if (count === 0) continue;
+      const first = trigger.first();
+      const visible = await first.isVisible().catch(() => false);
+      if (!visible) continue;
+      const box = await first.boundingBox().catch(() => null);
+      await first.click({ timeout: 3000 }).catch(() => first.click({ timeout: 3000, force: true }));
+      triggerTop = box?.y ?? null;
+      opened = true;
+      break;
+    } catch {
+      // continue trying other trigger locators
+    }
   }
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(250);
+  if (!opened) return false;
 
-  const featureData = await page.evaluate(() => {
+  const targetTop = Number.isFinite(triggerTop) ? Number(triggerTop) : 100;
+  const labelsLower = aliases.map((value) => String(value).trim().toLowerCase());
+  const clickedViaDom = await page.evaluate(
+    ({ targets, anchorTop }) => {
+      const normalize = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+      const visible = (el) => {
+        if (!el || typeof el.getBoundingClientRect !== "function") return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || "1") <= 0) return false;
+        const rect = el.getBoundingClientRect();
+        if (!rect.width || !rect.height) return false;
+        if (rect.bottom < 0 || rect.top > window.innerHeight) return false;
+        return true;
+      };
+
+      const nodes = Array.from(document.querySelectorAll("button,a,li,div,[role='menuitem'],[role='option']"));
+      const candidates = nodes
+        .filter((node) => visible(node))
+        .map((node) => {
+          const text = normalize(node.textContent || "");
+          const rect = node.getBoundingClientRect();
+          const exact = targets.some((target) => text === target || text.replace(/\s+edition$/i, "") === target);
+          return { node, rect, exact };
+        })
+        .filter((entry) => entry.exact)
+        .sort((a, b) => {
+          const aScore = Math.abs(a.rect.top - anchorTop) + Math.abs(a.rect.left - 300) * 0.02;
+          const bScore = Math.abs(b.rect.top - anchorTop) + Math.abs(b.rect.left - 300) * 0.02;
+          return aScore - bScore;
+        });
+
+      const target = candidates[0]?.node;
+      if (!target) return false;
+      target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      target.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      target.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      target.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      if (typeof target.click === "function") target.click();
+      return true;
+    },
+    { targets: labelsLower, anchorTop: targetTop },
+  );
+  if (clickedViaDom) return true;
+
+  for (const label of aliases) {
+    const labelRegex = new RegExp(`^\\s*${escapeRegexForUi(label)}\\s*$`, "i");
+    const locators = [
+      page.getByRole("option", { name: labelRegex }),
+      page.getByRole("menuitem", { name: labelRegex }),
+      page.getByRole("button", { name: labelRegex }),
+      page.getByRole("link", { name: labelRegex }),
+      page.getByText(labelRegex, { exact: true }),
+    ];
+    for (const locator of locators) {
+      const clicked = (await clickIfVisible(locator)) || (await clickIfVisible(locator, { force: true }));
+      if (clicked) return true;
+    }
+  }
+  return false;
+}
+
+async function selectHomepageEdition(page, editionKey) {
+  if (!editionKey || editionKey === "international") {
+    return { applied: true, method: "default-international", edition: "international" };
+  }
+  const bySelect = await selectHomepageEditionViaSelectElement(page, editionKey).catch(() => false);
+  if (bySelect) {
+    await page.waitForTimeout(900);
+    return { applied: true, method: "select-element", edition: editionKey };
+  }
+  const byMenu = await selectHomepageEditionFromMenu(page, editionKey).catch(() => false);
+  if (byMenu) {
+    await page.waitForTimeout(1200);
+    return { applied: true, method: "menu-click", edition: editionKey };
+  }
+  return { applied: false, method: "not-found", edition: editionKey };
+}
+
+async function extractHomepageFeatureData(page) {
+  return page.evaluate(() => {
     const normalize = (value) => (value || "").replace(/\s+/g, " ").trim();
     const toAbs = (raw) => {
       try {
@@ -2951,28 +3149,162 @@ async function collectHomepageSnapshot(page, options, auditState) {
       capturedAt: new Date().toISOString(),
     };
   });
+}
+
+async function collectHomepageSnapshotForEdition(page, options, editionKey, auditState) {
+  const homepageUrl = "https://ground.news/";
+  await page.goto(homepageUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+  await page.waitForTimeout(900);
+  await dismissGroundNewsCookies(page);
+  await clickTopProceedToStory(page);
+  await dismissGroundNewsCookies(page);
+
+  const editionSelection = await selectHomepageEdition(page, editionKey);
+  if (editionSelection.applied && editionSelection.method !== "default-international") {
+    await page.goto(homepageUrl, { waitUntil: "domcontentloaded", timeout: 60000 }).catch(() => {});
+    await page.waitForTimeout(700);
+    await dismissGroundNewsCookies(page);
+  }
+
+  const scrollPasses = Number.isFinite(options.frontpageScrollPasses) && options.frontpageScrollPasses > 0
+    ? Math.max(1, Math.round(options.frontpageScrollPasses))
+    : DEFAULT_FRONTPAGE_SCROLL_PASSES;
+  for (let i = 0; i < scrollPasses; i += 1) {
+    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
+    await page.waitForTimeout(700);
+    await dismissGroundNewsCookies(page);
+  }
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await page.waitForTimeout(250);
+
+  const featureData = await extractHomepageFeatureData(page);
+  const withEdition = {
+    ...featureData,
+    edition: editionKey,
+    editionLabel: editionLabel(editionKey),
+    editionSelection,
+  };
 
   if (auditState?.enabled) {
     const html = await page.content();
-    const homepageHtmlPath = path.join(auditState.dir, "homepage.raw.html");
-    const homepageFeaturesPath = path.join(auditState.dir, "homepage.features.json");
+    const homepageHtmlPath = path.join(auditState.dir, `homepage.${editionKey}.raw.html`);
+    const homepageFeaturesPath = path.join(auditState.dir, `homepage.${editionKey}.features.json`);
     await writeTextFile(homepageHtmlPath, html);
-    await writeJsonFile(homepageFeaturesPath, featureData);
-    auditState.index.homepage = {
+    await writeJsonFile(homepageFeaturesPath, withEdition);
+    const homepageAudit = auditState.index.homepage || { editions: [] };
+    const editions = Array.isArray(homepageAudit.editions) ? homepageAudit.editions : [];
+    editions.push({
+      edition: editionKey,
+      label: editionLabel(editionKey),
       url: featureData.url,
       htmlPath: homepageHtmlPath,
       featurePath: homepageFeaturesPath,
       storyLinkCount: featureData.counts.storyLinks,
       capturedAt: featureData.capturedAt,
+      selection: editionSelection,
+    });
+    auditState.index.homepage = { ...homepageAudit, editions };
+  }
+
+  return withEdition;
+}
+
+function mergeHomepageSnapshots(snapshots, options) {
+  const valid = (snapshots || []).filter(Boolean);
+  if (valid.length === 0) {
+    return {
+      url: "https://ground.news/",
+      title: "Ground News",
+      storyLinks: [],
+      topicLinks: [],
+      outletLinks: [],
+      topStoryCards: [],
+      headings: [],
+      topicPills: [],
+      moduleFlags: {},
+      counts: { anchors: 0, storyLinks: 0, topicLinks: 0, outletLinks: 0 },
+      capturedAt: new Date().toISOString(),
+      editions: [],
+      discoveredLinks: [],
     };
   }
 
-  const uniqueLinks = Array.from(new Set(featureData.storyLinks.map(normalizeExternalUrl).filter(Boolean)));
+  const storyLinks = dedupeOrdered(valid.flatMap((snapshot) => snapshot.storyLinks || []));
+  const topicLinks = dedupeOrdered(valid.flatMap((snapshot) => snapshot.topicLinks || []));
+  const outletLinks = dedupeOrdered(valid.flatMap((snapshot) => snapshot.outletLinks || []));
+  const headings = dedupeOrdered(valid.flatMap((snapshot) => snapshot.headings || [])).slice(0, 120);
+  const topicPills = dedupeOrdered(valid.flatMap((snapshot) => snapshot.topicPills || [])).slice(0, 120);
+
+  const topStoryCards = dedupeOrdered(
+    valid.flatMap((snapshot) => (snapshot.topStoryCards || []).map((card) => normalizeExternalUrl(card?.href)).filter(Boolean)),
+  )
+    .map((href) => {
+      for (const snapshot of valid) {
+        const found = (snapshot.topStoryCards || []).find((card) => normalizeExternalUrl(card?.href) === href);
+        if (found) {
+          return {
+            href,
+            title: found.title || "",
+            edition: snapshot.edition,
+            editionLabel: snapshot.editionLabel,
+          };
+        }
+      }
+      return { href, title: "", edition: "international", editionLabel: "International" };
+    })
+    .slice(0, 260);
+
+  const moduleFlags = {};
+  for (const snapshot of valid) {
+    for (const [key, value] of Object.entries(snapshot.moduleFlags || {})) {
+      if (value) moduleFlags[key] = true;
+    }
+  }
+
+  const uniqueLinks = dedupeOrdered(storyLinks.map((link) => normalizeExternalUrl(link)).filter(Boolean));
   const limit = Number.isFinite(options.storyLimit) && options.storyLimit > 0 ? options.storyLimit : uniqueLinks.length;
+
   return {
-    ...featureData,
+    url: valid[0].url,
+    title: valid[0].title,
+    storyLinks,
+    topicLinks,
+    outletLinks,
+    topStoryCards,
+    headings,
+    topicPills,
+    moduleFlags,
+    counts: {
+      anchors: valid.reduce((sum, snapshot) => sum + Number(snapshot?.counts?.anchors || 0), 0),
+      storyLinks: storyLinks.length,
+      topicLinks: topicLinks.length,
+      outletLinks: outletLinks.length,
+      editionsCaptured: valid.length,
+    },
+    capturedAt: new Date().toISOString(),
+    editions: valid,
     discoveredLinks: uniqueLinks.slice(0, limit),
   };
+}
+
+async function collectHomepageSnapshot(page, options, auditState) {
+  const editionKeys = normalizeEditionList(options?.editions);
+  const snapshots = [];
+  for (const editionKey of editionKeys) {
+    const snapshot = await collectHomepageSnapshotForEdition(page, options, editionKey, auditState).catch(() => null);
+    if (snapshot) snapshots.push(snapshot);
+  }
+  const merged = mergeHomepageSnapshots(snapshots, options);
+
+  if (auditState?.enabled && auditState.index.homepage) {
+    auditState.index.homepage = {
+      ...auditState.index.homepage,
+      mergedCapturedAt: merged.capturedAt,
+      mergedStoryLinkCount: merged.discoveredLinks.length,
+      mergedEditionCount: snapshots.length,
+    };
+  }
+  return merged;
 }
 
 async function fetchSourceMetadata(url, cache) {
@@ -4520,10 +4852,13 @@ export async function runGroundNewsIngestion(opts = {}) {
     (Array.isArray(options.routes) ? options.routes : ["/"]).map((route) => normalizeGroundNewsRoute(route)).filter(Boolean),
   );
   const scrapeInputRoutes = normalizedBaseRoutes.length > 0 ? normalizedBaseRoutes : ["/"];
+  const scrapeEditions = normalizeEditionList(options.editions);
   const initialScrape = await runGroundNewsScrape({
     routes: scrapeInputRoutes,
+    editions: scrapeEditions,
     out: options.out,
     scrollPasses: options.scrollPasses,
+    sessionConcurrency: options.scrapeSessionConcurrency,
     maxLinksPerRoute: options.maxLinksPerRoute,
     silent: options.silent,
   });
@@ -4552,7 +4887,10 @@ export async function runGroundNewsIngestion(opts = {}) {
       let discoveryBrowser = null;
       let discoverySessionId = null;
       try {
-        const session = await createBrowserSession({}, { rotationKey: "groundnews:frontpage-discovery" });
+        const session = await createBrowserSession(
+          {},
+          { rotationKey: `groundnews:frontpage-discovery:editions:${scrapeEditions.join(",")}` },
+        );
         discoverySessionId = session.id;
         if (!session.cdpUrl) throw new Error("Browser Use did not return cdpUrl for front-page discovery.");
         discoveryBrowser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 60000 });
@@ -4574,8 +4912,10 @@ export async function runGroundNewsIngestion(opts = {}) {
         }
         const expandedScrape = await runGroundNewsScrape({
           routes: expandedRoutes,
+          editions: scrapeEditions,
           out: options.out,
           scrollPasses: options.scrollPasses,
+          sessionConcurrency: options.scrapeSessionConcurrency,
           maxLinksPerRoute: options.maxLinksPerRoute,
           silent: options.silent,
         });
@@ -4608,6 +4948,9 @@ export async function runGroundNewsIngestion(opts = {}) {
     links = prioritizedLinks.slice(0, effectiveLimit);
 
     if (!options.silent) {
+      const homepageEditionCount = Number(homepageSnapshot?.counts?.editionsCaptured || 0);
+      console.log(`front-page editions captured: ${homepageEditionCount || scrapeEditions.length} (${scrapeEditions.join(", ")})`);
+      console.log(`scrape session concurrency: ${options.scrapeSessionConcurrency}`);
       console.log(`front-page discovered links: ${(homepageSnapshot?.discoveredLinks || []).length}`);
       console.log(`front-page top cards: ${homepageTopStoryLinks.length}`);
       console.log(`route-scraped links: ${scrapeLinks.length} (across ${scrapeOutput.routeCount || 0} routes)`);
@@ -4838,10 +5181,13 @@ export async function runGroundNewsIngestion(opts = {}) {
     uniqueStoryLinks: links.length,
     ingestedStories: stories.length,
     errors: {
+      editions: scrapeEditions,
+      homepageEditionCount: Number(homepageSnapshot?.counts?.editionsCaptured || 0),
       homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
       scrapeUniqueStoryLinkCount: scrapeOutput.uniqueStoryLinkCount || 0,
       scrapeRouteCount: scrapeOutput.routeCount || 0,
       sourceFetchConcurrency,
+      scrapeSessionConcurrency: options.scrapeSessionConcurrency,
       outletEnrichment: Boolean(options.outletEnrichment),
       outletEnrichmentTimeoutMs: options.outletEnrichmentTimeoutMs,
       storyWorkers: options.storyWorkerCount,
@@ -4851,6 +5197,9 @@ export async function runGroundNewsIngestion(opts = {}) {
       imagePreRepairRemaining: preRepairStats?.remainingPlaceholders || 0,
     },
   }).catch(() => {});
+  if (process.env.DATABASE_URL) {
+    await persistStoriesToDb([], { disconnect: true }).catch(() => {});
+  }
 
   return {
     ok: true,
@@ -4858,6 +5207,9 @@ export async function runGroundNewsIngestion(opts = {}) {
     scrapedLinks: links.length,
     totalStories: normalizedStories.length,
     routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
+    editions: scrapeEditions,
+    scrapeSessionConcurrency: options.scrapeSessionConcurrency,
+    homepageEditionCount: Number(homepageSnapshot?.counts?.editionsCaptured || 0),
     homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
     output: options.out,
     articleAuditDir: auditState.enabled ? auditState.dir : null,

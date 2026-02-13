@@ -5,7 +5,14 @@ describe("buildImageProxyUrl", () => {
   it("encodes external URL", () => {
     const out = buildImageProxyUrl("https://example.com/a b.jpg");
     expect(out).toContain("/api/images/proxy?url=");
-    expect(out).toContain("https%3A%2F%2Fexample.com%2Fa%20b.jpg");
+    const params = new URLSearchParams(out.split("?")[1] || "");
+    expect(params.get("url")).toBe("https://example.com/a b.jpg");
+  });
+
+  it("includes kind when provided", () => {
+    const out = buildImageProxyUrl("https://example.com/logo.svg", { kind: "logo" });
+    expect(out).toContain("/api/images/proxy?");
+    expect(out).toContain("kind=logo");
   });
 
   it("returns empty string for empty value", () => {

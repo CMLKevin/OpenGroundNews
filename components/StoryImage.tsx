@@ -21,17 +21,30 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
 
   const { normalizedSrc, directExternalSrc } = useMemo(() => {
     const clean = (src || "").trim();
-    if (!clean || clean === STORY_IMAGE_FALLBACK) {
+    const lower = clean.toLowerCase();
+    if (
+      !clean ||
+      clean === STORY_IMAGE_FALLBACK ||
+      lower.includes("ground.news/images/story-fallback") ||
+      lower.includes("ground.news/images/fallbacks/story-fallback")
+    ) {
       return { normalizedSrc: derivedFallback, directExternalSrc: "" };
     }
-    const lower = clean.toLowerCase();
     // Ground News "webMetaImg" endpoints bake bias bars into the image; treat as unusable to avoid
     // duplicating our own bias bars and to fix rounding artifacts in the UI.
     if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) {
       return { normalizedSrc: derivedFallback, directExternalSrc: "" };
     }
+    if (lower.startsWith("https://ground.news/images/cache/") || lower.startsWith("https://www.ground.news/images/cache/")) {
+      try {
+        const parsed = new URL(clean);
+        return { normalizedSrc: parsed.pathname, directExternalSrc: clean };
+      } catch {
+        return { normalizedSrc: derivedFallback, directExternalSrc: "" };
+      }
+    }
     if (/^https?:\/\//i.test(clean)) {
-      return { normalizedSrc: buildImageProxyUrl(clean), directExternalSrc: clean };
+      return { normalizedSrc: buildImageProxyUrl(clean, { kind: "story" }), directExternalSrc: clean };
     }
     return { normalizedSrc: clean, directExternalSrc: "" };
   }, [src, derivedFallback]);

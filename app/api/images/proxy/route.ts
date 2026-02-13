@@ -16,6 +16,8 @@ function requestIp(request: NextRequest) {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const url = (searchParams.get("url") || "").trim();
+  const rawKind = (searchParams.get("kind") || "").trim().toLowerCase();
+  const kind = rawKind === "logo" || rawKind === "story" ? rawKind : "generic";
   if (!url) {
     return NextResponse.json({ ok: false, error: "Missing url" }, { status: 400 });
   }
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const image = await fetchProxiedImage(url).catch((error) => ({
+  const image = await fetchProxiedImage(url, { kind }).catch((error) => ({
     ok: false as const,
     status: 500,
     error: error instanceof Error ? error.message : "Image fetch failed",
@@ -56,12 +58,18 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ ok: false, error: image.error }, { status: image.status });
   }
 
+  const isFallback = "fallback" in image ? Boolean(image.fallback) : false;
+  const fallbackReason = "fallbackReason" in image ? image.fallbackReason : "";
+
   return new NextResponse(image.body, {
     status: 200,
     headers: {
       "content-type": image.contentType,
       "cache-control": image.cacheControl,
       "x-image-cache": image.cacheHit ? "hit" : "miss",
+      "x-image-kind": kind,
+      "x-image-fallback": isFallback ? "1" : "0",
+      ...(fallbackReason ? { "x-image-fallback-reason": fallbackReason } : {}),
       "x-ratelimit-limit": String(rl.limit),
       "x-ratelimit-remaining": String(rl.remaining),
       "x-ratelimit-reset": String(rl.resetAt),
