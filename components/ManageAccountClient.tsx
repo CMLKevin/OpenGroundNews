@@ -167,9 +167,6 @@ export function ManageAccountClient() {
             <Link className="btn" href="/login?next=/my/manage">
               Sign in
             </Link>
-            <Link className="btn" href="/signup?next=/my/manage">
-              Create account
-            </Link>
           </div>
         ) : null}
       </section>

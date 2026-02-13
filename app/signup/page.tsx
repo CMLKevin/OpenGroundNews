@@ -9,7 +9,7 @@ export default function SignupPage() {
         <AuthForm mode="signup" />
         <aside className="panel auth-side">
           <div className="auth-side-art" aria-hidden="true" />
-          <h2 className="u-m0">Make your feed yours</h2>
+          <h2 className="u-m0">Make your feed impossible to game</h2>
           <ul className="auth-benefits">
             <li>Sync follows and reading history across devices</li>
             <li>Build custom feeds for topics and sources</li>
@@ -17,7 +17,7 @@ export default function SignupPage() {
             <li>Get notifications when coverage spikes</li>
           </ul>
           <p className="story-meta u-m0">
-            Already have an account? <a href="/login">Sign in</a>.
+            Already have an account? <a href="/login">Sign in</a> with Google.
           </p>
         </aside>
       </div>

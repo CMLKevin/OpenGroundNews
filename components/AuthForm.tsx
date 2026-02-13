@@ -1,137 +1,64 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
+import { useSearchParams } from "next/navigation";
 import { OAuthButtons } from "@/components/OAuthButtons";
 import { safeAppPath } from "@/lib/navigation";
 
 type Mode = "login" | "signup";
 
-export function AuthForm({ mode }: { mode: Mode }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+const BITMAP_ROWS = [
+  "000111222333000",
+  "001122333444100",
+  "012233444554210",
+  "123344555665321",
+  "123455666665321",
+  "123455666665321",
+  "012344555554210",
+  "001233444443100",
+  "000122333321000",
+] as const;
 
+const BITMAP_TILES = BITMAP_ROWS.join("").split("");
+
+export function AuthForm({ mode }: { mode: Mode }) {
+  const searchParams = useSearchParams();
   const redirectTo = useMemo(() => safeAppPath(searchParams.get("next"), "/my"), [searchParams]);
 
-  async function submit() {
-    setError(null);
-    if (mode === "signup" && password !== confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-    setLoading(true);
-    try {
-      const endpoint = mode === "signup" ? "/api/auth/signup" : "/api/auth/login";
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = (await res.json()) as { ok: boolean; error?: string };
-      if (!data.ok) {
-        setError(data.error || "Authentication failed");
-        return;
-      }
-      router.push(redirectTo);
-      router.refresh();
-    } catch {
-      setError("Authentication failed");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   return (
-    <section className="panel auth-shell u-grid u-grid-gap-08">
-      <div className="section-title u-pt-0">
-        <div className="u-grid u-grid-gap-01">
-          <h1 className="u-m0 u-font-serif">{mode === "signup" ? "Create account" : "Sign in"}</h1>
-          <span className="story-meta">{mode === "signup" ? "Sync follows and reading history" : "Welcome back"}</span>
-        </div>
+    <section className="panel auth-shell auth-shell-oauth auth-halftone u-grid u-grid-gap-08">
+      <div className="auth-topline">
+        <span className="auth-kicker">OpenGroundNews Account</span>
+        <h1 className="u-m0 u-font-serif">
+          {mode === "signup" ? "Create your account with Google" : "Sign in with Google"}
+        </h1>
+        <p className="auth-lede u-m0">
+          {mode === "signup"
+            ? "One-click setup. Your follows, custom feeds, and reading history sync instantly."
+            : "Drop into your personalized feed in one tap. No password friction."}
+        </p>
       </div>
 
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void submit();
-        }}
-        className="u-grid u-grid-gap-08"
-      >
-        <label className="story-meta u-grid u-grid-gap-02">
-          Email
-          <input
-            className="input-control"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            type="email"
-            autoComplete="email"
-            required
-          />
-        </label>
-        <label className="story-meta u-grid u-grid-gap-02">
-          Password
-          <input
-            className="input-control"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            type="password"
-            autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            placeholder={mode === "signup" ? "At least 10 characters" : ""}
-            required
-            minLength={10}
-          />
-        </label>
-        {mode === "signup" ? (
-          <label className="story-meta u-grid u-grid-gap-02">
-            Confirm password
-            <input
-              className="input-control"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              type="password"
-              autoComplete="new-password"
-              required
-              minLength={10}
-            />
-          </label>
-        ) : null}
-        {mode === "login" ? (
-          <Link className="story-meta u-w-fit" href="/forgot-password">
-            Forgot password?
-          </Link>
-        ) : null}
-        {error ? (
-          <p className="note u-m0">
-            {error}
-          </p>
-        ) : null}
-        <div className="chip-row">
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? "Working..." : mode === "signup" ? "Create account" : "Sign in"}
-          </button>
-          {mode === "signup" ? (
-            <Link className="btn btn-secondary" href={`/login${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
-              I already have an account
-            </Link>
-          ) : (
-            <Link className="btn btn-secondary" href={`/signup${redirectTo ? `?next=${encodeURIComponent(redirectTo)}` : ""}`}>
-              Create account
-            </Link>
-          )}
+      <div className="auth-bitmap-stage" aria-hidden="true">
+        <div className="auth-bitmap-grid">
+          {BITMAP_TILES.map((tone, idx) => (
+            <span key={`px-${idx}`} className={`auth-pixel tone-${tone}`} />
+          ))}
         </div>
-      </form>
-      <div className="u-grid u-grid-gap-035">
-        <span className="story-meta">Or continue with</span>
+        <div className="auth-bitmap-caption">Perspective Radar // Live</div>
+      </div>
+
+      <div className="auth-terminal-strip" aria-hidden="true">
+        FEED-LINK :: BIAS-RADAR :: SIGNAL STABLE :: MODE PERSONALIZED
+      </div>
+
+      <div className="auth-google-panel">
         <OAuthButtons next={redirectTo} />
       </div>
+
       <p className="story-meta u-m0">
-        By continuing, you agree to the Terms and acknowledge the Privacy Policy. Passwords are stored using scrypt hashing.
+        By continuing, you agree to the Terms and acknowledge the Privacy Policy.
         {" "}
         <Link href="/terms">Terms</Link> • <Link href="/privacy">Privacy</Link>
       </p>

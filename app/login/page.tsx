@@ -9,15 +9,15 @@ export default function LoginPage() {
         <AuthForm mode="login" />
         <aside className="panel auth-side">
           <div className="auth-side-art" aria-hidden="true" />
-          <h2 className="u-m0">A clearer way to read the news</h2>
+          <h2 className="u-m0">See every side without doomscroll fatigue</h2>
           <ul className="auth-benefits">
-            <li>Bias ratings and 7-category outlet system</li>
-            <li>Blindspot stories that one side barely sees</li>
-            <li>Weather context for your city</li>
-            <li>Saved stories, citations, and custom feeds</li>
+            <li>7-category bias + factuality system for every source</li>
+            <li>Blindspot stories the other side barely covers</li>
+            <li>Custom feeds tuned to your follows and habits</li>
+            <li>Reading history and citations synced across devices</li>
           </ul>
           <p className="story-meta u-m0">
-            New here? Create an account to sync your feed preferences.
+            Start with Google in one click and instantly personalize For You.
           </p>
         </aside>
       </div>

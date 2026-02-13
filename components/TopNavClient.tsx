@@ -421,8 +421,8 @@ export function TopNavClient() {
             </button>
           </>
         ) : (
-          <Link className="btn nav-desktop-only" href={accountHref}>
-            My Account
+          <Link className="btn nav-desktop-only account-cta" href={accountHref}>
+            Sign in
           </Link>
         )}
         <button
@@ -502,8 +502,8 @@ export function TopNavClient() {
               Sign out
             </button>
           ) : (
-            <Link className="btn" href={accountHref}>
-              My Account
+            <Link className="btn account-cta account-cta-mobile" href={accountHref}>
+              Sign in
             </Link>
           )}
         </div>

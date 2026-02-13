@@ -1,11 +1,13 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import AppleProvider from "next-auth/providers/apple";
 import CredentialsProvider from "next-auth/providers/credentials";
 import { db } from "@/lib/db";
 import { linkOAuthAccount, upsertOAuthUserByEmail } from "@/lib/dbAuth";
 
 const providers = [] as NextAuthOptions["providers"];
+const googleClientId = process.env.AUTH_GOOGLE_ID || process.env.GOOGLE_CLIENT_ID || "";
+const googleClientSecret = process.env.AUTH_GOOGLE_SECRET || process.env.GOOGLE_CLIENT_SECRET || "";
+export const isGoogleOAuthConfigured = Boolean(googleClientId && googleClientSecret);
 
 providers.push(
   CredentialsProvider({
@@ -17,20 +19,11 @@ providers.push(
   }),
 );
 
-if (process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET) {
+if (isGoogleOAuthConfigured) {
   providers.push(
     GoogleProvider({
-      clientId: process.env.AUTH_GOOGLE_ID,
-      clientSecret: process.env.AUTH_GOOGLE_SECRET,
-    }),
-  );
-}
-
-if (process.env.AUTH_APPLE_ID && process.env.AUTH_APPLE_SECRET) {
-  providers.push(
-    AppleProvider({
-      clientId: process.env.AUTH_APPLE_ID,
-      clientSecret: process.env.AUTH_APPLE_SECRET,
+      clientId: googleClientId,
+      clientSecret: googleClientSecret,
     }),
   );
 }

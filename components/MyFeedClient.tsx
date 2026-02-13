@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { Story } from "@/lib/types";
 import { listFollows } from "@/lib/localPrefs";
 import { outletSlug, topicSlug } from "@/lib/lookup";
@@ -9,26 +10,40 @@ import { StoryListItem } from "@/components/StoryListItem";
 
 type CloudPrefs = { topics: string[]; outlets: string[] };
 
-async function fetchCloudPrefs(): Promise<CloudPrefs | null> {
+async function fetchFollows(): Promise<CloudPrefs | null> {
+  const prefsRes = await fetch("/api/follows", { cache: "no-store" });
+  if (!prefsRes.ok) return null;
+  const prefsData = (await prefsRes.json()) as any;
+  const prefs = prefsData?.prefs;
+  if (!prefs) return { topics: [], outlets: [] };
+  return {
+    topics: Array.isArray(prefs.topics) ? prefs.topics : [],
+    outlets: Array.isArray(prefs.outlets) ? prefs.outlets : [],
+  };
+}
+
+async function fetchCloudPrefs(): Promise<{ signedIn: boolean; prefs: CloudPrefs } | null> {
   try {
     const meRes = await fetch("/api/auth/me", { cache: "no-store" });
     const me = (await meRes.json()) as any;
     if (!me?.user) return null;
-    const prefsRes = await fetch("/api/follows", { cache: "no-store" });
-    if (!prefsRes.ok) return null;
-    const prefsData = (await prefsRes.json()) as any;
-    const prefs = prefsData?.prefs;
-    if (!prefs) return { topics: [], outlets: [] };
-    return {
-      topics: Array.isArray(prefs.topics) ? prefs.topics : [],
-      outlets: Array.isArray(prefs.outlets) ? prefs.outlets : [],
-    };
+
+    let prefs = await fetchFollows();
+    if (!prefs) {
+      await fetch("/api/auth/oauth/sync", { method: "POST" }).catch(() => null);
+      prefs = await fetchFollows();
+    }
+
+    return { signedIn: true, prefs: prefs || { topics: [], outlets: [] } };
   } catch {
     return null;
   }
 }
 
 export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
+  const searchParams = useSearchParams();
+  const edition = (searchParams.get("edition") || "").trim();
+  const withEdition = (href: string) => (edition ? `${href}?edition=${encodeURIComponent(edition)}` : href);
   const [cloud, setCloud] = useState(false);
   const [followedTopics, setFollowedTopics] = useState<string[]>([]);
   const [followedOutlets, setFollowedOutlets] = useState<string[]>([]);
@@ -40,17 +55,17 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const prefs = await fetchCloudPrefs();
+      const cloudState = await fetchCloudPrefs();
       if (!alive) return;
-      if (!prefs) {
+      if (!cloudState || !cloudState.signedIn) {
         setCloud(false);
         setFollowedTopics(listFollows("topic"));
         setFollowedOutlets(listFollows("outlet"));
         return;
       }
       setCloud(true);
-      setFollowedTopics(prefs.topics);
-      setFollowedOutlets(prefs.outlets);
+      setFollowedTopics(cloudState.prefs.topics);
+      setFollowedOutlets(cloudState.prefs.outlets);
     })();
     return () => {
       alive = false;
@@ -84,8 +99,10 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
 
     const followed = hasFollows
       ? base.filter((story) => {
-          const topicMatch = story.tags.some((tag) => topicSet.has(topicSlug(tag).toLowerCase()));
-          const outletMatch = story.sources.some((src) => outletSet.has(outletSlug(src.outlet).toLowerCase()));
+          const storyTags = Array.isArray(story.tags) ? story.tags : [];
+          const storySources = Array.isArray(story.sources) ? story.sources : [];
+          const topicMatch = storyTags.some((tag) => topicSet.has(topicSlug(tag).toLowerCase()));
+          const outletMatch = storySources.some((src) => outletSet.has(outletSlug(src.outlet).toLowerCase()));
           return topicMatch || outletMatch;
         })
       : base;
@@ -93,7 +110,7 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
     const query = q.trim().toLowerCase();
     if (!query) return followed;
     return followed.filter((s) => {
-      const hay = `${s.title} ${s.summary} ${s.topic} ${s.tags.join(" ")}`.toLowerCase();
+      const hay = `${s.title || ""} ${s.summary || ""} ${s.topic || ""} ${(s.tags || []).join(" ")}`.toLowerCase();
       return hay.includes(query);
     });
   }, [initialStories, followedTopics, followedOutlets, view, bias, q]);
@@ -152,7 +169,7 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
           </div>
           {!hasFollows ? (
             <p className="story-meta u-m0">
-              Follow a few topics and sources from <Link href="/my/discover">Discover</Link> to personalize this feed.
+              Follow a few topics and sources from <Link href={withEdition("/my/discover")}>Discover</Link> to personalize this feed.
             </p>
           ) : null}
         </section>
@@ -197,7 +214,7 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
               Follow topics and sources in Discover to turn this into your personalized dashboard.
             </p>
           )}
-          <Link className="btn" href="/my/discover">
+          <Link className="btn" href={withEdition("/my/discover")}>
             Discover more
           </Link>
         </section>
