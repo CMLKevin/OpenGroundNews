@@ -5,6 +5,7 @@ import path from "node:path";
 export const BROWSER_USE_API_BASE = "https://api.browser-use.com/api/v2";
 const ROTATION_STATE_DEFAULT = path.join(process.cwd(), "output", "browser_use", "rotation_state.json");
 const DEFAULT_SESSION_CREATE_RETRIES = 4;
+const BROWSER_USE_REQUEST_TIMEOUT_MS = Math.max(5000, Number(process.env.BROWSER_USE_REQUEST_TIMEOUT_MS || 45000));
 const DEFAULT_EDITION_PROXY_COUNTRY_MAP = {
   international: ["us", "gb", "ca"],
   us: ["us"],
@@ -25,6 +26,7 @@ async function requestJson(path, init = {}) {
   const apiKey = requireApiKey();
   const res = await fetch(`${BROWSER_USE_API_BASE}${path}`, {
     ...init,
+    signal: init.signal || AbortSignal.timeout(BROWSER_USE_REQUEST_TIMEOUT_MS),
     headers: {
       "X-Browser-Use-API-Key": apiKey,
       "Content-Type": "application/json",

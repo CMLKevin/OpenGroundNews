@@ -31,6 +31,9 @@ const IMAGE_CACHE_MAX_BYTES = 5 * 1024 * 1024;
 const IMAGE_CACHE_TIMEOUT_MS = 15000;
 const STORY_HTTP_FETCH_TIMEOUT_MS = 18000;
 const STORY_IMAGE_REPAIR_CONCURRENCY = 8;
+const DUPLICATE_IMAGE_HASH_BUCKET_THRESHOLD = 3;
+const DUPLICATE_IMAGE_URL_BUCKET_THRESHOLD = 3;
+const DUPLICATE_IMAGE_SCAN_LIMIT = 1200;
 const LOCK_TIMEOUT_MS = 15000;
 const LOCK_STALE_MS = 120000;
 const LOCK_WAIT_STEP_MS = 80;
@@ -770,6 +773,8 @@ async function loadRefreshCandidatesFromDb(limit) {
           OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
           OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
           OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://ground.news/images/cache/%'
+          OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://www.ground.news/images/cache/%'
         )
       ORDER BY "updatedAt" ASC
       LIMIT $1
@@ -867,6 +872,10 @@ async function loadLikelyBrokenImageStoryRowsFromDb(limit) {
         OR LOWER(COALESCE("imageUrl", '')) LIKE 'https://img.youtube.com/%'
         OR LOWER(COALESCE("imageUrl", '')) LIKE 'http://img.youtube.com/%'
         OR LOWER(COALESCE("imageUrl", '')) LIKE '%democratandchronicle.com/gcdn/%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE 'https://ground.news/images/cache/%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE 'http://ground.news/images/cache/%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE 'https://www.ground.news/images/cache/%'
+        OR LOWER(COALESCE("imageUrl", '')) LIKE 'http://www.ground.news/images/cache/%'
         OR LOWER(COALESCE("imageUrl", '')) LIKE '/images/cache/%'
       )
       ORDER BY "updatedAt" DESC
@@ -876,17 +885,13 @@ async function loadLikelyBrokenImageStoryRowsFromDb(limit) {
     const mapped = [];
     for (const row of result.rows || []) {
       const imageUrl = normalizeText(row?.imageUrl || "");
-      if (imageUrl.startsWith("/images/cache/")) {
-        const localPath = path.join(process.cwd(), "public", imageUrl.replace(/^\/+/, ""));
-        try {
-          const stat = await fs.stat(localPath);
-          // Small/missing cache files are usually icon/skeleton captures, not story art.
-          if (stat.size > 7000) {
-            continue;
-          }
-        } catch {
-          // Missing cache files should be considered broken.
+      const localCachePath = absoluteGroundCacheToLocalPath(imageUrl);
+      if (localCachePath) {
+        if (await cachedStoryImageLooksHealthy(localCachePath)) {
+          continue;
         }
+      } else if (!isLikelyTemplateStoryImageUrl(imageUrl)) {
+        continue;
       }
       mapped.push({
         id: normalizeText(row?.id || ""),
@@ -914,17 +919,21 @@ async function loadDuplicateCacheImageStoryRows(limit) {
       `SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
        FROM "Story"
        WHERE LOWER(COALESCE("imageUrl", '')) LIKE '/images/cache/%'
+         OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://ground.news/images/cache/%'
+         OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://www.ground.news/images/cache/%'
        ORDER BY "updatedAt" DESC
-       LIMIT 300`,
+       LIMIT $1`,
+      [Math.max(max, DUPLICATE_IMAGE_SCAN_LIMIT)],
     );
     const rows = result.rows || [];
     const hashToRows = new Map();
     for (const row of rows) {
       const imageUrl = normalizeText(row?.imageUrl || "");
-      if (!imageUrl.startsWith("/images/cache/")) continue;
-      const localPath = path.join(process.cwd(), "public", imageUrl.replace(/^\/+/, ""));
+      const localPath = absoluteGroundCacheToLocalPath(imageUrl);
+      if (!localPath) continue;
+      const absolutePath = path.join(process.cwd(), "public", localPath.replace(/^\/+/, ""));
       try {
-        const bytes = await fs.readFile(localPath);
+        const bytes = await fs.readFile(absolutePath);
         const digest = crypto.createHash("sha256").update(bytes).digest("hex");
         const bucket = hashToRows.get(digest) || [];
         bucket.push({
@@ -944,7 +953,7 @@ async function loadDuplicateCacheImageStoryRows(limit) {
 
     const duplicates = [];
     for (const bucket of hashToRows.values()) {
-      if ((bucket || []).length < 5) continue;
+      if ((bucket || []).length < DUPLICATE_IMAGE_HASH_BUCKET_THRESHOLD) continue;
       duplicates.push(...bucket);
     }
 
@@ -952,6 +961,43 @@ async function loadDuplicateCacheImageStoryRows(limit) {
       .sort((a, b) => +new Date(b.updatedAt || 0) - +new Date(a.updatedAt || 0))
       .slice(0, max)
       .map(({ byteSize: _byteSize, ...rest }) => rest);
+  } catch {
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
+async function loadOverusedImageUrlStoryRowsFromDb(limit) {
+  const max = Math.max(1, Math.round(Number(limit) || 0));
+  if (!process.env.DATABASE_URL || max <= 0) return [];
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const result = await pool.query(
+      `SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
+       FROM "Story"
+       WHERE COALESCE("imageUrl", '') <> ''
+         AND "imageUrl" IN (
+           SELECT "imageUrl"
+           FROM "Story"
+           WHERE COALESCE("imageUrl", '') <> ''
+           GROUP BY "imageUrl"
+           HAVING COUNT(*) >= $1
+         )
+       ORDER BY "updatedAt" DESC
+       LIMIT $2`,
+      [DUPLICATE_IMAGE_URL_BUCKET_THRESHOLD, Math.max(max, DUPLICATE_IMAGE_SCAN_LIMIT)],
+    );
+    return (result.rows || [])
+      .map((row) => ({
+        id: normalizeText(row?.id || ""),
+        slug: normalizeText(row?.slug || ""),
+        title: normalizeText(row?.title || ""),
+        canonicalUrl: normalizeExternalUrl(row?.canonicalUrl),
+        imageUrl: normalizeText(row?.imageUrl || ""),
+        updatedAt: normalizeText(row?.updatedAt || ""),
+      }))
+      .filter((row) => row.id);
   } catch {
     return [];
   } finally {
@@ -1155,6 +1201,8 @@ function isPlaceholderStoryImageUrl(value) {
 function sanitizeImageUrl(raw, baseUrl) {
   const value = sanitizeCdnPathArtifacts(normalizeText(raw));
   if (!value) return fallbackImageForSeed(baseUrl || "story");
+  if (value.startsWith("/images/cache/")) return value;
+  if (value.startsWith("/images/story-fallback") || value.startsWith("/images/fallbacks/story-fallback-")) return value;
 
   const unwrapNextImage = (input) => {
     const clean = normalizeText(input);
@@ -1231,6 +1279,24 @@ function isLikelyDecorativeImageUrl(url) {
   return false;
 }
 
+function isLikelyTemplateStoryImageUrl(url) {
+  const lower = normalizeText(url).toLowerCase();
+  if (!lower) return true;
+  if (isLikelyDecorativeImageUrl(lower)) return true;
+  if (lower.includes("mediabiasfactcheck")) return true;
+  if (lower.includes("media-bias-fact-check")) return true;
+  if (lower.includes("social-preview")) return true;
+  if (lower.includes("social-share")) return true;
+  if (lower.includes("default-image")) return true;
+  if (lower.includes("external_source_reviewer_icons")) return true;
+  if (lower.includes("adfontes")) return true;
+  if (lower.includes("placeholder")) return true;
+  if (lower.includes("no-image")) return true;
+  if (lower.includes("image-unavailable")) return true;
+  if (/\/(avatar|brand|profile|favicon|logo)([/?._-]|$)/i.test(lower)) return true;
+  return false;
+}
+
 function normalizeExternalImageCandidate(raw, baseUrl) {
   const candidate = sanitizePossiblyEscapedUrl(raw);
   if (!candidate) return "";
@@ -1238,6 +1304,7 @@ function normalizeExternalImageCandidate(raw, baseUrl) {
   if (!sanitized) return "";
   if (sanitized.startsWith("/images/")) return "";
   if (isPlaceholderStoryImageUrl(sanitized)) return "";
+  if (isLikelyTemplateStoryImageUrl(sanitized)) return "";
   if (isLikelyDecorativeImageUrl(sanitized)) return "";
   return sanitized;
 }
@@ -1275,6 +1342,7 @@ function scoreImageCandidate(url) {
   if (clean.includes("web-api-cdn.ground.news/api/v04/images/story/")) score += 10;
   if (clean.includes("thumbnail")) score -= 6;
   if (clean.includes("hqdefault.jpg")) score -= 8;
+  if (isLikelyTemplateStoryImageUrl(clean)) score -= 120;
   if (isLikelyDecorativeImageUrl(clean)) score -= 80;
   return score;
 }
@@ -1367,6 +1435,7 @@ async function fetchStoryImageCandidatesViaHttp(storyUrl, sourceMetadataCache, s
 async function isImageUrlReachable(url) {
   const external = normalizeExternalUrl(url);
   if (!external) return false;
+  if (isLikelyTemplateStoryImageUrl(external)) return false;
   try {
     const response = await fetch(external, {
       cache: "no-store",
@@ -1386,6 +1455,18 @@ async function isImageUrlReachable(url) {
   }
 }
 
+async function localImageExistsWithMinBytes(localPath, minBytes = 7000) {
+  const clean = normalizeText(localPath);
+  if (!clean) return false;
+  const absolute = path.join(process.cwd(), "public", clean.replace(/^\/+/, ""));
+  try {
+    const stat = await fs.stat(absolute);
+    return stat.size >= minBytes;
+  } catch {
+    return false;
+  }
+}
+
 async function normalizeAbsoluteGroundCacheUrlsInDb() {
   if (!process.env.DATABASE_URL) return 0;
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -1397,6 +1478,9 @@ async function normalizeAbsoluteGroundCacheUrlsInDb() {
     for (const row of rows.rows || []) {
       const localPath = absoluteGroundCacheToLocalPath(row?.imageUrl || "");
       if (!localPath) continue;
+      if (!(await localImageExistsWithMinBytes(localPath, 7000))) {
+        continue;
+      }
       await pool.query(`UPDATE "Story" SET "imageUrl" = $1 WHERE "id" = $2`, [localPath, row.id]);
       updated += 1;
     }
@@ -1413,8 +1497,13 @@ async function cachedStoryImageLooksHealthy(localImagePath) {
   if (!clean.startsWith("/images/cache/")) return false;
   const absolute = path.join(process.cwd(), "public", clean.replace(/^\/+/, ""));
   try {
-    const stat = await fs.stat(absolute);
-    return stat.size > 7000;
+    const bytes = await fs.readFile(absolute);
+    if (!bytes.length || bytes.length < 7000) return false;
+    const dimensions = detectImageDimensions(bytes, guessContentTypeFromImagePath(clean));
+    if (imageBytesLookTemplateOrWeak({ url: clean, byteLength: bytes.length, dimensions })) {
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -1442,8 +1531,9 @@ async function repairPlaceholderStoryImagesViaHttp({
   const placeholderRows = await loadPlaceholderStoryRowsFromDb(max);
   const brokenRows = await loadLikelyBrokenImageStoryRowsFromDb(max);
   const duplicateCacheRows = await loadDuplicateCacheImageStoryRows(max);
+  const overusedImageRows = await loadOverusedImageUrlStoryRowsFromDb(max);
   const rowById = new Map();
-  for (const row of [...placeholderRows, ...brokenRows, ...duplicateCacheRows]) {
+  for (const row of [...placeholderRows, ...brokenRows, ...duplicateCacheRows, ...overusedImageRows]) {
     if (!row?.id) continue;
     if (!rowById.has(row.id)) rowById.set(row.id, row);
   }
@@ -1481,7 +1571,9 @@ async function repairPlaceholderStoryImagesViaHttp({
 
       try {
         const httpResult = await fetchStoryImageCandidatesViaHttp(storyUrl, sourceMetadataCache, sourceFetchConcurrency);
-        const candidates = httpResult.candidates || [];
+        const candidates = dedupeOrdered(httpResult.candidates || []).sort(
+          (a, b) => scoreImageCandidate(b) - scoreImageCandidate(a) || a.localeCompare(b),
+        );
         if (httpResult.status >= 400 && httpResult.status < 500) {
           staleStoryIds.push(row.id);
           unresolved += 1;
@@ -1494,9 +1586,12 @@ async function repairPlaceholderStoryImagesViaHttp({
 
         let finalImage = "";
         for (const candidate of candidates) {
+          if (isLikelyTemplateStoryImageUrl(candidate)) continue;
           const cached = await cacheStoryImage(candidate, row.slug || row.id || shortHash(storyUrl, 12));
-          const normalized = normalizeStoryImageCandidate(cached || candidate, storyUrl);
+          const normalized =
+            normalizeStoryImageCandidate(cached || "", storyUrl) || normalizeStoryImageCandidate(candidate, storyUrl);
           if (!normalized) continue;
+          if (isLikelyTemplateStoryImageUrl(normalized)) continue;
           if (normalized.startsWith("/images/cache/")) {
             if (!(await cachedStoryImageLooksHealthy(normalized))) {
               continue;
@@ -1516,8 +1611,12 @@ async function repairPlaceholderStoryImagesViaHttp({
         }
 
         await pool.query(
-          `UPDATE "Story" SET "imageUrl" = $1, "lastRefreshedAt" = NOW() WHERE "id" = $2`,
-          [finalImage, row.id],
+          `UPDATE "Story"
+           SET "imageUrl" = $1,
+               "canonicalUrl" = COALESCE(NULLIF("canonicalUrl", ''), $2),
+               "lastRefreshedAt" = NOW()
+           WHERE "id" = $3`,
+          [finalImage, storyUrl, row.id],
         );
         repaired += 1;
         if (row.slug) {
@@ -3461,12 +3560,135 @@ function aggregateOutletBias(sources) {
   });
 }
 
+function jpegDimensions(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 4) return null;
+  if (buffer[0] !== 0xff || buffer[1] !== 0xd8) return null;
+  let offset = 2;
+  while (offset + 9 < buffer.length) {
+    if (buffer[offset] !== 0xff) {
+      offset += 1;
+      continue;
+    }
+    const marker = buffer[offset + 1];
+    if (
+      marker === 0xc0 ||
+      marker === 0xc1 ||
+      marker === 0xc2 ||
+      marker === 0xc3 ||
+      marker === 0xc5 ||
+      marker === 0xc6 ||
+      marker === 0xc7 ||
+      marker === 0xc9 ||
+      marker === 0xca ||
+      marker === 0xcb ||
+      marker === 0xcd ||
+      marker === 0xce ||
+      marker === 0xcf
+    ) {
+      const height = buffer.readUInt16BE(offset + 5);
+      const width = buffer.readUInt16BE(offset + 7);
+      if (width > 0 && height > 0) return { width, height };
+      return null;
+    }
+    if (marker === 0xd9 || marker === 0xda) break;
+    const size = buffer.readUInt16BE(offset + 2);
+    if (!Number.isFinite(size) || size < 2) break;
+    offset += 2 + size;
+  }
+  return null;
+}
+
+function webpDimensions(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 30) return null;
+  if (buffer.toString("ascii", 0, 4) !== "RIFF" || buffer.toString("ascii", 8, 12) !== "WEBP") return null;
+  const chunk = buffer.toString("ascii", 12, 16);
+  if (chunk === "VP8X" && buffer.length >= 30) {
+    const width = 1 + buffer.readUIntLE(24, 3);
+    const height = 1 + buffer.readUIntLE(27, 3);
+    if (width > 0 && height > 0) return { width, height };
+    return null;
+  }
+  if (chunk === "VP8L" && buffer.length >= 25) {
+    const b0 = buffer[21];
+    const b1 = buffer[22];
+    const b2 = buffer[23];
+    const b3 = buffer[24];
+    const width = 1 + (b0 | ((b1 & 0x3f) << 8));
+    const height = 1 + (((b1 & 0xc0) >> 6) | (b2 << 2) | ((b3 & 0x0f) << 10));
+    if (width > 0 && height > 0) return { width, height };
+    return null;
+  }
+  if (chunk === "VP8 " && buffer.length >= 30) {
+    const signatureAt = 23;
+    if (buffer[signatureAt] === 0x9d && buffer[signatureAt + 1] === 0x01 && buffer[signatureAt + 2] === 0x2a) {
+      const width = buffer.readUInt16LE(signatureAt + 3) & 0x3fff;
+      const height = buffer.readUInt16LE(signatureAt + 5) & 0x3fff;
+      if (width > 0 && height > 0) return { width, height };
+    }
+  }
+  return null;
+}
+
+function pngDimensions(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 24) return null;
+  const signature = buffer.toString("hex", 0, 8);
+  if (signature !== "89504e470d0a1a0a") return null;
+  const width = buffer.readUInt32BE(16);
+  const height = buffer.readUInt32BE(20);
+  if (width > 0 && height > 0) return { width, height };
+  return null;
+}
+
+function detectImageDimensions(buffer, contentType = "") {
+  const type = String(contentType || "").toLowerCase();
+  if (type.includes("png")) return pngDimensions(buffer);
+  if (type.includes("jpeg") || type.includes("jpg")) return jpegDimensions(buffer);
+  if (type.includes("webp")) return webpDimensions(buffer);
+  return pngDimensions(buffer) || jpegDimensions(buffer) || webpDimensions(buffer);
+}
+
+function imageBytesLookTemplateOrWeak({ url, byteLength, dimensions }) {
+  const cleanUrl = normalizeText(url);
+  if (!cleanUrl) return true;
+  if (isPlaceholderStoryImageUrl(cleanUrl) || isLikelyTemplateStoryImageUrl(cleanUrl)) return true;
+  if (!Number.isFinite(byteLength) || byteLength <= 0 || byteLength > IMAGE_CACHE_MAX_BYTES) return true;
+  if (byteLength < 6000) return true;
+  if (!dimensions || !Number.isFinite(dimensions.width) || !Number.isFinite(dimensions.height)) return false;
+
+  const width = Number(dimensions.width);
+  const height = Number(dimensions.height);
+  if (width < 240 || height < 180) return true;
+  const ratio = width / height;
+  const maxSide = Math.max(width, height);
+  const area = width * height;
+  if (maxSide <= 620 && ratio >= 0.86 && ratio <= 1.18) return true;
+  if (ratio < 0.45 || ratio > 2.9) return true;
+  if (area < 90000) return true;
+  return false;
+}
+
+function guessContentTypeFromImagePath(imagePath) {
+  const clean = normalizeText(imagePath).toLowerCase();
+  if (clean.endsWith(".png")) return "image/png";
+  if (clean.endsWith(".webp")) return "image/webp";
+  if (clean.endsWith(".gif")) return "image/gif";
+  if (clean.endsWith(".svg")) return "image/svg+xml";
+  if (clean.endsWith(".avif")) return "image/avif";
+  return "image/jpeg";
+}
+
 async function cacheStoryImage(imageUrl, storySlug) {
   const cleaned = normalizeText(imageUrl);
-  if (!cleaned || cleaned.startsWith("/images/")) return cleaned || fallbackImageForSeed(storySlug);
+  if (!cleaned) return "";
+  if (cleaned.startsWith("/images/cache/")) {
+    return (await cachedStoryImageLooksHealthy(cleaned)) ? cleaned : "";
+  }
+  if (cleaned.startsWith("/images/")) return cleaned;
+  if (isPlaceholderStoryImageUrl(cleaned) || isLikelyTemplateStoryImageUrl(cleaned)) return "";
   try {
     const parsed = new URL(cleaned);
-    if (!/^https?:$/i.test(parsed.protocol)) return fallbackImageForSeed(storySlug);
+    if (!/^https?:$/i.test(parsed.protocol)) return "";
+    if (isLikelyTemplateStoryImageUrl(parsed.toString())) return "";
 
     const response = await fetch(parsed.toString(), {
       cache: "no-store",
@@ -3478,11 +3700,20 @@ async function cacheStoryImage(imageUrl, storySlug) {
         referer: "https://ground.news/",
       },
     });
-    if (!response.ok) return cleaned;
+    if (!response.ok) return "";
     const contentType = String(response.headers.get("content-type") || "").toLowerCase();
-    if (!contentType.startsWith("image/")) return cleaned;
+    if (!contentType.startsWith("image/")) return "";
     const buffer = Buffer.from(await response.arrayBuffer());
-    if (!buffer.length || buffer.length > IMAGE_CACHE_MAX_BYTES) return cleaned;
+    const dimensions = detectImageDimensions(buffer, contentType);
+    if (
+      imageBytesLookTemplateOrWeak({
+        url: parsed.toString(),
+        byteLength: buffer.length,
+        dimensions,
+      })
+    ) {
+      return "";
+    }
 
     const ext =
       contentType.includes("png")
@@ -3500,7 +3731,7 @@ async function cacheStoryImage(imageUrl, storySlug) {
     await fs.writeFile(targetPath, buffer);
     return `/images/cache/${fileName}`;
   } catch {
-    return cleaned || fallbackImageForSeed(storySlug);
+    return "";
   }
 }
 
@@ -4477,7 +4708,12 @@ async function enrichStory(
 
   const seededStoryImage = sanitizeImageUrl(rendered.imageUrl, storyUrl);
   const imageCandidatePool = [];
-  if (seededStoryImage && !isPlaceholderStoryImageUrl(seededStoryImage) && !seededStoryImage.startsWith("/images/")) {
+  if (
+    seededStoryImage &&
+    !isPlaceholderStoryImageUrl(seededStoryImage) &&
+    !isLikelyTemplateStoryImageUrl(seededStoryImage) &&
+    !seededStoryImage.startsWith("/images/")
+  ) {
     imageCandidatePool.push(seededStoryImage);
   }
 
@@ -4485,6 +4721,7 @@ async function enrichStory(
     const fromSource = sanitizeImageUrl(source.imageUrl || "", source.url);
     if (!fromSource) continue;
     if (isPlaceholderStoryImageUrl(fromSource)) continue;
+    if (isLikelyTemplateStoryImageUrl(fromSource)) continue;
     if (fromSource.startsWith("/images/")) continue;
     imageCandidatePool.push(fromSource);
   }
@@ -4496,7 +4733,9 @@ async function enrichStory(
       async (source) => {
         const sourceMeta = await fetchSourceMetadata(source.url, sourceMetadataCache);
         const sourceImage = sanitizeImageUrl(sourceMeta.imageUrl || "", source.url);
-        return sourceImage && !isPlaceholderStoryImageUrl(sourceImage) ? sourceImage : "";
+        return sourceImage && !isPlaceholderStoryImageUrl(sourceImage) && !isLikelyTemplateStoryImageUrl(sourceImage)
+          ? sourceImage
+          : "";
       },
     );
     for (const sourceImage of sourceMetaList) {
@@ -4511,22 +4750,50 @@ async function enrichStory(
     for (const candidate of httpResult.candidates || []) {
       const normalized = normalizeExternalImageCandidate(candidate, storyUrl);
       if (!normalized) continue;
+      if (isLikelyTemplateStoryImageUrl(normalized)) continue;
       imageCandidatePool.push(normalized);
     }
   }
 
-  let storyImageCandidate = imageCandidatePool.find(Boolean) || seededStoryImage;
-  if (!storyImageCandidate || isPlaceholderStoryImageUrl(storyImageCandidate)) {
-    storyImageCandidate = fallbackImageForSeed(slug);
+  const rankedImageCandidates = dedupeOrdered(
+    imageCandidatePool.filter((candidate) => candidate && !isLikelyTemplateStoryImageUrl(candidate)),
+  ).sort((a, b) => scoreImageCandidate(b) - scoreImageCandidate(a) || a.localeCompare(b));
+  let storyImageCandidate = "";
+  let imageUrl = "";
+  for (const candidate of rankedImageCandidates) {
+    const cached = await cacheStoryImage(candidate, slug);
+    const normalized =
+      normalizeStoryImageCandidate(cached || "", storyUrl) || normalizeStoryImageCandidate(candidate, storyUrl);
+    if (!normalized) continue;
+    if (isPlaceholderStoryImageUrl(normalized) || isLikelyTemplateStoryImageUrl(normalized)) continue;
+    if (normalized.startsWith("/images/cache/")) {
+      if (!(await cachedStoryImageLooksHealthy(normalized))) continue;
+      storyImageCandidate = candidate;
+      imageUrl = normalized;
+      break;
+    }
+    if (await isImageUrlReachable(normalized)) {
+      storyImageCandidate = candidate;
+      imageUrl = normalized;
+      break;
+    }
   }
+
+  if (!imageUrl) {
+    storyImageCandidate = fallbackImageForSeed(slug);
+    imageUrl = (await cacheStoryImage(storyImageCandidate, slug)) || storyImageCandidate;
+  }
+
   if (process.env.OGN_IMAGE_DEBUG === "1") {
     const seededKind = isPlaceholderStoryImageUrl(seededStoryImage) ? "placeholder" : "ok";
-    const selectedKind = isPlaceholderStoryImageUrl(storyImageCandidate) ? "placeholder" : "ok";
+    const selectedKind =
+      !storyImageCandidate || isPlaceholderStoryImageUrl(storyImageCandidate) || isLikelyTemplateStoryImageUrl(storyImageCandidate)
+        ? "placeholder"
+        : "ok";
     console.log(
       `[image-debug] ${slug} seeded=${seededKind} pool=${imageCandidatePool.length} selected=${selectedKind} selectedUrl=${storyImageCandidate}`,
     );
   }
-  const imageUrl = await cacheStoryImage(storyImageCandidate, slug);
 
   const localContext = `${title} ${summary} ${tags.join(" ")}`.toLowerCase();
   const localHeuristic = /\b(local|city|county|state|province|district|municipal)\b/.test(localContext);
@@ -5221,6 +5488,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   runGroundNewsIngestion(parseArgs(process.argv.slice(2)))
     .then((result) => {
       process.stdout.write(`${JSON.stringify(result)}\n`);
+      process.exit(0);
     })
     .catch((err) => {
       console.error(err.stack || err.message);

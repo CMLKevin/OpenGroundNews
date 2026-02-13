@@ -46,13 +46,11 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
     if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) {
       return { normalizedSrc: derivedFallback, directExternalSrc: "" };
     }
+    if (clean.startsWith("/images/cache/")) {
+      return { normalizedSrc: clean, directExternalSrc: `https://ground.news${clean}` };
+    }
     if (lower.startsWith("https://ground.news/images/cache/") || lower.startsWith("https://www.ground.news/images/cache/")) {
-      try {
-        const parsed = new URL(clean);
-        return { normalizedSrc: parsed.pathname, directExternalSrc: clean };
-      } catch {
-        return { normalizedSrc: derivedFallback, directExternalSrc: "" };
-      }
+      return { normalizedSrc: buildImageProxyUrl(clean, { kind: "story" }), directExternalSrc: clean };
     }
     if (/^https?:\/\//i.test(clean)) {
       return { normalizedSrc: buildImageProxyUrl(clean, { kind: "story" }), directExternalSrc: clean };
