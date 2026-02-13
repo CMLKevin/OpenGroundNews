@@ -5,10 +5,12 @@ import { BiasBar } from "@/components/BiasBar";
 import { StoryImage } from "@/components/StoryImage";
 
 export function StoryCard({ story }: { story: Story }) {
+  const stale = Date.now() - +new Date(story.updatedAt) >= 7 * 86400000;
   const chips = [
     story.blindspot ? "Blindspot" : null,
     story.local ? "Local" : null,
     story.trending ? "Trending" : null,
+    stale ? "Stale" : null,
   ].filter(Boolean) as string[];
 
   return (
@@ -49,6 +51,11 @@ export function StoryCard({ story }: { story: Story }) {
             •
           </span>
           <span>~{storyReadTimeMinutes(story)} min read</span>
+        </div>
+        <div className="u-mt-06">
+          <Link className="btn btn-external" href={`/story/${story.slug}`}>
+            See the Story
+          </Link>
         </div>
       </div>
     </article>

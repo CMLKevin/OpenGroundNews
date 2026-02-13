@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
 type Bias = { left: number; center: number; right: number };
@@ -127,6 +128,9 @@ export function MyNewsBiasWidget() {
               ? "Based on your reading over the last 30 days."
               : "Based on reading on this device."}
       </p>
+      <Link className="btn btn-external" href={signedIn ? "/my-news-bias" : "/login?next=/my-news-bias"}>
+        Open full dashboard
+      </Link>
     </section>
   );
 }

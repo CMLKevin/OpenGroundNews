@@ -21,5 +21,12 @@ export async function POST(request: NextRequest) {
   }
 
   const entry = await readArchiveForUrl(validated.url, Boolean(body.force));
-  return NextResponse.json({ entry });
+  return NextResponse.json({
+    ok: true,
+    entry,
+    retry: {
+      forceUsed: Boolean(body.force),
+      suggestedRetryAfterSec: entry.status === "error" ? 60 : 0,
+    },
+  });
 }

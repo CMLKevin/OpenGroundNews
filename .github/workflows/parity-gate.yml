@@ -1,0 +1,72 @@
+name: Parity Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - "codex/**"
+
+jobs:
+  parity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      NODE_ENV: test
+      PARITY_ALLOW_MISSING_BASELINE: "1"
+      PARITY_VISUAL_MAX_MISMATCH_PCT: "0.055"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Unit Tests
+        run: npm run test
+
+      - name: Build
+        run: npm run build
+
+      - name: Start App
+        run: |
+          npm run start -- -p 3000 > /tmp/opengroundnews.log 2>&1 &
+          echo $! > /tmp/opengroundnews.pid
+
+      - name: Wait For App
+        run: |
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:3000/ >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to become ready"
+          cat /tmp/opengroundnews.log || true
+          exit 1
+
+      - name: Parity Gate (Smoke + Visual Diff)
+        run: npm run parity:gate -- --base-url http://127.0.0.1:3000
+
+      - name: Upload Parity Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-artifacts
+          path: |
+            output/playwright/parity
+            output/playwright/parity_baseline
+            output/playwright/**/visual-diff-report.json
+
+      - name: Stop App
+        if: always()
+        run: |
+          if [ -f /tmp/opengroundnews.pid ]; then
+            kill "$(cat /tmp/opengroundnews.pid)" || true
+          fi

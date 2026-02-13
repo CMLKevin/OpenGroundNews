@@ -31,6 +31,9 @@ export default async function MyFeedPage() {
               <h2 className="u-m0">Reading History</h2>
               <span className="story-meta">{recentReads.length ? "Recent" : "No reads yet"}</span>
             </div>
+            <Link className="btn btn-external u-w-fit" href="/my-news-bias">
+              Open Full My News Bias Dashboard
+            </Link>
             {recentReads.length > 0 ? (
               <ul className="rail-list u-list-reset">
                 {recentReads.map((ev) => (

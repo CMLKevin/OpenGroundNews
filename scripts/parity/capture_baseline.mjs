@@ -39,6 +39,7 @@ async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const outDir = path.resolve(process.cwd(), opts.outDir);
   await ensureDir(outDir);
+  const manifestPath = path.join(outDir, "manifest.json");
 
   let storySlug = null;
   try {
@@ -52,6 +53,11 @@ async function main() {
     { id: "home", url: `${opts.baseUrl}/` },
     ...(storySlug ? [{ id: "story", url: `${opts.baseUrl}/story/${encodeURIComponent(storySlug)}` }] : []),
     { id: "blindspot", url: `${opts.baseUrl}/blindspot` },
+    { id: "compare", url: `${opts.baseUrl}/compare` },
+    { id: "calendar", url: `${opts.baseUrl}/calendar` },
+    { id: "maps", url: `${opts.baseUrl}/maps` },
+    { id: "newsletters", url: `${opts.baseUrl}/newsletters` },
+    { id: "methodology", url: `${opts.baseUrl}/about/methodology` },
     { id: "interest", url: `${opts.baseUrl}/interest/politics` },
     { id: "search", url: `${opts.baseUrl}/search?q=climate` },
     { id: "local", url: `${opts.baseUrl}/local` },
@@ -74,6 +80,21 @@ async function main() {
       await page.screenshot({ path: path.join(outDir, `${r.id}.png`), fullPage: true });
       console.log(`captured ${r.id}`);
     }
+
+    await fs.writeFile(
+      manifestPath,
+      `${JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          baseUrl: opts.baseUrl,
+          outDir,
+          routes: routes.map((r) => ({ id: r.id, url: r.url, screenshot: `${r.id}.png` })),
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
+    );
 
     console.log(`baseline written to ${path.relative(process.cwd(), outDir)}`);
   } finally {

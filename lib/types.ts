@@ -17,6 +17,11 @@ export type SourceArticle = {
   outlet: string;
   url: string;
   excerpt: string;
+  headline?: string;
+  byline?: string;
+  imageUrl?: string;
+  language?: string;
+  canonicalHash?: string;
   logoUrl?: string;
   bias: BiasBucket;
   biasRating?: BiasRatingBucket;
@@ -35,6 +40,53 @@ export type CoverageTotals = {
   leaningRight?: number;
 };
 
+export type StoryTimelineEvent = {
+  id: string;
+  label: string;
+  detail?: string;
+  eventAt?: string;
+  order: number;
+};
+
+export type StoryPodcastReference = {
+  id: string;
+  label: string;
+  url?: string;
+  provider?: string;
+};
+
+export type StoryReaderLink = {
+  id: string;
+  label?: string;
+  url: string;
+};
+
+export type StoryRelatedStory = {
+  id: string;
+  slug: string;
+  title: string;
+  imageUrl?: string;
+  publishedAt?: string;
+  topic?: string;
+  reason?: string;
+};
+
+export type StorySnapshot = {
+  id: string;
+  sourceUrl?: string;
+  title?: string;
+  body: string;
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
+};
+
+export type StoryGeoPoint = {
+  lat: number;
+  lon: number;
+  locality?: string;
+  country?: string;
+};
+
 export type Story = {
   id: string;
   slug: string;
@@ -51,6 +103,21 @@ export type Story = {
   updatedAt: string;
   sourceCount: number;
   originalReportingPct?: number;
+  readTimeMinutes?: number;
+  lastRefreshedAt?: string;
+  staleAt?: string;
+  imageAssetKey?: string;
+  brokeTheNewsSourceId?: string;
+  freshness?: {
+    lastRefreshedAt: string;
+    staleAt: string;
+    isStale: boolean;
+  };
+  brokeTheNews?: {
+    sourceId: string;
+    outlet: string;
+    publishedAt?: string;
+  } | null;
   bias: {
     left: number;
     center: number;
@@ -64,6 +131,12 @@ export type Story = {
   readerLinks?: string[];
   timelineHeaders?: string[];
   podcastReferences?: string[];
+  timeline?: StoryTimelineEvent[];
+  podcasts?: StoryPodcastReference[];
+  readerLinkItems?: StoryReaderLink[];
+  relatedStories?: StoryRelatedStory[];
+  snapshots?: StorySnapshot[];
+  geo?: StoryGeoPoint;
 };
 
 export type ArchiveEntry = {

@@ -4,6 +4,7 @@ import path from "node:path";
 import * as cheerio from "cheerio";
 import { ArchiveEntry } from "@/lib/types";
 import { getArchiveEntry, setArchiveEntry } from "@/lib/store";
+import { canExecute, recordFailure, recordSuccess } from "@/lib/infra/circuitBreaker";
 
 const execFileAsync = promisify(execFile);
 
@@ -68,6 +69,16 @@ export async function readArchiveForUrl(originalUrl: string, force = false): Pro
     if (cached) return cached;
   }
 
+  const circuitName = "archive-read";
+  if (!force && !canExecute(circuitName, { failureThreshold: 5, cooldownMs: 60_000 })) {
+    const fallback = await fallbackExtract(originalUrl);
+    await setArchiveEntry(originalUrl, fallback);
+    return {
+      ...fallback,
+      notes: `${fallback.notes} (archive circuit temporarily open)`,
+    };
+  }
+
   const outPath = path.join(process.cwd(), "output", "browser_use", "archive_cdp", "single-read.json");
   const scriptPath = path.join(process.cwd(), "scripts", "archive_extract_cdp.mjs");
 
@@ -89,9 +100,12 @@ export async function readArchiveForUrl(originalUrl: string, force = false): Pro
       parsed.status === "blocked" || parsed.status === "not_found"
         ? await fallbackExtract(originalUrl)
         : parsed;
+    if (parsed.status === "success") recordSuccess(circuitName);
+    else recordFailure(circuitName);
     await setArchiveEntry(originalUrl, finalEntry);
     return finalEntry;
   } catch {
+    recordFailure(circuitName);
     const fallback = await fallbackExtract(originalUrl);
     await setArchiveEntry(originalUrl, fallback);
     return fallback;

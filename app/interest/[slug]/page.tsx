@@ -127,7 +127,7 @@ export default async function InterestPage({ params, searchParams }: Props) {
       .values(),
   )
     .sort((a, b) => b.count - a.count || a.outlet.localeCompare(b.outlet))
-    .slice(0, 18);
+    .slice(0, 5);
 
   const outletMeta = outletStats.length
     ? await db.outlet

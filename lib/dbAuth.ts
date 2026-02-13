@@ -127,6 +127,90 @@ export async function createSession(params: { email: string; password: string })
   };
 }
 
+export async function createSessionForUserId(userId: string) {
+  const clean = String(userId || "").trim();
+  if (!clean) throw new Error("Missing user id");
+  const user = await db.user.findUnique({ where: { id: clean } });
+  if (!user) throw new Error("User not found");
+  const now = new Date();
+  const token = randomToken(32);
+  const expiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+  await db.session.create({ data: { token, userId: user.id, createdAt: now, expiresAt } });
+  return {
+    user: { id: user.id, email: user.email, role: user.role, createdAt: user.createdAt.toISOString() },
+    session: { token, userId: user.id, createdAt: now.toISOString(), expiresAt: expiresAt.toISOString() },
+  };
+}
+
+export async function upsertOAuthUserByEmail(emailRaw: string) {
+  const email = normalizeEmail(emailRaw);
+  if (!email || !email.includes("@")) throw new Error("Invalid email");
+
+  const adminAllow = adminEmailsFromEnv();
+  const existing = await db.user.findUnique({ where: { email } });
+  if (existing) return existing;
+
+  const userCount = await db.user.count();
+  const role: UserRole = userCount === 0 || adminAllow.has(email) ? "admin" : "user";
+  return db.user.create({
+    data: {
+      id: `user_${randomToken(10)}`,
+      email,
+      role,
+      prefs: { create: {} },
+    },
+  });
+}
+
+export async function linkOAuthAccount(params: {
+  userId: string;
+  provider: string;
+  providerAccountId: string;
+  email?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  expiresAtSeconds?: number | null;
+}) {
+  const userId = String(params.userId || "").trim();
+  const provider = String(params.provider || "").trim().toLowerCase();
+  const providerAccountId = String(params.providerAccountId || "").trim();
+  if (!userId || !provider || !providerAccountId) return null;
+
+  const existing = await db.oAuthAccount.findUnique({
+    where: { provider_providerAccountId: { provider, providerAccountId } },
+  });
+  if (existing && existing.userId !== userId) {
+    throw new Error("OAuth account is already linked to another user");
+  }
+
+  return db.oAuthAccount.upsert({
+    where: { provider_providerAccountId: { provider, providerAccountId } },
+    update: {
+      userId,
+      email: normalizeEmail(String(params.email || "")) || null,
+      accessToken: params.accessToken || null,
+      refreshToken: params.refreshToken || null,
+      expiresAt:
+        typeof params.expiresAtSeconds === "number" && Number.isFinite(params.expiresAtSeconds)
+          ? new Date(params.expiresAtSeconds * 1000)
+          : null,
+    },
+    create: {
+      id: `oauth_${randomToken(10)}`,
+      userId,
+      provider,
+      providerAccountId,
+      email: normalizeEmail(String(params.email || "")) || null,
+      accessToken: params.accessToken || null,
+      refreshToken: params.refreshToken || null,
+      expiresAt:
+        typeof params.expiresAtSeconds === "number" && Number.isFinite(params.expiresAtSeconds)
+          ? new Date(params.expiresAtSeconds * 1000)
+          : null,
+    },
+  });
+}
+
 export async function destroySession(token: string): Promise<void> {
   const clean = (token || "").trim();
   if (!clean) return;

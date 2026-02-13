@@ -72,3 +72,39 @@ Triggers ingestion pipeline.
   "totalStories": 42
 }
 ```
+
+## V1 Parity Endpoints
+
+### GET /api/v1/stories
+- Returns parity-extended stories with `readTimeMinutes`, `freshness`, and `brokeTheNews`.
+
+### GET /api/v1/stories/[slug]
+- Returns parity-extended story detail including:
+  - `timeline` (structured events)
+  - `podcasts` (structured references)
+  - `readerLinks` + `readerLinkItems`
+  - `relatedStories`
+  - `snapshots`
+  - `ownershipModule` + `factualityModule`
+  - `geo`
+
+### GET /api/v1/me/news-bias
+- Auth required (`ogn_session` cookie).
+- Returns full My News Bias modules (overall distribution, timeline, top outlets, blindspot recommendation).
+
+### GET /api/v1/compare?a=<source>&b=<source>
+- Compares two outlets for overlap and bias profile.
+- Response includes:
+  - `coverage.overlapScore`
+  - `coverage.sharedStories`
+  - `coverage.topTopics`
+
+### GET /api/v1/calendar
+- Query params: `topic`, `bias`, `from`, `to`.
+- Returns date-grouped stories for calendar views.
+
+### GET /api/v1/maps/stories
+- Returns story points normalized for map rendering.
+
+### GET /api/images/proxy?url=<remote-image>
+- Validated server-side image proxy with rate limiting and cache headers.

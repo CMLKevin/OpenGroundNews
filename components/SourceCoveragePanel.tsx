@@ -36,8 +36,21 @@ function normalizeOwnership(value?: string) {
   return clean || "Unlabeled";
 }
 
+function biasToneClass(value?: string) {
+  const clean = String(value || "").toLowerCase();
+  if (clean.includes("far-left")) return "bias-tone-far-left";
+  if (clean.includes("lean-left")) return "bias-tone-lean-left";
+  if (clean === "left") return "bias-tone-left";
+  if (clean === "center") return "bias-tone-center";
+  if (clean.includes("lean-right")) return "bias-tone-lean-right";
+  if (clean === "right") return "bias-tone-right";
+  if (clean.includes("far-right")) return "bias-tone-far-right";
+  return "bias-tone-unknown";
+}
+
 export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Props) {
   const [sortMode, setSortMode] = useState<SortMode>("latest");
+  const [query, setQuery] = useState<string>("");
   const [biasFilter, setBiasFilter] = useState<string>("all");
   const [factFilter, setFactFilter] = useState<string>("all");
   const [ownershipFilter, setOwnershipFilter] = useState<string>("all");
@@ -47,7 +60,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
   useEffect(() => {
     // Reset pagination when filters/sort change so users don't land mid-list.
     setVisibleCount(20);
-  }, [sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter, sources]);
+  }, [sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter, query, sources]);
 
   const ownershipOptions = useMemo(
     () => Array.from(new Set(sources.map((s) => normalizeOwnership(s.ownership)))).sort((a, b) => a.localeCompare(b)),
@@ -56,6 +69,11 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
 
   const filtered = useMemo(() => {
     const base = sources.filter((s) => {
+      const q = query.trim().toLowerCase();
+      if (q) {
+        const text = `${s.outlet} ${s.excerpt} ${s.url} ${s.locality || ""}`.toLowerCase();
+        if (!text.includes(q)) return false;
+      }
       if (biasFilter !== "all" && s.bias !== biasFilter) return false;
       if (factFilter !== "all" && s.factuality !== factFilter) return false;
       if (ownershipFilter !== "all" && normalizeOwnership(s.ownership) !== ownershipFilter) return false;
@@ -74,7 +92,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
       if (timeA === timeB) return a.outlet.localeCompare(b.outlet);
       return timeB - timeA;
     });
-  }, [sources, sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter]);
+  }, [sources, sortMode, biasFilter, factFilter, ownershipFilter, paywallFilter, query]);
 
   const biasCounts = useMemo(() => {
     const left = sources.filter((s) => s.bias === "left").length;
@@ -111,6 +129,17 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
       </div>
 
       <div className="filters-grid">
+        <label className="story-meta u-grid u-grid-gap-02">
+          Search
+          <input
+            className="input-control"
+            placeholder="Search source cards, outlets, or URL..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            type="search"
+          />
+        </label>
+
         <label className="story-meta u-grid u-grid-gap-02">
           Sort
           <select className="select-control" value={sortMode} onChange={(e) => setSortMode(e.target.value as SortMode)}>
@@ -176,6 +205,7 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
             setFactFilter("all");
             setOwnershipFilter("all");
             setPaywallFilter("all");
+            setQuery("");
           }}
         >
           Reset
@@ -210,11 +240,16 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
                   </div>
                 </div>
                 <div className="chip-row source-chip-row u-items-center">
-                  <span className="chip">{src.bias === "unknown" ? "Unclassified" : src.bias}</span>
+                  <span className={`chip ${biasToneClass(src.biasRating || src.bias)}`}>
+                    {src.bias === "unknown" ? "Unclassified" : (src.biasRating || src.bias)}
+                  </span>
                   <span className="chip">{src.factuality === "unknown" ? "Not rated" : src.factuality}</span>
                   <FollowToggle kind="outlet" slug={outletSlug(src.outlet)} label={src.outlet} />
                 </div>
               </div>
+              <h3 className="u-m0 u-text-102">
+                {src.headline || src.excerpt.split(/[.?!]/)[0] || "Coverage excerpt"}
+              </h3>
               <p className="story-summary source-excerpt">{src.excerpt}</p>
               <div className="story-meta">
                 Ownership: {normalizeOwnership(src.ownership)} • Paywall: {src.paywall ?? "unknown"}

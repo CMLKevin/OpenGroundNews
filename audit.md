@@ -1,725 +1,550 @@
-# OpenGroundNews Parity Audit v2
+# OpenGroundNews → Ground News Parity Audit
 
-**Date**: February 13, 2026
-**Baseline**: https://ground.news/ (live production)
-**Target**: OpenGroundNews (localhost:3000, branch `main`)
-**Previous audit**: `docs/parity/PARITY_TODO.md` (120 issues, all marked done)
+> **Date:** 2026-02-13
+> **Methodology:** Automated multi-agent exploration of ground.news (baseline) + Chrome-based audit of OpenGroundNews (localhost:3000). 12 agents total: 6 exploring Ground News design/features, 6 auditing OGN pages and code.
 
-This audit identifies **new** issues found after the v1 parity sweep was completed. Issues are organized by severity (P0 Critical, P1 High, P2 Medium, P3 Low) and grouped by page/feature area.
-
----
-
-## Summary
-
-| Severity | Count |
-|----------|-------|
-| P0 (Critical) | 8 |
-| P1 (High) | 18 |
-| P2 (Medium) | 22 |
-| P3 (Low) | 14 |
-| **Total** | **62** |
-
----
-
-## A. Global / Cross-Page Issues
-
-### A-01 (P0) Broken story images: cross-origin `ground.news` URLs
-
-Many story `imageUrl` values in the data store point to `https://ground.news/images/story-fallback.svg`. This is an external domain that will either 403 or serve Ground News's own branded SVG. The result is that the hero image and many story thumbnails show either a broken image or another site's branding.
-
-**Files**: `components/StoryImage.tsx`, ingestion pipeline
-**Fix**: During ingestion, strip or rewrite any `imageUrl` that points to `ground.news/images/*`. Map these to the local fallback set (`/images/fallbacks/story-fallback-{1..5}.svg`). In `StoryImage`, add an allowlist check so `ground.news` URLs are treated as missing.
-
----
-
-### A-02 (P0) No real news photographs on any page
-
-Every story on every page shows either a local SVG placeholder or the broken `ground.news` URL. No actual news photography is displayed anywhere in the app. Ground News shows real images on hero cards, story cards, and thumbnails.
-
-**Files**: Ingestion pipeline, `lib/types.ts` (Story.imageUrl)
-**Fix**: The ingestion pipeline must extract and proxy/cache actual article `og:image` URLs. Store them locally or via a CDN. When `og:image` is unavailable, fall back to the SVG set.
-
----
-
-### A-03 (P0) Three of five trending interest topics are empty
-
-`/interest/us-news`, `/interest/world`, and `/interest/science` return zero stories. These are the most common entry-point topics from the trending strip. Users clicking trending topics land on empty pages.
-
-**Files**: Ingestion pipeline topic mapping, `lib/lookup.ts`
-**Fix**: Ensure the ingestion pipeline maps stories to all standard topic slugs. Add aliases so e.g. `us-news` matches stories with topic "US Politics", "United States", etc. Consider adding a fallback that redirects empty topics to a search results page.
-
----
-
-### A-04 (P1) Raw slugs displayed as topic page titles
-
-Empty interest pages show "News about us-news" / "News about world" / "News about science" instead of human-readable display names like "US News", "World", "Science".
-
-**Files**: `app/interest/[slug]/page.tsx` lines ~30-35, `generateMetadata()`
-**Fix**: Add a `topicDisplayName(slug)` lookup function that converts slugs to proper title-case display names. Use this in both the page heading and metadata.
-
----
-
-### A-05 (P1) Desktop nav links have no active state
-
-Desktop navigation links (Home, For You, Local, Blindspot) do not show any visual indicator for the current page. The mobile bottom nav correctly applies `is-active` based on pathname, but the desktop `navlinks` do not.
-
-**Files**: `components/TopNavClient.tsx`
-**Fix**: Compare `pathname` against each nav link's `href` and add an `is-active` class. Style with the gold underline treatment used elsewhere.
-
----
-
-### A-06 (P1) Footer social links are placeholder URLs
-
-- GitHub links to `https://github.com` (root, not the project repo)
-- X links to `https://x.com` (root)
-- Email uses `hello@opengroundnews.local` (`.local` is non-routable)
-
-**Files**: `components/SiteFooter.tsx`
-**Fix**: Replace with actual project URLs or remove until real accounts exist.
-
----
-
-### A-07 (P2) Promo banner has no dismiss mechanism
-
-The gold promo banner appears unconditionally on every page load, pushing content down ~40px. Ground News allows closing promotional banners.
-
-**Files**: `components/TopNav.tsx` or the promo banner section
-**Fix**: Add a dismiss button that sets a localStorage flag. Hide the banner when the flag is set.
-
----
-
-### A-08 (P2) Topbar consumes ~180-200px of viewport height
-
-With promo banner + utility bar + main nav + trending strip all stacked, the sticky header takes significant vertical space. Ground News has a more compact header.
-
-**Files**: `app/globals.css` (topbar styles)
-**Fix**: Consider collapsing the utility bar into the main nav, or auto-hiding the trending strip on scroll.
-
----
-
-### A-09 (P2) No loading skeletons for SSR Suspense boundaries
-
-The TopNav Suspense fallback is an empty `<header className="topbar" />`. No page has skeleton loading states. Users see blank containers during server-side rendering.
-
-**Files**: `app/layout.tsx` line 42-44, all page components
-**Fix**: Add skeleton placeholder components that match the expected layout dimensions.
-
----
-
-### A-10 (P2) No custom 404 page
-
-Story pages call `notFound()` but there is no custom `not-found.tsx` in the app directory. The default Next.js 404 page is shown.
-
-**Files**: `app/not-found.tsx` (missing)
-**Fix**: Create a branded 404 page with navigation back to home and search.
-
----
-
-### A-11 (P2) No React error boundaries
-
-No pages have React error boundaries. If a server component throws, users see the default Next.js error page.
-
-**Files**: `app/error.tsx` (missing), `app/global-error.tsx` (missing)
-**Fix**: Add error boundary components with graceful fallback UI.
-
----
-
-### A-12 (P3) Favicon is a generic placeholder SVG
-
-The site favicon is set to `/images/story-fallback.svg`, which is the news story placeholder, not a branded icon.
-
-**Files**: `app/layout.tsx` metadata
-**Fix**: Create a proper favicon/icon set (16x16, 32x32, apple-touch-icon).
-
----
-
-### A-13 (P3) Excessive inline styles in components
-
-Nearly every component uses inline `style` attributes (e.g. `style={{ display: "grid", gap: "0.7rem" }}`). This creates maintenance burden and makes it harder to maintain consistent design tokens.
-
-**Files**: Multiple components
-**Fix**: Extract repeated inline styles into CSS classes in `globals.css`.
-
----
-
-### A-14 (P3) Reading time estimates are uniformly "~1 min"
-
-`storyReadTimeMinutes()` calculates from `title + dek + summary` only (not full article text), so nearly every story shows "~1 min read".
-
-**Files**: `lib/readTime.ts` or equivalent utility
-**Fix**: Calculate reading time from full source article text counts, or remove the read-time display if data is unavailable.
-
----
-
-## B. Homepage
-
-### B-01 (P0) Duplicate content between hero grid and feed
-
-Stories 2-10 appear in both the hero center area NewsList AND again in the "Latest Stories" feed below. Users see the same stories twice when scrolling.
-
-**Files**: `app/page.tsx`
-**Fix**: Offset the feed section to start after the last hero story index, or deduplicate by slug.
-
----
-
-### B-02 (P1) Daily Local News widget shows empty state by default
-
-"No local-marked stories found. Pick a city in Local settings to improve matching." This is a dead widget for most first-time visitors.
-
-**Files**: Homepage right sidebar, `components/DailyLocalNews.tsx` (or equivalent)
-**Fix**: Show a location picker inline when no city is set, or hide the widget for guests and show a "Set up Local" CTA instead.
-
----
-
-### B-03 (P1) My News Bias widget shows all-zero state for guests
-
-0% left, 0% center, 0% right with an empty bias bar. Not useful for first-time visitors.
-
-**Files**: `components/MyNewsBiasWidget.tsx`
-**Fix**: For guests with no reading history, show an explanatory message ("Start reading to see your bias breakdown") or hide the widget.
-
----
-
-### B-04 (P2) Trending topics may show generic static fallbacks
-
-The fallback list is ["Politics", "World", "Business", "Technology", "Science", "Health", "Sports", "Climate"] -- static categories, not actual trending topics derived from real-time data.
-
-**Files**: `components/TrendingStrip.tsx` or equivalent, API endpoint
-**Fix**: Ensure the trending API returns dynamically computed trending topics based on recent story volume/velocity.
-
----
-
-### B-05 (P2) "Explore" left rail in feed section is sparse
-
-Only 5 pill links (Local, For You, Blindspot, Rating system, Support). Ground News has richer sidebar discovery content.
-
-**Files**: `app/page.tsx` left rail section
-**Fix**: Add recent topics, popular categories, or editorial picks to the left rail.
-
----
-
-### B-06 (P3) Homepage does not use StoryCard grid view
-
-The `StoryCard` component exists (with cover image, summary, chips, bias bar) and the `.grid` CSS class (2-column card grid) is defined, but the homepage exclusively uses `StoryListItem`. Ground News mixes card and list views.
-
-**Files**: `app/page.tsx`
-**Fix**: Consider using the card grid for the first few feed stories before switching to list view.
-
----
-
-## C. Story Detail Pages
-
-### C-01 (P1) Duplicate BiasBar in main content and sidebar
-
-The bias bar appears both in the main article area and in the sidebar "At a Glance" section, wasting vertical space.
-
-**Files**: `app/story/[slug]/page.tsx`
-**Fix**: Remove the sidebar duplicate or the main content one. Keep the more contextual placement.
-
----
-
-### C-02 (P1) Low-quality auto-generated summaries
-
-Some story summaries contain:
-- Scraped metadata fragments: "Breaking News, Sports, Manitoba, Canada"
-- Raw wire-service formatting: "(Adds statement in paragraphs 2 and 3, details from paragraph 4) LONDON, Feb 11 -"
-
-**Files**: Ingestion pipeline summary extraction
-**Fix**: Add summary quality validation during ingestion. Strip wire-service update markers and reject summaries that are just category/tag lists.
-
----
-
-### C-03 (P1) BiasDistributionPanel has excessive min-height
-
-The bias columns have `min-height: 320px`, creating tall empty space when there are only 1-2 sources per column. On mobile (single-column stack), this wastes ~960px of vertical space.
-
-**Files**: `app/globals.css` (`.bias-column`)
-**Fix**: Remove the `min-height` or reduce it to `120px`. Let content determine height.
-
----
-
-### C-04 (P2) DailyBriefingList in sidebar is mislabeled
-
-The sidebar "Daily Briefing" fetches recent stories and filters out the current one. It's really "Other recent stories", not a curated daily briefing.
-
-**Files**: `components/DailyBriefingList.tsx`
-**Fix**: Rename to "Related Stories" or "More Stories" to accurately describe the content.
-
----
-
-### C-05 (P2) Coverage percentage rounding can produce inaccurate numbers
-
-Lines 66-97 in the story page have complex fallback logic to compute L/C/R counts from percentage data. Integer rounding can produce numbers that don't sum correctly.
-
-**Files**: `app/story/[slug]/page.tsx`
-**Fix**: Use the `coverageLeft`/`coverageCenter`/`coverageRight` fields from the data store when available. Only fall back to percentage-based calculation when counts are missing.
-
----
-
-### C-06 (P2) SummaryFeedbackLink dialog button conflict
-
-The "Close" button uses `value="cancel"` with `method="dialog"`, which competes with the "Send feedback" submit button. Both are form submissions that could confuse users.
-
-**Files**: `components/SummaryFeedbackLink.tsx`
-**Fix**: Move the Close button outside the form, or use `type="button"` with a manual `dialogRef.current?.close()` call.
-
----
-
-### C-07 (P2) ReaderDrawer shows raw status values
-
-Users see "Status: archive_fallback" or "Status: ok" which are internal status codes, not user-friendly labels.
-
-**Files**: `components/ReaderDrawer.tsx`
-**Fix**: Map status values to user-friendly labels: "ok" -> "Archived", "archive_fallback" -> "Cached version", "error" -> "Unavailable".
-
----
-
-### C-08 (P2) Timeline entries use generic labels
-
-When `story.timelineHeaders` exists, timeline entries show generic "Update cue" text rather than actual dates/event descriptions.
-
-**Files**: `components/TimelinePanel.tsx`
-**Fix**: Extract actual event descriptions and timestamps from the timeline data.
-
----
-
-### C-09 (P3) "View on Ground News" external link may confuse users
-
-The external navigation link to `story.canonicalUrl` on Ground News could confuse users about what site they're on.
-
-**Files**: `app/story/[slug]/page.tsx`
-**Fix**: Consider making this less prominent or adding a tooltip explaining it links to the original Ground News page.
-
----
-
-### C-10 (P3) KeyPointsPanel quality depends on extraction algorithm
-
-Points are labeled "Auto-generated" with a disclaimer. Quality varies significantly.
-
-**Files**: `components/KeyPointsPanel.tsx`, `lib/keypoints.ts`
-**Fix**: Add minimum quality thresholds. Don't display the panel if fewer than 2 substantive key points can be derived.
-
 ---
-
-## D. Blindspot Page
-
-### D-01 (P2) BlindspotStoryCard badge row overflow risk
 
-The badge row contains many inline elements (eye icon, wordmark, severity, skew, sources, column label). On narrow card widths in the 2-column grid, these can overflow or wrap awkwardly.
+## Table of Contents
 
-**Files**: `components/BlindspotStoryCard.tsx`, `app/globals.css` (`.blindspot-badge-row`)
-**Fix**: Add `flex-wrap: wrap` to `.blindspot-badge-right` (already present) and ensure minimum card width accommodates the badge content. Consider moving source count to a second line.
+1. [Critical Issues](#1-critical-issues)
+2. [Visual & UI Parity Gaps](#2-visual--ui-parity-gaps)
+3. [Feature Gaps](#3-feature-gaps)
+4. [Data Ingestion Pipeline](#4-data-ingestion-pipeline)
+5. [Page-by-Page Breakdown](#5-page-by-page-breakdown)
+6. [Architecture & Technical Debt](#6-architecture--technical-debt)
+7. [Recommended Fix Priorities](#7-recommended-fix-priorities)
 
 ---
 
-### D-02 (P2) Blindspot hero subtitle contrast may be low
+## 1. Critical Issues
 
-`.blindspot-brand-sub` uses `color: rgba(255, 243, 215, 0.82)` (light cream) on the purple gradient background. Contrast ratio may be below WCAG AA.
+These are show-stopping bugs or security vulnerabilities that need immediate attention.
 
-**Files**: `app/globals.css` (`.blindspot-brand-sub`)
-**Fix**: Test contrast ratio and increase opacity to at least 0.92 or use a solid light color.
+### 1.1 All Images Show SVG Fallback Placeholders
 
----
+**Severity:** CRITICAL
+**Location:** Site-wide (every page with story cards)
 
-### D-03 (P3) No loading state for server-rendered blindspot page
+Every story card across the entire site displays a generic SVG fallback placeholder instead of actual news article images. This affects 51+ images on the homepage alone and makes the entire site look broken/incomplete.
 
-Since the page uses `force-dynamic`, users see a blank page until the server responds. No skeleton or spinner.
+**Root Cause:** The `<img>` tags reference image URLs that fail to load. The CSS fallback SVG kicks in universally. Likely causes:
+- Image URLs from Ground News are proxied/CDN URLs that reject cross-origin requests
+- The ingestion pipeline captures image URLs but doesn't download/cache them locally
+- No image proxy or CDN rewrite layer exists in the OGN stack
 
-**Files**: `app/blindspot/page.tsx`, `app/blindspot/loading.tsx` (missing)
-**Fix**: Add a `loading.tsx` with skeleton cards matching the blindspot card dimensions.
+**Fix:**
+1. Add an image proxy route (`/api/img?url=...`) that fetches and caches remote images server-side
+2. Alternatively, download images during ingestion and store them locally or in S3/R2
+3. Implement `next/image` with a custom loader that routes through the proxy
+4. Add proper fallback behavior that shows a styled placeholder with the outlet logo rather than a raw SVG
 
 ---
-
-## E. Interest / Topic Pages
-
-### E-01 (P0) Duplicate story in Technology topic
 
-The Instagram social media addiction story appears twice with slightly different slugs (`171254` and `0155a4`) and source counts (29 vs 28). This is a data deduplication failure.
+### 1.2 Remote Code Execution via `Function()` Constructor
 
-**Files**: Ingestion pipeline deduplication logic
-**Fix**: Implement title-similarity deduplication during ingestion. Use fuzzy matching (Levenshtein distance or n-gram overlap) to detect near-duplicate stories.
+**Severity:** CRITICAL (Security)
+**Location:** `scripts/sync_groundnews_pipeline.mjs:1164`
 
----
+The pipeline uses `new Function()` to evaluate JavaScript extracted from scraped HTML:
 
-### E-02 (P0) Topic misclassification: entertainment stories under Politics
+```js
+const fn = new Function(scriptContent);
+fn();
+```
 
-"Bad Bunny Streams Skyrocketed After the Super Bowl" appears under the Politics topic. This is a topic assignment error from ingestion.
+This evaluates arbitrary JavaScript from untrusted web content. A malicious or compromised page could execute arbitrary code on the server running the ingestion pipeline.
 
-**Files**: Ingestion pipeline topic classifier
-**Fix**: Improve topic classification accuracy. Consider multi-label classification and ensure entertainment/music stories aren't assigned to Politics.
+**Fix:**
+1. Replace `Function()` with a JSON parser or regex extraction for the specific data structures needed (likely `__NEXT_DATA__` or inline JSON)
+2. If dynamic evaluation is truly required, use `vm2` or Node's `vm` module with a sandboxed context
+3. Add input validation and sanitization before any evaluation
 
 ---
-
-### E-03 (P1) "Latest" section renders empty when stories equal featured count
-
-On the Technology topic (3 stories), the offset logic (`listStart = 3`) skips all stories since only 3 exist. Result: "Showing 3 of 3" heading with an empty list below.
-
-**Files**: `app/interest/[slug]/page.tsx`
-**Fix**: Hide the "Latest" section entirely when `stories.length <= featuredCount` instead of showing an empty container.
 
----
+### 1.3 Hero Card Dark Mode Bug
 
-### E-04 (P1) Malformed CDN URL for source logos
+**Severity:** CRITICAL (Visual)
+**Location:** `app/globals.css` — `.hero-lead` class (~line 565)
 
-GV Wire's logo URL contains `[fe1]` in the path: `groundnews.b-cdn.net/interests/[fe1]/237fb0d33cf38de742632e871e2665a21a718762.jpg`. This will fail to load.
+The hero/lead story card has `background: #fff` hardcoded, which doesn't adapt to dark mode. In dark mode, this creates a jarring white rectangle against the dark background.
 
-**Files**: Ingestion pipeline CDN URL handling
-**Fix**: Validate and sanitize CDN URLs during ingestion. Strip URL-encoded brackets.
+**Fix:**
+```css
+.hero-lead {
+  background: var(--card-bg); /* or use a CSS custom property */
+}
+```
 
 ---
-
-### E-05 (P1) All outlet bias pills in sidebar show "unknown"
-
-In the "Covered Most By" sidebar, major outlets like Reuters, CNN, Fox News all show "unknown" bias rating at the outlet level, even when their individual source cards have correct bias tags.
 
-**Files**: Ingestion pipeline outlet enrichment, `lib/types.ts`
-**Fix**: Aggregate bias ratings from source-level data to populate outlet-level `biasRating`. If 14/14 source cards for Fox News are tagged "right", the outlet should be "right".
+### 1.4 No Dedicated "My News Bias" Page
 
----
+**Severity:** CRITICAL (Feature)
+**Location:** Missing — only `components/MyNewsBiasWidget.tsx` exists
 
-## F. Search Page
+Ground News's marquee feature is the My News Bias dashboard — a full page with 10+ analysis modules:
+- Overall bias distribution (pie chart)
+- Bias over time (line chart)
+- Most-read outlets ranked by bias
+- "Blind spots" analysis (what you're missing)
+- Political leaning spectrum
+- Factuality score breakdown
+- Reading history timeline
+- Recommendations to diversify
 
-### F-01 (P1) Search is entirely in-memory and not scalable
+OGN reduces this to a compact sidebar widget showing just an L/C/R bar and read count. This is Ground News's core differentiator and its absence is a major parity gap.
 
-`searchStories()` calls `readStore()` which loads all stories into memory and performs tokenization-based scoring. This works for small datasets but will be slow at scale.
+**Fix:**
+1. Create `app/my-news-bias/page.tsx` as a full dashboard page
+2. Track per-user article reads with bias metadata in the database
+3. Implement chart components (recharts or Chart.js) for:
+   - Bias distribution pie/donut chart
+   - Bias-over-time line chart
+   - Most-read outlets table
+   - Factuality breakdown
+4. Add "Diversify your reading" recommendations engine
+5. Keep the existing widget as a compact summary that links to the full page
 
-**Files**: `lib/search.ts`
-**Fix**: For production scale, move to a database-backed full-text search (PostgreSQL `tsvector` or external search service).
-
 ---
 
-### F-02 (P2) No discovery content when search box is empty
+## 2. Visual & UI Parity Gaps
 
-When no query is entered, the results area is completely empty. No "popular searches", "trending topics", or discovery content.
+### 2.1 Typography
 
-**Files**: `app/search/page.tsx`
-**Fix**: Show trending topics, recent popular searches, or featured stories when the query is empty.
+| Property | Ground News | OpenGroundNews | Gap |
+|----------|-------------|----------------|-----|
+| Primary font | `universalSans` (custom) | `Bricolage Grotesque` (Google) | Different typeface entirely |
+| Heading weight | 800 (extra-bold) | 700 (bold) | Thinner headings |
+| Page title size | 42px | 36.8px | ~12% smaller |
+| Body text | 16px / 1.6 line-height | 16px / 1.5 line-height | Slightly tighter |
 
----
+**Fix:** Update CSS custom properties to use `font-weight: 800` for headings and `font-size: 42px` for page titles. Consider sourcing a closer match to universalSans or licensing it.
 
-### F-03 (P2) Topics and Sources tabs are thin
+### 2.2 Color System
 
-Topics and Sources tabs only show pill lists with facet labels and counts. No additional context, descriptions, or story previews.
+Ground News uses a precise 7-bucket bias color system:
 
-**Files**: `app/search/page.tsx`
-**Fix**: For Topics tab, show a preview of the top 2-3 stories per topic. For Sources tab, show outlet profile info (bias, factuality, story count).
+| Bias | Ground News Color | Usage |
+|------|-------------------|-------|
+| Far Left | `#802727` (dark red) | Badge background |
+| Left | `#994040` | Badge background |
+| Lean Left | `#B35959` | Badge background |
+| Center | `#FFFFFF` (white) | Badge with border |
+| Lean Right | `#5980B3` | Badge background |
+| Right | `#406699` | Badge background |
+| Far Right | `#204986` (dark blue) | Badge background |
 
----
+OGN uses simplified red/white/blue but lacks the graduated tints. Bias badges on article cards don't use color coding at all — they're plain text.
 
-### F-04 (P3) Filter dropdowns require clicking "Apply"
+**Fix:**
+1. Add the full 7-color palette to CSS custom properties
+2. Apply colored backgrounds to bias badges on article cards
+3. Use the 3-bucket simplified system (red/white/blue) for bias bars, 7-bucket for detailed views
 
-The bias and time filter dropdowns don't auto-submit, adding unnecessary friction.
+### 2.3 Missing Visual Elements
 
-**Files**: `app/search/page.tsx`
-**Fix**: Add `onChange` handlers that auto-submit the form, or use client-side filtering.
+- **Subscribe/CTA button** in the top navigation bar — Ground News has a prominent green "Subscribe" button
+- **App store badges** in footer — Ground News links to iOS/Android apps
+- **Social proof counters** — Ground News shows "X sources" prominently on cards
+- **Outlet logos** — Ground News shows small circular logos next to outlet names; OGN shows text only
+- **"See the Story" links** on homepage story cards — Ground News cards have an explicit link below the headline
 
 ---
-
-## G. Local Page
-
-### G-01 (P2) Weather forecast 7-column grid is too narrow in sidebar
 
-The `.weather-forecast` grid forces 7 columns. In the sidebar context, this creates very narrow columns that are hard to read.
+## 3. Feature Gaps
 
-**Files**: `app/globals.css` (`.weather-forecast`)
-**Fix**: Add a sidebar-context override: `.feed-rail .weather-forecast { grid-template-columns: repeat(4, 1fr); }` and wrap remaining days.
+### 3.1 Missing Pages / Routes
 
----
-
-### G-02 (P2) LocalFeedControls creates nested panels
+| Ground News Page | OGN Equivalent | Status |
+|------------------|----------------|--------|
+| `/my-news-bias` | None | **MISSING** — Only a widget exists |
+| `/search` (global) | `/search` | Exists but limited |
+| `/newsletters` | None | **MISSING** |
+| `/about/methodology` | None | **MISSING** — Important for credibility |
+| `/compare` (source comparison) | None | **MISSING** |
+| `/calendar` (news calendar) | None | **MISSING** |
+| `/maps` (geographic view) | None | **MISSING** |
+| Terms of Service | `/legal/terms` | Placeholder content |
+| Privacy Policy | `/legal/privacy` | Placeholder content |
 
-A `.panel` inside the sidebar `.panel` causes visual double-boxing.
+### 3.2 Missing Interactive Features
 
-**Files**: `components/LocalFeedControls.tsx`
-**Fix**: Remove the inner panel wrapper or use a different container class without borders.
+1. **Article search within story pages** — Ground News lets you search/filter the source list on a story page. OGN has no search input.
+2. **Share buttons** — Ground News has share-to-social on every story. OGN has none.
+3. **Bookmark/save stories** — Ground News lets users save stories for later. OGN has no save functionality.
+4. **Email digest/notifications** — Ground News sends daily/weekly bias-aware email digests. OGN has web-push scaffolding but no email integration.
+5. **OAuth/social login** — Ground News supports Google/Apple/Facebook login. OGN only has email/password with scrypt hashing.
+6. **Reading time estimates** — Ground News shows "X min read" on articles. OGN does not.
+7. **"Broke the news" indicator** — Ground News highlights which outlet first reported a story. Not captured in ingestion.
+8. **Timeline/chronology view** — Ground News shows how a story evolved over time. Not implemented.
+9. **Podcast references** — Ground News shows podcast coverage. Extracted in pipeline but never persisted.
 
----
+### 3.3 Blindspot Page Differences
 
-### G-03 (P3) Default location "United States" is too generic
+| Feature | Ground News | OGN |
+|---------|-------------|-----|
+| Card layout order | Image → Headline → Metadata → Bias | Badge → Image → Metadata → Headline → Bias |
+| Filter tabs | Dedicated tab UI with counts | Basic tab styling |
+| Blind spot explanation | Detailed methodology popover | Brief static text |
+| Card click behavior | Opens story page | Works correctly |
+| Weather widget | Icon-based with visual indicators | Text-only "Partly cloudy" |
 
-The header reads "Top United States News" which doesn't feel like a "local" experience.
+### 3.4 Source Page Gaps
 
-**Files**: `app/local/page.tsx`
-**Fix**: Prompt users to set their city before showing local content. Show a setup CTA instead of generic national news.
+- Missing two-column layout (Ground News has content + sidebar)
+- Missing sidebar sections: "Related Sources", "Similar Bias", "Also Covers"
+- Missing visual factuality indicator (Ground News uses a colored bar/meter)
+- Ownership information is text-only (Ground News shows corporate hierarchy)
+- No historical bias tracking or trend visualization
 
 ---
-
-## H. My Feed / For You Page
 
-### H-01 (P1) GuestReadingHistory makes N+1 API calls
+## 4. Data Ingestion Pipeline
 
-For each unique story slug in reading history, a separate fetch to `/api/stories/{slug}` is made. 12 recent reads = 12 sequential API calls.
+### Overview
 
-**Files**: `components/GuestReadingHistory.tsx` (or equivalent)
-**Fix**: Create a batch endpoint `/api/stories/batch` that accepts an array of slugs and returns all stories in one response.
+The ingestion pipeline is the backbone of OGN and currently has the most technical debt. It consists of:
 
----
+```
+Browser-Use Cloud API → Playwright CDP → groundnews_scrape_cdp.mjs
+    → sync_groundnews_pipeline.mjs (3,639-line monolith)
+        → persist_db.mjs → PostgreSQL
+        → *.json flat-file store (dual-write)
+```
 
-### H-02 (P1) Feed loads 240 stories as initialStories prop
+### 4.1 Architecture Issues
 
-The server passes 240 stories as serialized JSON in the HTML response, even though the page only displays ~80. This bloats the initial page payload.
+#### 4.1.1 The 3,639-Line Monolith
 
-**Files**: `app/my/page.tsx`
-**Fix**: Reduce to the displayed count (80) or implement server-side pagination.
+**File:** `scripts/sync_groundnews_pipeline.mjs`
 
----
+This single file handles: discovery, URL normalization, extraction, enrichment, bias parsing, outlet matching, deduplication, and persistence. It should be decomposed into focused modules:
 
-### H-03 (P2) Favorites sidebar uses inconsistent prefixes
+```
+scripts/pipeline/
+  ├── discover.mjs       — URL collection and routing
+  ├── extract.mjs        — HTML parsing and data extraction
+  ├── enrich.mjs         — Bias scoring, outlet matching, factuality
+  ├── normalize.mjs      — Data cleaning, deduplication
+  ├── persist.mjs        — Database writes
+  └── validate.mjs       — Schema validation between stages
+```
 
-Followed topics show with a `#` prefix, outlets without one. This is inconsistent.
+#### 4.1.2 Dual-Write Consistency Risk
 
-**Files**: `components/MyFeedClient.tsx` sidebar section
-**Fix**: Use a consistent format: either all with prefix icons/symbols or none.
+The pipeline writes to both JSON flat files AND PostgreSQL. These can drift apart with no reconciliation mechanism. The JSON store appears to be the "source of truth" for some operations while PostgreSQL serves the webapp.
 
----
+**Fix:** Pick one canonical store (PostgreSQL) and deprecate the JSON flat-file store, or implement a write-ahead log pattern where JSON is the WAL and PG is the materialized view.
 
-### H-04 (P3) Dashboard shows empty panels for new users
+#### 4.1.3 Zero Test Coverage
 
-If the user has no follows and no reading history, the dashboard shows two mostly-empty panels side by side.
+The entire `scripts/` directory has no test files. For a 3,600+ line data pipeline, this is a significant reliability risk. Any refactoring is high-risk without tests.
 
-**Files**: `app/my/page.tsx`
-**Fix**: Show onboarding prompts ("Follow some topics to get started") instead of empty panels.
+**Fix:**
+1. Add unit tests for pure functions (bias parsing, URL normalization, deduplication)
+2. Add integration tests with fixture data (sample Ground News HTML → expected DB rows)
+3. Add snapshot tests for the extraction layer (detect when Ground News changes their HTML structure)
 
----
+### 4.2 Data Not Being Captured
 
-## I. Source Pages
+The following data is extracted from Ground News but never persisted to the database:
 
-### I-01 (P0) Outlet enrichment is incomplete for all sources
+| Data | Extracted? | Persisted? | Notes |
+|------|-----------|------------|-------|
+| Article images | Yes (URLs) | Yes (URLs only) | But they fail to load — no proxy/cache |
+| Podcast references | Yes | **NO** | Extracted then discarded |
+| Reader links | Yes | **NO** | Extracted then discarded |
+| Timeline headers | Yes | **NO** | Extracted then discarded |
+| "Broke the news" outlet | **NO** | N/A | Not scraped at all |
+| Article publish timestamps | Partial | Partial | Often missing/null |
+| Outlet ownership chain | **NO** | N/A | Not in schema |
+| Story geographic locality | Partial | Yes | Shows "Locality unavailable" everywhere |
+| Full article text | **NO** | N/A | Only headline + URL captured |
+| Source factuality score | Hardcoded | Yes | Uses `OUTLET_REFERENCE_DATA` instead of scraping |
+| Related stories | **NO** | N/A | Ground News shows "Related stories" |
 
-Reuters, CNN, Fox News, and others are missing:
-- Outlet-level bias rating (shows "unknown" despite source-card-level bias being correct)
-- Website URL (shows "Unknown")
-- Country (shows "Unknown")
-- Founded year (shows "Unknown")
-- Description (shows "Description unavailable")
-- Logo (Reuters has no logo, shows "RE" initials only)
+### 4.3 Pipeline Code Quality Issues
 
-**Files**: Ingestion pipeline, `prisma/schema.prisma` (Outlet model)
-**Fix**: Run outlet enrichment against a reference dataset (e.g. AllSides, MBFC, or Ground News's own data). Populate bias, website, country, founded, and description fields.
+#### 4.3.1 Silent Error Swallowing (32 empty catch blocks)
 
----
+```js
+try {
+  // complex extraction logic
+} catch (e) {
+  // nothing — error silently swallowed
+}
+```
 
-### I-02 (P2) Outlet bias inconsistency between card and profile level
+This means extraction failures are invisible. Stories may have missing data with no way to diagnose why.
 
-CNN's source cards all show `bias="left"` but the outlet-level bias shows "unknown". Fox News source cards show "right" but outlet profile shows "unknown".
+**Fix:** At minimum, add structured logging to every catch block. Ideally, implement a pipeline-level error accumulator that reports all extraction failures in a summary.
 
-**Files**: Source page rendering, outlet data model
-**Fix**: Aggregate source-card bias tags to infer outlet-level bias when enrichment data is unavailable.
+#### 4.3.2 Hardcoded Outlet Bias Data
 
----
+`OUTLET_REFERENCE_DATA` in the pipeline hardcodes bias ratings for 30+ outlets instead of scraping them from Ground News's source pages. This data goes stale immediately.
 
-### I-03 (P2) Factuality label transforms "unknown" to "not-rated"
+**Fix:**
+1. Scrape outlet metadata (bias, factuality, ownership) from Ground News source pages during ingestion
+2. Store in the `Outlet` table with a `lastScrapedAt` timestamp
+3. Fall back to hardcoded data only for outlets not yet scraped
 
-The display code converts `factualityLabel === "unknown"` to "not-rated" which is more user-friendly but doesn't match Ground News terminology.
+#### 4.3.3 O(n²) Deduplication
 
-**Files**: `app/source/[slug]/page.tsx`
-**Fix**: Keep "not-rated" but consider adding a tooltip explaining that the outlet has not been assessed.
+The deduplication algorithm compares every story against every other story, resulting in O(n²) complexity. With thousands of stories, this becomes a bottleneck.
 
----
+**Fix:** Use a hash-based approach:
+1. Generate a normalized fingerprint (lowercase title, remove punctuation, sort words)
+2. Use a `Map` or `Set` for O(1) lookups
+3. For fuzzy matching, use locality-sensitive hashing (LSH) or trigram similarity
 
-## J. Auth Pages (Login / Signup)
+#### 4.3.4 Hardcoded Debug Filters
 
-### J-01 (P1) Auth forms lack semantic `<form>` element
+`refreshExisting` contains hardcoded test filters: `valentine|olympics|pam bondi`. These should be environment variables or CLI arguments, not embedded in source code.
 
-Both login and signup use `button type="button"` with `onClick` handlers instead of wrapping inputs in a `<form>`. This means:
-- No keyboard Enter-to-submit
-- No browser autofill form association
-- Reduced accessibility for screen readers
+#### 4.3.5 Bot User-Agent Strings
 
-**Files**: `app/login/page.tsx`, `app/signup/page.tsx`
-**Fix**: Wrap inputs in a `<form>` element with `onSubmit` handler. Use `type="submit"` for the primary button.
+Fetch calls use recognizable bot user-agent strings that can trigger anti-scraping protections. Use realistic browser user-agents with rotation.
 
----
+#### 4.3.6 `stableId` Argument Order Inconsistency
 
-### J-02 (P1) OAuth/social login is planned but not implemented
+The `stableId()` function is called with different argument orders in different files, which could produce different IDs for the same story.
 
-CSS classes exist for `.auth-oauth-row` and `.auth-divider` (Google/GitHub login row with "or" divider) but the rendered pages don't include these elements.
+**Fix:** Standardize on named parameters or a config object:
+```js
+stableId({ title, outlets, date })
+```
 
-**Files**: `app/login/page.tsx`, `app/signup/page.tsx`, `app/globals.css`
-**Fix**: Either implement OAuth login (Google, GitHub) or remove the CSS classes to avoid confusion.
+#### 4.3.7 No Archive Cache TTL
 
----
+When an archive lookup returns "not_found", that result is cached forever. If the archive site later has the content available, OGN will never retry.
 
-### J-03 (P3) Signup has no password confirmation field
+**Fix:** Add a TTL (e.g., 24 hours) for "not_found" cache entries. Successful entries can have a longer TTL.
 
-Only email + password fields. No password confirmation or strength indicator.
+#### 4.3.8 Topic Alias Duplication
 
-**Files**: `app/signup/page.tsx`
-**Fix**: Add a confirm-password field or a password strength meter. The placeholder says "At least 10 characters" which communicates the minimum.
+Topic slug → display name mappings are duplicated between `scripts/sync_groundnews_pipeline.mjs` and `lib/topics.ts`. They can drift apart.
 
----
+**Fix:** Create a single source of truth in `lib/topics.ts` and import it in the pipeline.
 
-## K. Onboarding Wizard (Get Started)
+#### 4.3.9 `FALLBACK_IMAGE_VARIANTS` Count Mismatch
 
-### K-01 (P1) Sequential follow API calls during setup
+The pipeline defines 5 fallback image variants while another file references 6. This causes index-out-of-bounds edge cases.
 
-`persistPrefs()` sends follow toggles one-by-one in a loop. Selecting 10 topics + 10 outlets = 20 sequential API calls.
+#### 4.3.10 No Story Staleness/TTL
 
-**Files**: `app/get-started/page.tsx` (GetStartedWizard component)
-**Fix**: Create a batch follow endpoint `/api/follows/batch` that accepts an array of `{kind, slug}` pairs.
+Stories are ingested but never expire or get refreshed. A story from 6 months ago looks the same as one from today, with no indication of age or relevance.
 
----
+**Fix:**
+1. Add `lastRefreshedAt` to the Story model
+2. Implement a staleness threshold (e.g., stories older than 7 days get a "stale" badge)
+3. Add a refresh job that re-scrapes active stories periodically
 
-### K-02 (P2) "Preview Local" link navigates away from wizard
+### 4.4 Browser-Use Cloud Specific Issues
 
-Clicking "Preview Local" on step 2 takes the user to `/local`, losing all in-progress wizard state.
+- **15-minute session limit** (free tier) — Long ingestion runs get cut off mid-scrape with no resume capability
+- **No retry/resume mechanism** — If a session dies, progress is lost
+- **No rate limiting awareness** — The pipeline doesn't track API usage or respect rate limits
+- **CDP connection fragility** — The Playwright CDP connection to Browser-Use Cloud can drop without clean error handling
 
-**Files**: `app/get-started/page.tsx`
-**Fix**: Open the preview in a new tab (`target="_blank"`) or use a modal preview.
+**Fix:**
+1. Implement checkpointing — save progress after each page so ingestion can resume
+2. Add session rotation — when approaching the 15-min limit, start a new session
+3. Implement exponential backoff for transient failures
+4. Add a session health monitor that detects dropped connections early
 
 ---
-
-### K-03 (P2) Finish button uses full page reload
-
-`window.location.href = "/my"` causes a full page reload instead of client-side navigation.
 
-**Files**: `app/get-started/page.tsx`
-**Fix**: Use Next.js `router.push("/my")` for client-side navigation.
+## 5. Page-by-Page Breakdown
 
----
+### 5.1 Homepage (`/`)
 
-### K-04 (P3) Edition options are hardcoded
+| Element | Ground News | OGN | Status |
+|---------|-------------|-----|--------|
+| Hero story card | Full-bleed image, overlay text | White card, no image loads | **BROKEN** |
+| Story card images | Actual article images | SVG fallback placeholders | **BROKEN** |
+| Navigation bar | Logo + Topics + Search + Subscribe | Logo + Topics + Search | Missing Subscribe |
+| Story card bias bar | 3-color gradient (L/C/R) with percentages | Present and functional | OK |
+| "See the Story" link | Below headline on each card | Missing | **MISSING** |
+| Trending sidebar | "Trending" with ranked stories | Present | OK |
+| Topic chips | Colored topic pills above story | Present | OK |
+| Source count | "12 sources" badge on cards | Present | OK |
+| Dark mode | Full theme toggle | Toggle exists, hero card broken | **PARTIAL** |
 
-The 5 editions (International, United States, Canada, United Kingdom, Europe) are hardcoded in the component.
+### 5.2 Story Page (`/story/[slug]`)
 
-**Files**: `app/get-started/page.tsx`, `components/TopNavClient.tsx`
-**Fix**: Extract to a shared constant or derive from the data store's available locations.
+| Element | Ground News | OGN | Status |
+|---------|-------------|-----|--------|
+| Bias distribution bar | Full-width gradient bar with percentages | Present and functional | OK |
+| Source tabs (L/C/R) | Tabs with colored indicators + counts | Present, functional | OK |
+| Article cards | Image + Headline + Outlet + Date | Image(broken) + Outlet + Date — **no headline** | **BROKEN** |
+| Bias badges on articles | Color-coded (red/white/blue) | Plain text, no color | **MISSING** |
+| "Broke the News" | First reporter highlighted | Not captured | **MISSING** |
+| Article search | Search/filter input in source list | Not present | **MISSING** |
+| Share button | Social sharing options | Not present | **MISSING** |
+| Related stories | "Related stories" section at bottom | Not present | **MISSING** |
+| Timeline view | Chronological story evolution | Not present | **MISSING** |
 
----
+### 5.3 Blindspot Page (`/blindspot`)
 
-### K-05 (P3) No minimum selection guidance on topic/source steps
+| Element | Ground News | OGN | Status |
+|---------|-------------|-----|--------|
+| Header | "BLINDSPOT™" with binoculars icon | SVG binoculars + "BLINDSPOT TM" text | OK (close) |
+| Card layout | Image → Headline → Meta → Bias | Badge → Image → Meta → Headline → Bias | **DIFFERENT** |
+| Filter tabs | Styled tabs with story counts | Basic tab buttons | **PARTIAL** |
+| Bias breakdown | 3-row colored bars per card | 3-row colored bars per card | OK |
+| Methodology popup | Detailed explanation of algorithm | Brief text description | **PARTIAL** |
 
-Users can proceed from Topics and Sources steps without selecting anything, reducing the value of onboarding.
+### 5.4 Topic/Interest Pages (`/interest/[slug]`)
 
-**Files**: `app/get-started/page.tsx`
-**Fix**: Show a soft prompt ("Select at least 3 topics for a better experience") without blocking progression.
+| Element | Ground News | OGN | Status |
+|---------|-------------|-----|--------|
+| Page title | 42px, weight 800 | 36.8px, weight 700 | **WRONG** |
+| Topic description | Dynamic, contextual | Static generic text | **PARTIAL** |
+| Featured stories | 2-up layout with large images | Present but images broken | **BROKEN** |
+| "Covered Most By" sidebar | Top 5 outlets | Shows 18 outlets (no limit) | **WRONG** |
+| "Media Bias Breakdown" | Pie/donut chart | Present (implementation TBD) | **PARTIAL** |
+| Blindspot section | Inline blindspot stories | Present | OK |
 
----
+### 5.5 Source Pages (`/source/[slug]`)
 
-## L. Subscribe / Commercial Features
+| Element | Ground News | OGN | Status |
+|---------|-------------|-----|--------|
+| Layout | Two-column (content + sidebar) | Single column | **MISSING** |
+| Bias indicator | Visual colored bar/meter | Text label only | **PARTIAL** |
+| Factuality score | Visual indicator | Text label | **PARTIAL** |
+| Ownership | Corporate hierarchy visualization | Text only | **PARTIAL** |
+| Related sources sidebar | "Similar Bias", "Also Covers" | Not present | **MISSING** |
+| Historical coverage | Coverage stats over time | Not present | **MISSING** |
+| Story cards | Standard cards with images | Cards present, images broken | **BROKEN** |
 
-Commercial pricing/upsell parity with Ground News is now intentionally **out of scope** for OpenGroundNews.
+### 5.6 Auth & User Pages
 
-The `/subscribe` route should remain non-commercial and focused on open-project contribution guidance. Any roadmap items about pricing tiers, testimonials, promotional strips, checkout funnels, or annual discount merchandising should be removed from implementation priorities.
+| Element | Ground News | OGN | Status |
+|---------|-------------|-----|--------|
+| Login | Email + OAuth (Google/Apple/Facebook) | Email/password only | **PARTIAL** |
+| Registration | Email + OAuth with onboarding flow | Email/password, no onboarding | **PARTIAL** |
+| My News Bias | Full dashboard page (10+ modules) | Sidebar widget only | **MISSING** |
+| Settings | Account, notifications, subscriptions | Basic account settings | **PARTIAL** |
+| Legal pages | Full terms and privacy policy | Placeholder text | **PLACEHOLDER** |
 
 ---
 
-## M. Extension Page
+## 6. Architecture & Technical Debt
 
-### M-01 (P2) Extension page is a developer-only stub
+### 6.1 CSS Architecture
 
-Only 3 paragraphs with developer-oriented installation instructions ("open chrome://extensions -> enable Developer mode -> Load unpacked"). No screenshots, no download button, no feature list, no browser compatibility info.
+- **2,900+ lines** in `globals.css` — Should be broken into component-level CSS modules or Tailwind utilities
+- Dark mode rules tacked on at line 2806+ rather than integrated with custom properties throughout
+- Multiple hardcoded color values instead of CSS custom properties
+- No design token system — colors, spacing, and typography are scattered
 
-**Files**: `app/extension/page.tsx`
-**Fix**: Add extension screenshots/preview images, feature list, supported browsers, and a proper download/install CTA. Keep developer instructions in a collapsible section.
+### 6.2 Database Schema Gaps
 
----
+The Prisma schema is missing models for:
+- User reading history (needed for My News Bias)
+- Bookmarks/saved stories
+- Notification preferences (beyond basic push)
+- Story timeline events
+- Outlet ownership relationships
+- Podcast references
 
-## N. Performance / Architecture
+### 6.3 API Layer
 
-### N-01 (P1) All pages use `force-dynamic` with full data store reads
+- No public API documentation
+- No rate limiting on API routes
+- No API versioning strategy
+- Archive fetch (`lib/archive.ts`) has no circuit breaker — if archive.is is down, every request will timeout
 
-Every page sets `export const dynamic = "force-dynamic"` and calls `readStore()` which loads the entire JSON data store into memory on every request. No caching layer exists.
+### 6.4 Caching
 
-**Files**: All page components, `lib/store.ts`
-**Fix**: Add in-memory caching with TTL to `readStore()`. Consider using Next.js ISR (Incremental Static Regeneration) for pages that don't need real-time data.
+- `lib/dbStore.ts` uses a 45-second in-memory cache TTL — this is very short and will cause high DB load under traffic
+- No CDN or edge caching strategy
+- No HTTP cache headers on API responses
+- Image caching is non-existent (root cause of the broken images)
 
 ---
-
-### N-02 (P2) No font-display strategy or preloading
-
-Two variable fonts (Bricolage Grotesque and Newsreader) are loaded from `@fontsource-variable`. These are substantial payloads with no visible `font-display` or `<link rel="preload">` optimization.
 
-**Files**: `app/layout.tsx`, font imports
-**Fix**: Add `font-display: swap` to font-face declarations. Add `<link rel="preload">` for the primary font files.
+## 7. Recommended Fix Priorities
 
----
+### P0 — Fix Immediately (Broken/Security)
 
-### N-03 (P2) Missing notification delivery system
+1. **Fix image loading** — Implement server-side image proxy or download during ingestion
+2. **Remove `Function()` constructor** — Replace with safe JSON extraction
+3. **Fix hero card dark mode** — Use CSS custom property instead of hardcoded `#fff`
 
-The onboarding wizard has alert toggles (Daily Briefing, Blindspot Report, spike notifications) and a Notifications page exists, but no actual notification delivery system is implemented.
+### P1 — High Priority (Core Parity)
 
-**Files**: `app/notifications/page.tsx`, `app/get-started/page.tsx`
-**Fix**: Implement web push notifications or email-based notification delivery, or disable the alert toggles with a "Coming soon" label.
-
----
+4. **Add article headlines to story page source cards** — Currently showing outlet + date but no headline
+5. **Add color-coded bias badges** — Apply the 7-color system to all bias indicators
+6. **Cap "Covered Most By" to 5 outlets** — Add `LIMIT 5` to the query
+7. **Fix heading typography** — 42px / weight 800 to match Ground News
+8. **Persist podcast references, reader links, timeline headers** — Add to schema and persist layer
+9. **Add "Broke the news" scraping** — Capture first-reporter data during ingestion
+10. **Fix locality data** — Currently shows "Locality unavailable" everywhere
 
-## O. Data Quality / Ingestion
+### P2 — Important (Feature Parity)
 
-### O-01 (P0) Outlet enrichment pipeline is non-functional or incomplete
+11. **Build My News Bias page** — Full dashboard with charts and analysis modules
+12. **Add source page sidebar** — Two-column layout with related sources
+13. **Add article search in story pages** — Filter/search within source list
+14. **Add share buttons** — Social sharing on stories
+15. **Implement OAuth login** — Google + Apple at minimum
+16. **Add story staleness/TTL** — Mark old stories, implement refresh jobs
+17. **Split pipeline monolith** — Decompose into focused modules
+18. **Add pipeline tests** — Unit + integration + snapshot tests
+19. **Fix blindspot card layout order** — Match Ground News ordering
 
-The enrichment system exists (`enriched Feb 11, 2026, 4:52 PM` timestamp on source pages) but produces mostly empty results. Bias ratings, website URLs, country, founded year, and descriptions are all missing for major outlets.
+### P3 — Nice to Have (Polish)
 
-**Files**: Ingestion/enrichment pipeline
-**Fix**: Use a reference dataset (AllSides Media Bias Ratings, Media Bias/Fact Check) to enrich outlet profiles. At minimum, populate the top 100 outlets by story count.
+20. **Add Subscribe button** to navigation
+21. **Fix font** — Source a closer match to universalSans
+22. **Implement "See the Story" links** on homepage cards
+23. **Add reading time estimates**
+24. **Weather widget icons** instead of text
+25. **Improve blindspot methodology popup**
+26. **Break up globals.css** into component-level styles
+27. **Add pipeline checkpointing** for Browser-Use Cloud session resilience
+28. **Remove hardcoded debug filters** from pipeline
+29. **Fix deduplication algorithm** — O(n²) → hash-based O(n)
+30. **Add structured logging** to replace 32 empty catch blocks
+31. **Eliminate dual-write** — Pick one canonical data store
+32. **Write actual legal page content** for terms and privacy
 
 ---
 
-### O-02 (P1) Source excerpts frequently unavailable
+## Appendix: Ground News Design Reference
 
-Multiple Reuters source cards show "Excerpt unavailable from publisher metadata". The ingestion pipeline doesn't consistently extract article excerpts.
+### Color Palette
+```
+Page Background:  #EEEFE9
+Card Background:  #FFFFFF
+Text Primary:     #262626
+Text Secondary:   #6B7280
+Left Bias:        #802727 → #994040 → #B35959
+Center:           #FFFFFF (bordered)
+Right Bias:       #5980B3 → #406699 → #204986
+Accent Green:     #2D6A4F (Subscribe button)
+```
 
-**Files**: Ingestion pipeline, article scraping logic
-**Fix**: Extract `og:description`, `meta[name=description]`, or first paragraph of article body as fallback excerpt sources.
-
----
-
----
+### Typography
+```
+Font Family:      universalSans (custom)
+Heading Weight:   800
+Body Weight:      400
+Page Title:       42px
+Section Title:    24px
+Card Title:       18px
+Body Text:        16px / 1.6
+Small Text:       14px
+```
 
-## Checklist for Prioritized Implementation
-
-### Phase 1: Critical Data Quality (P0)
-- [x] A-01: Fix broken ground.news image URLs in data store
-- [x] A-02: Implement og:image extraction and caching in ingestion
-- [x] A-03: Fix topic mapping so us-news/world/science have stories
-- [x] B-01: Deduplicate stories between hero and feed sections
-- [x] E-01: Implement story deduplication in ingestion pipeline
-- [x] E-02: Fix topic misclassification in ingestion
-- [x] I-01: Run outlet enrichment for top 100 outlets
-- [x] O-01: Fix enrichment pipeline to populate outlet metadata
-
-### Phase 2: High Priority UX (P1)
-- [x] A-04: Add topic display name lookup for interest pages
-- [x] A-05: Add active state to desktop nav links
-- [x] A-06: Fix footer social links
-- [x] B-02: Fix empty Daily Local News widget for guests
-- [x] B-03: Fix empty My News Bias widget for guests
-- [x] C-01: Remove duplicate BiasBar
-- [x] C-02: Validate summary quality in ingestion
-- [x] C-03: Reduce BiasDistributionPanel min-height
-- [x] E-03: Hide empty "Latest" section when no extra stories
-- [x] E-04: Fix malformed CDN URLs
-- [x] E-05: Aggregate source bias to outlet level
-- [x] F-01: Plan for scalable search (document for future)
-- [x] H-01: Create batch story lookup endpoint
-- [x] H-02: Reduce initialStories payload size
-- [x] J-01: Add semantic form elements to auth pages
-- [x] J-02: Implement or remove OAuth login
-- [x] K-01: Create batch follow endpoint
-- [x] N-01: Add caching to readStore()
-- [x] O-02: Improve excerpt extraction
-
-### Phase 3: Medium Priority Polish (P2)
-- [x] A-07, A-08, A-09, A-10, A-11
-- [x] B-04, B-05
-- [x] C-04 through C-08
-- [x] D-01, D-02
-- [x] F-02, F-03
-- [x] G-01, G-02
-- [x] H-03
-- [x] I-02, I-03
-- [x] K-02, K-03
-- [x] M-01
-- [x] N-02, N-03
-
-### Phase 4: Low Priority (P3)
-- [x] A-13
-- [x] A-12, A-14
-- [x] B-06
-- [x] C-09, C-10
-- [x] D-03
-- [x] F-04
-- [x] G-03
-- [x] H-04
-- [x] J-03
-- [x] K-04, K-05
+### Layout
+```
+Max Width:        1440px
+Grid:             12-column
+Gutter:           24px
+Card Border:      1px solid #E5E7EB
+Card Radius:      8px
+Card Shadow:      0 1px 3px rgba(0,0,0,0.1)
+```

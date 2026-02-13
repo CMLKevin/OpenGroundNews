@@ -13,6 +13,8 @@ export function SiteFooter() {
   const githubUrl = process.env.NEXT_PUBLIC_OGN_GITHUB_URL || "";
   const xUrl = process.env.NEXT_PUBLIC_OGN_X_URL || "";
   const supportEmail = process.env.NEXT_PUBLIC_OGN_SUPPORT_EMAIL || "";
+  const iosUrl = process.env.NEXT_PUBLIC_OGN_IOS_URL || "";
+  const androidUrl = process.env.NEXT_PUBLIC_OGN_ANDROID_URL || "";
   const hasSocialLinks = Boolean(githubUrl || xUrl || supportEmail);
 
   return (
@@ -46,6 +48,20 @@ export function SiteFooter() {
               Community links will appear here once they are configured.
             </p>
           )}
+          {(iosUrl || androidUrl) ? (
+            <div className="footer-social u-mt-06">
+              {iosUrl ? (
+                <a className="footer-social-link" href={iosUrl} target="_blank" rel="noreferrer">
+                  App Store
+                </a>
+              ) : null}
+              {androidUrl ? (
+                <a className="footer-social-link" href={androidUrl} target="_blank" rel="noreferrer">
+                  Google Play
+                </a>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         <div className="footer-grid">
@@ -59,6 +75,11 @@ export function SiteFooter() {
           <FooterCol title="Features">
             <Link href="/search">Search</Link>
             <Link href="/my">For You</Link>
+            <Link href="/my-news-bias">My News Bias</Link>
+            <Link href="/compare">Compare Sources</Link>
+            <Link href="/calendar">Calendar</Link>
+            <Link href="/maps">Maps</Link>
+            <Link href="/newsletters">Newsletters</Link>
             <Link href="/get-started">Get started</Link>
             <Link href="/reader">Reader</Link>
           </FooterCol>

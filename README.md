@@ -150,6 +150,12 @@ npm run archive:extract -- --url https://example.com/news/story
 ./restart.sh dev
 # or
 PORT=3001 ./restart.sh prod
+
+# Capture local screenshot baseline for parity diff
+npm run parity:baseline -- --base-url http://localhost:3000
+
+# Run parity smoke + visual diff gate
+npm run parity:gate -- --base-url http://localhost:3000
 ```
 
 ## 8) API Endpoints

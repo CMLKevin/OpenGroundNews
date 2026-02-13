@@ -36,6 +36,11 @@ export function StoryListItem({
             <span className="bias-meta-right">{story.bias.right}%</span>
           </div>
         </div>
+        <div className="u-mt-05">
+          <Link className="btn btn-external" href={`/story/${encodeURIComponent(story.slug)}`}>
+            See the Story
+          </Link>
+        </div>
       </div>
 
       <StoryImage

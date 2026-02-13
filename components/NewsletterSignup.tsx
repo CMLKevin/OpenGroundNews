@@ -4,6 +4,7 @@ import { useState } from "react";
 
 export function NewsletterSignup({ list = "blindspot" }: { list?: string }) {
   const [email, setEmail] = useState("");
+  const [frequency, setFrequency] = useState<"daily" | "weekly">("weekly");
   const [status, setStatus] = useState<"idle" | "loading" | "ok" | "error">("idle");
 
   async function submit() {
@@ -14,7 +15,12 @@ export function NewsletterSignup({ list = "blindspot" }: { list?: string }) {
       const res = await fetch("/api/newsletter", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email: clean, list }),
+        body: JSON.stringify({
+          email: clean,
+          list,
+          frequency,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        }),
       });
       const json = (await res.json()) as any;
       if (!json.ok) {
@@ -41,6 +47,13 @@ export function NewsletterSignup({ list = "blindspot" }: { list?: string }) {
           autoComplete="email"
         />
       </label>
+      <label className="story-meta u-grid u-grid-gap-02">
+        Frequency
+        <select className="select-control" value={frequency} onChange={(e) => setFrequency(e.target.value as any)}>
+          <option value="weekly">Weekly</option>
+          <option value="daily">Daily</option>
+        </select>
+      </label>
       <button className="btn" type="button" onClick={submit} disabled={status === "loading"}>
         {status === "loading" ? "Signing up..." : "Sign up"}
       </button>
@@ -49,4 +62,3 @@ export function NewsletterSignup({ list = "blindspot" }: { list?: string }) {
     </div>
   );
 }
-

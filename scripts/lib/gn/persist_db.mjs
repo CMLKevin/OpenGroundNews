@@ -78,6 +78,290 @@ function isWireOutlet(name) {
   );
 }
 
+function parseOwnershipChain(value) {
+  const clean = String(value || "").trim();
+  if (!clean) return [];
+  const parts = clean
+    .split(/(?:\s*[>→»|]\s*|\s*,\s*|\s*\/\s*)/g)
+    .map((part) => String(part || "").trim())
+    .filter(Boolean)
+    .slice(0, 8);
+  return parts;
+}
+
+function podcastProviderFromUrl(url) {
+  const host = String(url || "").toLowerCase();
+  if (host.includes("spotify")) return "spotify";
+  if (host.includes("apple.com")) return "apple-podcasts";
+  if (host.includes("youtube.com") || host.includes("youtu.be")) return "youtube";
+  if (host.includes("podcasts.google")) return "google-podcasts";
+  return "unknown";
+}
+
+function tryParseUrl(raw) {
+  const clean = String(raw || "").trim();
+  if (!clean) return "";
+  try {
+    return new URL(clean).toString();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeStringList(value, max = 12) {
+  if (!Array.isArray(value)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const item of value) {
+    const clean = normalizeText(item);
+    if (!clean) continue;
+    const key = clean.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(clean);
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+function pickGeo(story) {
+  const candidate = story?.geo && typeof story.geo === "object" ? story.geo : null;
+  const lat = Number(candidate?.lat);
+  const lon = Number(candidate?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+  if (lat < -90 || lat > 90 || lon < -180 || lon > 180) return null;
+  return {
+    lat,
+    lon,
+    locality: normalizeText(candidate?.locality || story?.location || "") || null,
+    country: normalizeText(candidate?.country || "") || null,
+  };
+}
+
+function titleFromUrl(url, fallback = "Reference") {
+  const parsed = tryParseUrl(url);
+  if (!parsed) return fallback;
+  try {
+    const host = new URL(parsed).hostname.replace(/^www\./, "");
+    return host || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function buildReaderLinkRows(story, storyId) {
+  const incoming = Array.isArray(story?.readerLinks) ? story.readerLinks : [];
+  const rows = [];
+  const seen = new Set();
+  for (const item of incoming) {
+    const label =
+      typeof item === "object" && item
+        ? normalizeText(item.label || item.title || item.text || "")
+        : "";
+    const url = tryParseUrl(typeof item === "string" ? item : item?.url || item?.href || "");
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    rows.push({
+      id: stableId("reader", `${storyId}:${url}`),
+      storyId,
+      label: label || titleFromUrl(url, "Reader link"),
+      url,
+    });
+    if (rows.length >= 20) break;
+  }
+  return rows;
+}
+
+function buildPodcastRows(story, storyId) {
+  const incoming = Array.isArray(story?.podcastReferences) ? story.podcastReferences : [];
+  const rows = [];
+  const seen = new Set();
+  for (const item of incoming) {
+    let label = "";
+    let url = "";
+    let provider = "unknown";
+    if (typeof item === "string") {
+      const clean = normalizeText(item);
+      const parsed = tryParseUrl(clean);
+      if (parsed) {
+        url = parsed;
+        label = titleFromUrl(parsed, "Podcast");
+        provider = podcastProviderFromUrl(parsed);
+      } else {
+        label = clean;
+      }
+    } else if (item && typeof item === "object") {
+      label = normalizeText(item.label || item.title || item.text || "");
+      url = tryParseUrl(item.url || item.href || "");
+      provider = normalizeText(item.provider || "") || (url ? podcastProviderFromUrl(url) : "unknown");
+    }
+    if (!label && !url) continue;
+    const key = `${label.toLowerCase()}|${url.toLowerCase()}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      id: stableId("podcast", `${storyId}:${key}`),
+      storyId,
+      label: label || titleFromUrl(url, "Podcast"),
+      url: url || null,
+      provider,
+    });
+    if (rows.length >= 20) break;
+  }
+  return rows;
+}
+
+function buildTimelineRows(story, storyId, publishedAt) {
+  const explicit = Array.isArray(story?.timelineEvents) ? story.timelineEvents : [];
+  const fromExplicit = [];
+  for (const event of explicit) {
+    if (!event || typeof event !== "object") continue;
+    const label = normalizeText(event.label || event.title || event.header || "");
+    if (!label) continue;
+    const detail = normalizeText(event.detail || event.description || event.text || "");
+    const orderRaw = Number(event.order);
+    const order = Number.isFinite(orderRaw) ? Math.max(0, Math.round(orderRaw)) : fromExplicit.length + 1;
+    const eventAt = event.eventAt ? parseDate(event.eventAt, publishedAt.toISOString()) : null;
+    fromExplicit.push({ label, detail: detail || null, order, eventAt });
+  }
+
+  const timelineHeaders = normalizeStringList(story?.timelineHeaders, 16);
+  const fromHeaders = timelineHeaders.map((label, idx) => ({
+    label,
+    detail: null,
+    order: idx + 1,
+    eventAt: null,
+  }));
+
+  const combined = fromExplicit.length > 0 ? fromExplicit : fromHeaders;
+  const rows = [];
+  const seen = new Set();
+
+  rows.push({
+    id: stableId("timeline", `${storyId}:published`),
+    storyId,
+    label: "Initial coverage published",
+    detail: null,
+    order: 0,
+    eventAt: publishedAt,
+  });
+
+  for (const event of combined) {
+    const key = `${event.label.toLowerCase()}|${event.order}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({
+      id: stableId("timeline", `${storyId}:${key}`),
+      storyId,
+      label: event.label,
+      detail: event.detail,
+      order: event.order,
+      eventAt: event.eventAt,
+    });
+    if (rows.length >= 20) break;
+  }
+
+  return rows;
+}
+
+function buildSnapshotRows(story, storyId) {
+  const rows = [];
+  const summary = normalizeText(story?.summary || "");
+  const dek = normalizeText(story?.dek || "");
+  const snapshotBody = normalizeText(story?.fullTextSnapshot || story?.snapshotBody || "");
+  const primaryBody =
+    snapshotBody ||
+    [summary, dek].filter(Boolean).join("\n\n") ||
+    "Snapshot unavailable from source body extraction.";
+
+  rows.push({
+    id: stableId("snapshot", `${storyId}:primary`),
+    storyId,
+    sourceUrl: tryParseUrl(story?.canonicalUrl || story?.url || "") || null,
+    title: normalizeText(story?.title || "") || null,
+    body: primaryBody,
+    metadata: {
+      topic: normalizeText(story?.topic || "") || null,
+      tags: Array.isArray(story?.tags) ? story.tags.filter(Boolean).slice(0, 20) : [],
+      sourceCount: Number(story?.sourceCount || 0) || 0,
+      updatedAt: normalizeText(story?.updatedAt || "") || null,
+    },
+  });
+
+  const sources = Array.isArray(story?.sources) ? story.sources : [];
+  const seen = new Set();
+  for (const src of sources) {
+    const url = tryParseUrl(src?.url || "");
+    const excerpt = normalizeText(src?.excerpt || "");
+    const headline = normalizeText(src?.headline || "");
+    if (!url || !excerpt) continue;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    rows.push({
+      id: stableId("snapshot", `${storyId}:${url}`),
+      storyId,
+      sourceUrl: url,
+      title: headline || null,
+      body: excerpt,
+      metadata: {
+        outlet: normalizeText(src?.outlet || "") || null,
+        byline: normalizeText(src?.byline || "") || null,
+        publishedAt: normalizeText(src?.publishedAt || "") || null,
+        canonicalHash: normalizeText(src?.canonicalHash || "") || null,
+      },
+    });
+    if (rows.length >= 40) break;
+  }
+
+  return rows;
+}
+
+function parseRelatedEntries(story) {
+  const related = Array.isArray(story?.relatedStories) ? story.relatedStories : [];
+  const relatedSlugs = Array.isArray(story?.relatedStorySlugs) ? story.relatedStorySlugs : [];
+  const out = [];
+
+  for (const entry of related) {
+    if (typeof entry === "string") {
+      const slug = slugify(entry);
+      if (slug) out.push({ slug, reason: "related" });
+      continue;
+    }
+    if (!entry || typeof entry !== "object") continue;
+    const slug = slugify(entry.slug || "");
+    const relatedStoryId = normalizeText(entry.id || entry.relatedStoryId || "");
+    const reason = normalizeText(entry.reason || entry.label || "related") || "related";
+    if (relatedStoryId) out.push({ relatedStoryId, reason });
+    else if (slug) out.push({ slug, reason });
+  }
+
+  for (const slugValue of relatedSlugs) {
+    const slug = slugify(slugValue);
+    if (!slug) continue;
+    out.push({ slug, reason: "related-topic" });
+  }
+
+  return out;
+}
+
+function topicScore(baseStory, candidateStory) {
+  const sameTopic =
+    normalizeText(baseStory?.topic || "").toLowerCase() === normalizeText(candidateStory?.topic || "").toLowerCase();
+  const baseTags = new Set((Array.isArray(baseStory?.tags) ? baseStory.tags : []).map((tag) => normalizeText(tag).toLowerCase()));
+  const candidateTags = (Array.isArray(candidateStory?.tags) ? candidateStory.tags : [])
+    .map((tag) => normalizeText(tag).toLowerCase())
+    .filter(Boolean);
+  let overlap = 0;
+  for (const tag of candidateTags) {
+    if (baseTags.has(tag)) overlap += 1;
+  }
+  return (sameTopic ? 2 : 0) + overlap;
+}
+
 export async function persistIngestionRun(params) {
   requireDatabaseUrl();
   const db = getDb();
@@ -117,14 +401,26 @@ export async function persistStoriesToDb(stories, context = {}) {
 
   const nowIso = new Date().toISOString();
   const safeStories = Array.isArray(stories) ? stories.filter(Boolean) : [];
+  if (safeStories.length === 0) {
+    if (context.disconnect) await db.$disconnect();
+    return;
+  }
 
   await db.$transaction(
     async (tx) => {
+      const runStoryIds = [];
+      const runStoryBySlug = new Map();
+      const relatedByStoryId = new Map();
+      const ownershipByOutletId = new Map();
+
       for (const story of safeStories) {
         const slug = String(story.slug || "").trim();
         if (!slug) continue;
 
         const storyId = String(story.id || stableId("story", story.canonicalUrl || story.url || slug));
+        runStoryIds.push(storyId);
+        runStoryBySlug.set(slug.toLowerCase(), { id: storyId, story });
+
         const updatedAtIso = story.updatedAt || nowIso;
         const updatedAt = parseDate(updatedAtIso, nowIso);
         const publishedAt = parseDate(story.publishedAt || updatedAtIso, updatedAtIso);
@@ -165,6 +461,14 @@ export async function persistStoriesToDb(stories, context = {}) {
             isBlindspot: Boolean(story.blindspot),
             isLocal: Boolean(story.local),
             isTrending: Boolean(story.trending),
+            lastRefreshedAt: story.lastRefreshedAt ? new Date(story.lastRefreshedAt) : updatedAt,
+            staleAt: story.staleAt ? new Date(story.staleAt) : null,
+            readTimeMinutes:
+              typeof story.readTimeMinutes === "number" && Number.isFinite(story.readTimeMinutes)
+                ? Math.max(1, Math.round(story.readTimeMinutes))
+                : null,
+            imageAssetKey: story.imageAssetKey || null,
+            brokeTheNewsSourceId: null,
             coverageTotal: typeof coverage.totalSources === "number" ? Math.round(coverage.totalSources) : null,
             coverageLeft: typeof coverage.leaningLeft === "number" ? Math.round(coverage.leaningLeft) : null,
             coverageCenter: typeof coverage.center === "number" ? Math.round(coverage.center) : null,
@@ -191,6 +495,14 @@ export async function persistStoriesToDb(stories, context = {}) {
             isBlindspot: Boolean(story.blindspot),
             isLocal: Boolean(story.local),
             isTrending: Boolean(story.trending),
+            lastRefreshedAt: story.lastRefreshedAt ? new Date(story.lastRefreshedAt) : updatedAt,
+            staleAt: story.staleAt ? new Date(story.staleAt) : null,
+            readTimeMinutes:
+              typeof story.readTimeMinutes === "number" && Number.isFinite(story.readTimeMinutes)
+                ? Math.max(1, Math.round(story.readTimeMinutes))
+                : null,
+            imageAssetKey: story.imageAssetKey || null,
+            brokeTheNewsSourceId: null,
             coverageTotal: typeof coverage.totalSources === "number" ? Math.round(coverage.totalSources) : null,
             coverageLeft: typeof coverage.leaningLeft === "number" ? Math.round(coverage.leaningLeft) : null,
             coverageCenter: typeof coverage.center === "number" ? Math.round(coverage.center) : null,
@@ -214,6 +526,7 @@ export async function persistStoriesToDb(stories, context = {}) {
 
         // Upsert outlets + source cards
         const sourceIds = [];
+        const sourcePublished = [];
         for (const src of incomingSources) {
           const outletName = String(src.outlet || "").trim() || "Unknown outlet";
           const outletKey = slugify(outletName);
@@ -301,10 +614,23 @@ export async function persistStoriesToDb(stories, context = {}) {
             },
           });
 
+          const parsedOwnershipChain = ownership ? parseOwnershipChain(ownership) : [];
+          const existingOwnership = ownershipByOutletId.get(outletId);
+          if (!existingOwnership || parsedOwnershipChain.length > existingOwnership.chain.length) {
+            ownershipByOutletId.set(outletId, {
+              outletId,
+              outletName,
+              chain: parsedOwnershipChain,
+              country: country || null,
+            });
+          }
+
           const url = String(src.url || "").trim();
           if (!url) continue;
           const sourceId = String(src.id || stableId("src", `${storyId}:${url}`));
           sourceIds.push(sourceId);
+          const srcPublishedAt = src.publishedAt ? parseDate(src.publishedAt, publishedAt.toISOString()) : null;
+          sourcePublished.push({ id: sourceId, publishedAt: srcPublishedAt });
 
           await tx.sourceArticle.upsert({
             where: { id: sourceId },
@@ -316,6 +642,11 @@ export async function persistStoriesToDb(stories, context = {}) {
               publishedAt: src.publishedAt ? new Date(src.publishedAt) : null,
               paywall: src.paywall || null,
               locality: src.locality || null,
+              headline: src.headline || null,
+              byline: src.byline || null,
+              imageUrl: src.imageUrl || null,
+              language: src.language || null,
+              canonicalHash: src.canonicalHash || null,
               repostedBy:
                 typeof src.repostedBy === "number" && Number.isFinite(src.repostedBy)
                   ? Math.max(0, Math.round(src.repostedBy))
@@ -330,6 +661,11 @@ export async function persistStoriesToDb(stories, context = {}) {
               publishedAt: src.publishedAt ? new Date(src.publishedAt) : null,
               paywall: src.paywall || null,
               locality: src.locality || null,
+              headline: src.headline || null,
+              byline: src.byline || null,
+              imageUrl: src.imageUrl || null,
+              language: src.language || null,
+              canonicalHash: src.canonicalHash || null,
               repostedBy:
                 typeof src.repostedBy === "number" && Number.isFinite(src.repostedBy)
                   ? Math.max(0, Math.round(src.repostedBy))
@@ -343,10 +679,182 @@ export async function persistStoriesToDb(stories, context = {}) {
           await tx.sourceArticle.deleteMany({
             where: { storyId, id: { notIn: sourceIds } },
           });
+        } else {
+          await tx.sourceArticle.deleteMany({ where: { storyId } });
+        }
+
+        let brokeTheNewsSourceId = normalizeText(story.brokeTheNewsSourceId || "");
+        if (brokeTheNewsSourceId && !sourceIds.includes(brokeTheNewsSourceId)) {
+          brokeTheNewsSourceId = "";
+        }
+        if (!brokeTheNewsSourceId && sourcePublished.length > 0) {
+          const earliest = sourcePublished
+            .filter((item) => item.publishedAt)
+            .sort((a, b) => +new Date(a.publishedAt) - +new Date(b.publishedAt))[0];
+          if (earliest?.id) brokeTheNewsSourceId = earliest.id;
+        }
+        await tx.story.update({
+          where: { id: storyId },
+          data: { brokeTheNewsSourceId: brokeTheNewsSourceId || null },
+        });
+
+        const timelineRows = buildTimelineRows(story, storyId, publishedAt);
+        await tx.storyTimelineEvent.deleteMany({ where: { storyId } });
+        if (timelineRows.length > 0) {
+          await tx.storyTimelineEvent.createMany({ data: timelineRows, skipDuplicates: true });
+        }
+
+        const podcastRows = buildPodcastRows(story, storyId);
+        await tx.storyPodcastReference.deleteMany({ where: { storyId } });
+        if (podcastRows.length > 0) {
+          await tx.storyPodcastReference.createMany({ data: podcastRows, skipDuplicates: true });
+        }
+
+        const readerLinkRows = buildReaderLinkRows(story, storyId);
+        await tx.storyReaderLink.deleteMany({ where: { storyId } });
+        if (readerLinkRows.length > 0) {
+          await tx.storyReaderLink.createMany({ data: readerLinkRows, skipDuplicates: true });
+        }
+
+        const snapshotRows = buildSnapshotRows(story, storyId);
+        await tx.storySnapshot.deleteMany({ where: { storyId } });
+        if (snapshotRows.length > 0) {
+          await tx.storySnapshot.createMany({ data: snapshotRows, skipDuplicates: true });
+        }
+
+        const geo = pickGeo(story);
+        if (geo) {
+          await tx.storyGeo.upsert({
+            where: { storyId },
+            update: geo,
+            create: { id: stableId("geo", storyId), storyId, ...geo },
+          });
+        }
+
+        const related = parseRelatedEntries(story)
+          .slice(0, 20)
+          .map((entry) => ({
+            slug: entry.slug ? slugify(entry.slug) : "",
+            relatedStoryId: entry.relatedStoryId ? String(entry.relatedStoryId).trim() : "",
+            reason: normalizeText(entry.reason || "related") || "related",
+          }));
+        if (related.length > 0) {
+          relatedByStoryId.set(storyId, related);
         }
       }
+
+      for (const [outletId, ownership] of ownershipByOutletId.entries()) {
+        const names = [ownership.outletName, ...(Array.isArray(ownership.chain) ? ownership.chain : [])]
+          .map((value) => normalizeText(value))
+          .filter(Boolean);
+        const deduped = [];
+        const seen = new Set();
+        for (const name of names) {
+          const key = name.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          deduped.push(name);
+        }
+
+        await tx.outletOwnershipEdge.deleteMany({ where: { outletId } });
+        await tx.outletOwnershipEntity.deleteMany({ where: { outletId } });
+
+        if (deduped.length === 0) continue;
+        const entityIds = deduped.map((name, idx) =>
+          stableId("owner_entity", `${outletId}:${idx}:${slugify(name)}`),
+        );
+        await tx.outletOwnershipEntity.createMany({
+          data: deduped.map((name, idx) => ({
+            id: entityIds[idx],
+            outletId,
+            name,
+            entityType: idx === 0 ? "outlet" : "owner",
+            country: ownership.country || null,
+          })),
+          skipDuplicates: true,
+        });
+        if (entityIds.length > 1) {
+          await tx.outletOwnershipEdge.createMany({
+            data: entityIds.slice(0, -1).map((fromId, idx) => ({
+              id: stableId("owner_edge", `${outletId}:${fromId}->${entityIds[idx + 1]}`),
+              outletId,
+              fromEntityId: fromId,
+              toEntityId: entityIds[idx + 1],
+              sharePct: null,
+            })),
+            skipDuplicates: true,
+          });
+        }
+      }
+
+      for (const { id: storyId, story } of runStoryBySlug.values()) {
+        const existing = relatedByStoryId.get(storyId) || [];
+        const inferred = [];
+        for (const candidate of safeStories) {
+          const candidateSlug = String(candidate?.slug || "")
+            .trim()
+            .toLowerCase();
+          if (!candidateSlug || candidateSlug === String(story.slug || "").trim().toLowerCase()) continue;
+          const score = topicScore(story, candidate);
+          if (score <= 0) continue;
+          inferred.push({ candidateSlug, score });
+        }
+        inferred
+          .sort((a, b) => b.score - a.score)
+          .slice(0, 5)
+          .forEach((item) => {
+            existing.push({ slug: item.candidateSlug, reason: "same-topic-coverage" });
+          });
+        if (existing.length > 0) relatedByStoryId.set(storyId, existing);
+      }
+
+      const slugsToResolve = new Set();
+      for (const entries of relatedByStoryId.values()) {
+        for (const entry of entries) {
+          if (entry.slug && !entry.relatedStoryId) slugsToResolve.add(entry.slug);
+        }
+      }
+      const resolvedBySlug = new Map();
+      if (slugsToResolve.size > 0) {
+        const rows = await tx.story.findMany({
+          where: { slug: { in: Array.from(slugsToResolve) } },
+          select: { id: true, slug: true },
+        });
+        for (const row of rows) resolvedBySlug.set(String(row.slug || "").toLowerCase(), row.id);
+      }
+
+      if (runStoryIds.length > 0) {
+        await tx.storyRelatedStory.deleteMany({
+          where: { storyId: { in: runStoryIds } },
+        });
+      }
+
+      const relatedRows = [];
+      for (const [storyId, entries] of relatedByStoryId.entries()) {
+        const seen = new Set();
+        for (const entry of entries) {
+          const relatedStoryId =
+            entry.relatedStoryId ||
+            (entry.slug ? runStoryBySlug.get(entry.slug.toLowerCase())?.id || resolvedBySlug.get(entry.slug.toLowerCase()) : "");
+          if (!relatedStoryId || relatedStoryId === storyId) continue;
+          const uniq = `${storyId}:${relatedStoryId}`;
+          if (seen.has(uniq)) continue;
+          seen.add(uniq);
+          relatedRows.push({
+            id: stableId("related", uniq),
+            storyId,
+            relatedStoryId,
+            reason: normalizeText(entry.reason || "related") || "related",
+          });
+          if (seen.size >= 12) break;
+        }
+      }
+
+      if (relatedRows.length > 0) {
+        await tx.storyRelatedStory.createMany({ data: relatedRows, skipDuplicates: true });
+      }
     },
-    { timeout: 120000 },
+    { timeout: 180000 },
   );
 
   if (context.disconnect) {

@@ -27,6 +27,28 @@ function cacheSet<T>(key: string, value: T, ttlMs = CACHE_TTL_MS) {
   storeCache.set(key, { value, expiresAt: Date.now() + Math.max(5_000, ttlMs) });
 }
 
+const STORY_INCLUDE_BASE: any = {
+  tags: true,
+  sources: { include: { outlet: true } },
+};
+
+const STORY_INCLUDE_DETAIL: any = {
+  ...STORY_INCLUDE_BASE,
+  timelineEvents: { orderBy: [{ order: "asc" }, { createdAt: "asc" }] },
+  podcastReferences: true,
+  readerLinks: true,
+  relatedFrom: {
+    include: {
+      relatedStory: {
+        select: { id: true, slug: true, title: true, imageUrl: true, publishedAt: true, topic: true },
+      },
+    },
+  },
+  snapshots: { orderBy: { createdAt: "desc" }, take: 6 },
+  geo: true,
+  brokeTheNewsSource: { include: { outlet: true } },
+};
+
 function toStory(row: any): Story {
   const tags = (row.tags || []).map((t: any) => t.tag);
   const sources: SourceArticle[] = (row.sources || []).map((s: any) => ({
@@ -34,6 +56,11 @@ function toStory(row: any): Story {
     outlet: s.outlet?.name || "Unknown outlet",
     url: s.url,
     excerpt: s.excerpt || "",
+    headline: s.headline || undefined,
+    byline: s.byline || undefined,
+    imageUrl: s.imageUrl || undefined,
+    language: s.language || undefined,
+    canonicalHash: s.canonicalHash || undefined,
     logoUrl: s.outlet?.logoUrl || undefined,
     bias: s.outlet?.bias || "unknown",
     biasRating: (s.outlet?.biasRating || "unknown").replace(/_/g, "-"),
@@ -44,6 +71,76 @@ function toStory(row: any): Story {
     paywall: s.paywall || undefined,
     locality: s.locality || undefined,
   }));
+
+  const timeline = (row.timelineEvents || []).map((event: any) => ({
+    id: event.id,
+    label: event.label,
+    detail: event.detail || undefined,
+    eventAt: event.eventAt ? new Date(event.eventAt).toISOString() : undefined,
+    order: Number(event.order || 0) || 0,
+  }));
+
+  const podcasts = (row.podcastReferences || []).map((entry: any) => ({
+    id: entry.id,
+    label: entry.label || "Podcast",
+    url: entry.url || undefined,
+    provider: entry.provider || undefined,
+  }));
+
+  const readerLinkItems = (row.readerLinks || []).map((entry: any) => ({
+    id: entry.id,
+    label: entry.label || undefined,
+    url: entry.url,
+  }));
+
+  const relatedStories = (row.relatedFrom || [])
+    .map((edge: any) => ({
+      id: edge.relatedStory?.id,
+      slug: edge.relatedStory?.slug,
+      title: edge.relatedStory?.title,
+      imageUrl: edge.relatedStory?.imageUrl || undefined,
+      publishedAt: edge.relatedStory?.publishedAt ? new Date(edge.relatedStory.publishedAt).toISOString() : undefined,
+      topic: edge.relatedStory?.topic || undefined,
+      reason: edge.reason || undefined,
+    }))
+    .filter((item: any) => item.id && item.slug && item.title);
+
+  const snapshots = (row.snapshots || []).map((entry: any) => ({
+    id: entry.id,
+    sourceUrl: entry.sourceUrl || undefined,
+    title: entry.title || undefined,
+    body: entry.body || "",
+    createdAt: entry.createdAt ? new Date(entry.createdAt).toISOString() : undefined,
+    metadata: entry.metadata || undefined,
+  }));
+
+  const refreshedAt = row.lastRefreshedAt ? new Date(row.lastRefreshedAt) : new Date(row.updatedAt);
+  const staleAt = row.staleAt ? new Date(row.staleAt) : new Date(refreshedAt.getTime() + 7 * 86400000);
+  const freshness = {
+    lastRefreshedAt: refreshedAt.toISOString(),
+    staleAt: staleAt.toISOString(),
+    isStale: staleAt.getTime() <= Date.now(),
+  };
+
+  const fallbackBrokeTheNews = sources
+    .filter((s) => s.publishedAt)
+    .sort((a, b) => +new Date(String(a.publishedAt)) - +new Date(String(b.publishedAt)))[0];
+
+  const brokeTheNews = row.brokeTheNewsSource
+    ? {
+        sourceId: row.brokeTheNewsSource.id,
+        outlet: row.brokeTheNewsSource.outlet?.name || "Unknown outlet",
+        publishedAt: row.brokeTheNewsSource.publishedAt
+          ? new Date(row.brokeTheNewsSource.publishedAt).toISOString()
+          : undefined,
+      }
+    : fallbackBrokeTheNews
+      ? {
+          sourceId: fallbackBrokeTheNews.id,
+          outlet: fallbackBrokeTheNews.outlet,
+          publishedAt: fallbackBrokeTheNews.publishedAt,
+        }
+      : null;
 
   const story: Story = {
     id: row.id,
@@ -62,6 +159,13 @@ function toStory(row: any): Story {
     sourceCount: row.sourceCount,
     originalReportingPct:
       typeof row.originalReportingPct === "number" ? row.originalReportingPct : undefined,
+    readTimeMinutes: typeof row.readTimeMinutes === "number" ? row.readTimeMinutes : undefined,
+    lastRefreshedAt: row.lastRefreshedAt ? new Date(row.lastRefreshedAt).toISOString() : undefined,
+    staleAt: row.staleAt ? new Date(row.staleAt).toISOString() : undefined,
+    freshness,
+    imageAssetKey: row.imageAssetKey || undefined,
+    brokeTheNewsSourceId: row.brokeTheNewsSourceId || undefined,
+    brokeTheNews,
     bias: { left: row.biasLeft, center: row.biasCenter, right: row.biasRight },
     blindspot: Boolean(row.isBlindspot),
     local: Boolean(row.isLocal),
@@ -75,6 +179,23 @@ function toStory(row: any): Story {
           leaningRight: row.coverageRight ?? undefined,
         }
       : undefined,
+    readerLinks: readerLinkItems.map((entry: any) => entry.url),
+    timelineHeaders: timeline.map((entry: any) => entry.label).filter(Boolean),
+    podcastReferences: podcasts.map((entry: any) => entry.label).filter(Boolean),
+    timeline,
+    podcasts,
+    readerLinkItems,
+    relatedStories,
+    snapshots,
+    geo:
+      row.geo && typeof row.geo.lat === "number" && typeof row.geo.lon === "number"
+        ? {
+            lat: row.geo.lat,
+            lon: row.geo.lon,
+            locality: row.geo.locality || undefined,
+            country: row.geo.country || undefined,
+          }
+        : undefined,
   };
 
   return normalizeStory(story);
@@ -86,10 +207,7 @@ export async function readStore(): Promise<StoreShape> {
 
   const stories = await db.story.findMany({
     orderBy: { updatedAt: "desc" },
-    include: {
-      tags: true,
-      sources: { include: { outlet: true } },
-    },
+    include: STORY_INCLUDE_BASE,
     take: 2000,
   });
 
@@ -137,10 +255,7 @@ export async function listStories(params?: {
   const rows = await db.story.findMany({
     where,
     orderBy: { updatedAt: "desc" },
-    include: {
-      tags: true,
-      sources: { include: { outlet: true } },
-    },
+    include: STORY_INCLUDE_BASE,
     take: Math.max(1, Math.min(2000, params?.limit ?? 500)),
   });
 
@@ -197,7 +312,7 @@ export async function listStoriesByOutletSlug(slug: string, params?: { limit?: n
 export async function getStoryBySlug(slug: string): Promise<Story | null> {
   const row = await db.story.findUnique({
     where: { slug },
-    include: { tags: true, sources: { include: { outlet: true } } },
+    include: STORY_INCLUDE_DETAIL,
   });
   if (!row) return null;
   return toStory(row);
@@ -208,6 +323,8 @@ export async function getArchiveEntry(url: string): Promise<ArchiveEntry | null>
   if (!originalUrl) return null;
   const row = await db.archiveEntry.findUnique({ where: { originalUrl } });
   if (!row) return null;
+  const ageMs = Date.now() - +new Date(row.checkedAt);
+  if (row.status === "not_found" && ageMs > 24 * 60 * 60 * 1000) return null;
   return {
     originalUrl: row.originalUrl,
     status: row.status as any,

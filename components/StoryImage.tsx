@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Image, { ImageProps } from "next/image";
 import { pickStoryFallbackImage, STORY_IMAGE_FALLBACK } from "@/lib/format";
+import { buildImageProxyUrl } from "@/lib/media/imageProxyUrl";
 
 type Props = Omit<ImageProps, "src"> & {
   src?: string | null;
@@ -27,6 +28,7 @@ export function StoryImage({ src, fallbackSrc, alt, ...rest }: Props) {
     if (lower.includes("webmetaimg") || (lower.includes("webmeta") && lower.includes("img"))) return derivedFallback;
     // Never render Ground News-hosted placeholder assets directly; they frequently 403 or show GN branding.
     if (lower.includes("ground.news/images/")) return derivedFallback;
+    if (/^https?:\/\//i.test(clean)) return buildImageProxyUrl(clean);
     return clean;
   }, [src, derivedFallback]);
   const [activeSrc, setActiveSrc] = useState(normalizedSrc);

@@ -11,7 +11,13 @@ export async function POST(request: NextRequest) {
   if (!user) return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
 
   try {
-    const body = (await request.json()) as { storySlug?: string; dwellMs?: number; sourceOutletSlug?: string };
+    const body = (await request.json()) as {
+      storySlug?: string;
+      dwellMs?: number;
+      sourceOutletSlug?: string;
+      sourceUrl?: string;
+      sessionId?: string;
+    };
     const slug = String(body.storySlug || "").trim();
     if (!slug) return NextResponse.json({ ok: false, error: "Missing storySlug" }, { status: 400 });
 
@@ -21,6 +27,21 @@ export async function POST(request: NextRequest) {
     const dwell = Number(body.dwellMs);
     const dwellMs = Number.isFinite(dwell) && dwell > 0 ? Math.min(60 * 60 * 1000, Math.round(dwell)) : null;
     const sourceOutletSlug = body.sourceOutletSlug ? String(body.sourceOutletSlug).trim().toLowerCase() : null;
+    const sourceUrl = body.sourceUrl ? String(body.sourceUrl).trim() : "";
+    const sessionId = body.sessionId ? String(body.sessionId).trim() : "";
+    const dedupeWindowMs = 30_000;
+
+    const recent = await db.readingEvent.findFirst({
+      where: {
+        userId: user.id,
+        storyId: story.id,
+        readAt: { gte: new Date(Date.now() - dedupeWindowMs) },
+      },
+      orderBy: { readAt: "desc" },
+    });
+    if (recent) {
+      return NextResponse.json({ ok: true, event: { id: recent.id, deduped: true } });
+    }
 
     const ev = await db.readingEvent.create({
       data: {
@@ -28,7 +49,7 @@ export async function POST(request: NextRequest) {
         userId: user.id,
         storyId: story.id,
         dwellMs,
-        sourceOutletSlug,
+        sourceOutletSlug: sourceOutletSlug || (sourceUrl ? sourceUrl.slice(0, 120) : null) || (sessionId ? sessionId.slice(0, 120) : null),
       },
     });
 
@@ -38,4 +59,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false, error: message }, { status: 400 });
   }
 }
-

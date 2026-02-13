@@ -58,6 +58,13 @@ enum IngestionStatus {
   error
 }
 
+enum DigestStatus {
+  queued
+  sent
+  skipped
+  failed
+}
+
 enum ThemePreference {
   light
   dark
@@ -81,6 +88,9 @@ model User {
   savedStories SavedStory[]
   customFeeds  CustomFeed[]
   feedback     Feedback[]
+  oauthAccounts OAuthAccount[]
+  digestDeliveries DigestDelivery[]
+  digestJobs    DigestJob[]
 }
 
 model Session {
@@ -164,6 +174,11 @@ model Story {
   isBlindspot  Boolean  @default(false)
   isLocal      Boolean  @default(false)
   isTrending   Boolean  @default(false)
+  lastRefreshedAt DateTime?
+  staleAt         DateTime?
+  readTimeMinutes Int?
+  imageAssetKey   String?
+  brokeTheNewsSourceId String?
 
   coverageTotal  Int?
   coverageLeft   Int?
@@ -175,10 +190,20 @@ model Story {
   reading       ReadingEvent[]
   savedBy      SavedStory[]
   feedback     Feedback[]
+  snapshots    StorySnapshot[]
+  timelineEvents StoryTimelineEvent[]
+  podcastReferences StoryPodcastReference[]
+  readerLinks  StoryReaderLink[]
+  relatedFrom  StoryRelatedStory[] @relation("StoryRelatedFrom")
+  relatedTo    StoryRelatedStory[] @relation("StoryRelatedTo")
+  geo          StoryGeo?
+  brokeTheNewsSource SourceArticle? @relation("BrokeTheNewsSource", fields: [brokeTheNewsSourceId], references: [id], onDelete: SetNull)
 
   @@index([updatedAt])
+  @@index([staleAt])
   @@index([topic])
   @@index([location])
+  @@index([brokeTheNewsSourceId])
 }
 
 model PushSubscription {
@@ -229,6 +254,8 @@ model Outlet {
   lastEnrichedAt DateTime?
 
   sources        SourceArticle[]
+  ownershipEntities OutletOwnershipEntity[] @relation("OutletOwnershipEntities")
+  ownershipEdges OutletOwnershipEdge[] @relation("OutletOwnershipEdges")
 
   @@index([bias])
   @@index([biasRating])
@@ -248,13 +275,20 @@ model SourceArticle {
   paywall     String?
   locality    String?
   repostedBy  Int?
+  headline    String?
+  byline      String?
+  imageUrl    String?
+  language    String?
+  canonicalHash String?
 
   story       Story            @relation(fields: [storyId], references: [id], onDelete: Cascade)
   outlet      Outlet           @relation(fields: [outletId], references: [id], onDelete: Cascade)
+  brokeTheNewsFor Story[]      @relation("BrokeTheNewsSource")
 
   @@index([storyId])
   @@index([outletId])
   @@index([url])
+  @@index([canonicalHash])
 }
 
 model ArchiveEntry {
@@ -358,4 +392,187 @@ model Feedback {
   @@index([kind, createdAt])
   @@index([storyId, createdAt])
   @@index([userId, createdAt])
+}
+
+model StorySnapshot {
+  id        String   @id
+  storyId   String
+  sourceUrl String?
+  title     String?
+  body      String
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId, createdAt])
+}
+
+model StoryTimelineEvent {
+  id        String   @id
+  storyId   String
+  label     String
+  detail    String?
+  eventAt   DateTime?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId, order])
+  @@index([eventAt])
+}
+
+model StoryPodcastReference {
+  id         String   @id
+  storyId    String
+  label      String
+  url        String?
+  provider   String?
+  createdAt  DateTime @default(now())
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+}
+
+model StoryReaderLink {
+  id         String   @id
+  storyId    String
+  label      String?
+  url        String
+  createdAt  DateTime @default(now())
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+  @@index([url])
+}
+
+model StoryRelatedStory {
+  id            String   @id
+  storyId       String
+  relatedStoryId String
+  reason        String?
+  createdAt     DateTime @default(now())
+
+  story       Story @relation("StoryRelatedFrom", fields: [storyId], references: [id], onDelete: Cascade)
+  relatedStory Story @relation("StoryRelatedTo", fields: [relatedStoryId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, relatedStoryId])
+  @@index([relatedStoryId])
+}
+
+model StoryGeo {
+  id        String   @id
+  storyId   String   @unique
+  lat       Float
+  lon       Float
+  locality  String?
+  country   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+}
+
+model OutletOwnershipEntity {
+  id          String   @id
+  outletId    String
+  name        String
+  entityType  String?
+  country     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  outlet Outlet @relation("OutletOwnershipEntities", fields: [outletId], references: [id], onDelete: Cascade)
+  edgesFrom OutletOwnershipEdge[] @relation("OwnershipEntityFrom")
+  edgesTo   OutletOwnershipEdge[] @relation("OwnershipEntityTo")
+
+  @@index([outletId])
+}
+
+model OutletOwnershipEdge {
+  id           String   @id
+  outletId     String
+  fromEntityId String
+  toEntityId   String
+  sharePct     Float?
+  createdAt    DateTime @default(now())
+
+  outlet Outlet @relation("OutletOwnershipEdges", fields: [outletId], references: [id], onDelete: Cascade)
+  fromEntity OutletOwnershipEntity @relation("OwnershipEntityFrom", fields: [fromEntityId], references: [id], onDelete: Cascade)
+  toEntity   OutletOwnershipEntity @relation("OwnershipEntityTo", fields: [toEntityId], references: [id], onDelete: Cascade)
+
+  @@index([outletId])
+  @@index([fromEntityId])
+  @@index([toEntityId])
+}
+
+model DigestJob {
+  id        String       @id
+  userId    String?
+  email     String
+  list      String
+  frequency String
+  payload   Json?
+  status    DigestStatus @default(queued)
+  error     String?
+  queuedAt  DateTime     @default(now())
+  sentAt    DateTime?
+
+  deliveries DigestDelivery[]
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([status, queuedAt])
+  @@index([email, queuedAt])
+}
+
+model DigestDelivery {
+  id          String       @id
+  userId      String?
+  digestJobId String
+  provider    String
+  providerId  String?
+  status      DigestStatus @default(queued)
+  sentAt      DateTime?
+  createdAt   DateTime     @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+  digestJob DigestJob @relation(fields: [digestJobId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([digestJobId])
+}
+
+model ApiRateLimitCounter {
+  id        String   @id
+  namespace String
+  identifier String
+  count     Int      @default(0)
+  windowKey String
+  resetAt   DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([namespace, identifier, windowKey])
+  @@index([resetAt])
+}
+
+model OAuthAccount {
+  id                 String   @id
+  userId             String
+  provider           String
+  providerAccountId  String
+  email              String?
+  accessToken        String?
+  refreshToken       String?
+  expiresAt          DateTime?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
 }

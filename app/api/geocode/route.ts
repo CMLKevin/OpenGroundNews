@@ -74,7 +74,10 @@ export async function GET(request: NextRequest) {
           .slice(0, 10)
       : scored.map((s) => s.r).slice(0, 10);
 
-    return NextResponse.json({ results: filtered });
+    return NextResponse.json(
+      { results: filtered },
+      { headers: { "cache-control": "public, s-maxage=600, stale-while-revalidate=3600" } },
+    );
   } catch {
     return NextResponse.json({ results: [] }, { status: 200 });
   }

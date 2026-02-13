@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 import "./lib/load_env.mjs";
-import { runGroundNewsIngestion } from "./sync_groundnews_pipeline.mjs";
+import { runPipeline } from "./pipeline/index.mjs";
 
 // Thin wrapper so callers don't depend on the legacy filename.
 // The implementation will be progressively modularized under scripts/lib/gn/.
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  runGroundNewsIngestion()
+  runPipeline()
     .then((result) => {
       process.stdout.write(`${JSON.stringify(result)}\n`);
     })
@@ -16,4 +16,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       process.exit(1);
     });
 }
-

@@ -1,3 +1,6 @@
+@import "./styles/tokens.css";
+@import "maplibre-gl/dist/maplibre-gl.css";
+
 :root {
   --font-sans: var(--font-brand-sans), "Bricolage Grotesque Variable", "Bricolage Grotesque", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
   --font-serif: var(--font-brand-serif), "Newsreader Variable", "Newsreader", ui-serif, Georgia, "Times New Roman", serif;
@@ -12,9 +15,9 @@
   --line: #d2d9cd;
   --line-strong: #b8c2b1;
   /* Ground News parity bias colors */
-  --left: #802727;
-  --center: #ffffff;
-  --right: #204986;
+  --left: var(--bias-far-left);
+  --center: var(--bias-center);
+  --right: var(--bias-far-right);
   --success: #3f7a52;
   --warning: #98622e;
   --shadow-soft: 0 6px 20px rgba(24, 32, 38, 0.06);
@@ -335,6 +338,22 @@ a:hover {
   font-weight: 700;
 }
 
+.navlinks a.btn-subscribe {
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--subscribe-accent) 68%, black 0%);
+  background: var(--subscribe-accent);
+  color: #f4f8f5;
+  padding: 0.35rem 0.9rem;
+  font-weight: 800;
+  box-shadow: none;
+  text-decoration: none;
+}
+
+.navlinks a.btn-subscribe:hover {
+  background: color-mix(in srgb, var(--subscribe-accent) 88%, black 12%);
+  text-decoration: none;
+}
+
 .searchbar {
   display: flex;
   gap: 0.4rem;
@@ -566,7 +585,7 @@ a:hover {
   border-radius: 18px;
   border: 1px solid var(--line);
   overflow: hidden;
-  background: #fff;
+  background: var(--card-bg);
   box-shadow: var(--shadow-soft);
 }
 
@@ -642,7 +661,7 @@ a:hover {
 }
 
 .bias-mini-bar .seg-left {
-  background: linear-gradient(90deg, #802727 0%, #a04040 100%);
+  background: linear-gradient(90deg, var(--bias-far-left) 0%, var(--bias-left) 60%, var(--bias-lean-left) 100%);
 }
 
 .bias-mini-bar .seg-center {
@@ -650,7 +669,7 @@ a:hover {
 }
 
 .bias-mini-bar .seg-right {
-  background: linear-gradient(90deg, #204986 0%, #2f6aa9 100%);
+  background: linear-gradient(90deg, var(--bias-far-right) 0%, var(--bias-right) 60%, var(--bias-lean-right) 100%);
 }
 
 .bias-mini-meta {
@@ -1313,15 +1332,16 @@ a:hover {
 
 .section-title h2 {
   margin: 0;
-  font-size: 2rem;
-  font-weight: 800;
+  font-size: var(--font-section-title-size);
+  font-weight: var(--font-section-title-weight);
   line-height: 1.1;
 }
 
 .topic-page-title {
   margin: 0;
   font-family: var(--font-serif);
-  font-size: clamp(1.55rem, 4vw, 2.3rem);
+  font-size: var(--font-page-title-size);
+  font-weight: var(--font-page-title-weight);
 }
 
 .rail-list {
@@ -1404,6 +1424,48 @@ a:hover {
   text-transform: uppercase;
   background: rgba(38, 38, 38, 0.08);
   border: 1px solid rgba(38, 38, 38, 0.18);
+}
+
+.bias-tone-far-left {
+  background: var(--bias-far-left);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--bias-far-left) 85%, black 15%);
+}
+
+.bias-tone-left {
+  background: var(--bias-left);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--bias-left) 85%, black 15%);
+}
+
+.bias-tone-lean-left {
+  background: var(--bias-lean-left);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--bias-lean-left) 85%, black 15%);
+}
+
+.bias-tone-center {
+  background: var(--bias-center);
+  color: #202020;
+  border-color: rgba(38, 38, 38, 0.35);
+}
+
+.bias-tone-lean-right {
+  background: var(--bias-lean-right);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--bias-lean-right) 85%, black 15%);
+}
+
+.bias-tone-right {
+  background: var(--bias-right);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--bias-right) 85%, black 15%);
+}
+
+.bias-tone-far-right {
+  background: var(--bias-far-right);
+  color: #fff;
+  border-color: color-mix(in srgb, var(--bias-far-right) 85%, black 15%);
 }
 
 .bias-breakdown {
@@ -1526,13 +1588,13 @@ a:hover {
   flex: 0 0 auto;
 }
 
-.rating-swatch-far-left { background: #802727; }
-.rating-swatch-left { background: #995252; }
-.rating-swatch-lean-left { background: #c09393; }
-.rating-swatch-center { background: #dadbd6; }
-.rating-swatch-lean-right { background: #90a4c3; }
-.rating-swatch-right { background: #4d6d9e; }
-.rating-swatch-far-right { background: #204986; }
+.rating-swatch-far-left { background: var(--bias-far-left); }
+.rating-swatch-left { background: var(--bias-left); }
+.rating-swatch-lean-left { background: var(--bias-lean-left); }
+.rating-swatch-center { background: var(--bias-center); }
+.rating-swatch-lean-right { background: var(--bias-lean-right); }
+.rating-swatch-right { background: var(--bias-right); }
+.rating-swatch-far-right { background: var(--bias-far-right); }
 
 .story-stat-row {
   display: flex;

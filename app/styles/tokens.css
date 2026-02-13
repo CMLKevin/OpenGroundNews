@@ -1,0 +1,23 @@
+:root {
+  --font-page-title-size: clamp(2.1rem, 4.2vw, 2.625rem);
+  --font-page-title-weight: 800;
+  --font-section-title-size: clamp(1.3rem, 2.2vw, 1.5rem);
+  --font-section-title-weight: 800;
+
+  --card-bg: #ffffff;
+
+  --bias-far-left: #802727;
+  --bias-left: #994040;
+  --bias-lean-left: #b35959;
+  --bias-center: #ffffff;
+  --bias-lean-right: #5980b3;
+  --bias-right: #406699;
+  --bias-far-right: #204986;
+
+  --subscribe-accent: #2d6a4f;
+}
+
+html[data-theme="dark"] {
+  --card-bg: #393938;
+  --bias-center: #dadbd6;
+}

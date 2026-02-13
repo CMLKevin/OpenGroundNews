@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { StoryCard } from "@/components/StoryCard";
 import { FollowToggle } from "@/components/FollowToggle";
 import { listStoriesByOutletSlug } from "@/lib/store";
-import { prettyDate } from "@/lib/format";
+import { prettyDate, slugify } from "@/lib/format";
 import { outletSlug, sourceMatchesOutletSlug } from "@/lib/lookup";
 import { db } from "@/lib/db";
 
@@ -44,6 +44,30 @@ export default async function SourcePage({ params, searchParams }: Props) {
       },
     })
     .catch(() => null);
+  const relatedByBias = await db.outlet
+    .findMany({
+      where: {
+        slug: { not: slug },
+        biasRating: outlet?.biasRating || undefined,
+      },
+      select: { slug: true, name: true, biasRating: true },
+      orderBy: { name: "asc" },
+      take: 8,
+    })
+    .catch(() => []);
+  const alsoCovers = Array.from(
+    stories
+      .flatMap((story) => story.tags || [])
+      .reduce((acc, tag) => {
+        const clean = String(tag || "").trim();
+        if (!clean) return acc;
+        acc.set(clean, (acc.get(clean) || 0) + 1);
+        return acc;
+      }, new Map<string, number>())
+      .entries(),
+  )
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .slice(0, 10);
 
   const samples = stories.flatMap((story) => story.sources.filter((src) => sourceMatchesOutletSlug(src, slug)));
   const displayOutlet = samples[0]?.outlet || slug;
@@ -169,58 +193,96 @@ export default async function SourcePage({ params, searchParams }: Props) {
         </div>
       </section>
 
-      <section className="panel u-mt-1 u-grid u-grid-gap-06">
-        <div className="section-title u-pt-0">
-          <h2 className="u-m0">About this source</h2>
-          <span className="story-meta">{outlet?.lastEnrichedAt ? `Enriched ${prettyDate(outlet.lastEnrichedAt.toISOString())}` : "Not enriched yet"}</span>
-        </div>
-        <p className="story-meta u-m0">
-          {outlet?.description
-            ? outlet.description
-            : "Description unavailable. This profile will be enriched as more source metadata is collected."}
-        </p>
-      </section>
+      <section className="topic-shell u-mt-1">
+        <div className="u-grid u-grid-gap-085">
+          <section className="panel u-grid u-grid-gap-06">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">About this source</h2>
+              <span className="story-meta">{outlet?.lastEnrichedAt ? `Enriched ${prettyDate(outlet.lastEnrichedAt.toISOString())}` : "Not enriched yet"}</span>
+            </div>
+            <p className="story-meta u-m0">
+              {outlet?.description
+                ? outlet.description
+                : "Description unavailable. This profile will be enriched as more source metadata is collected."}
+            </p>
+          </section>
 
-      <section className="panel u-mt-1">
-        <div className="section-title u-pt-0">
-          <h2 className="u-m0">Coverage Samples</h2>
-          <span className="story-meta">{Math.min(samples.length, 30)} shown</span>
-        </div>
-        <div className="source-list">
-          {samples.slice(0, 30).map((src) => (
-            <article key={src.id} className="source-item">
-              <div className="source-head">
-                <div className="source-outlet">
-                  {src.logoUrl ? (
-                    <img src={src.logoUrl} alt={src.outlet} className="source-logo" />
-                  ) : (
-                    <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>
-                  )}
-                  <div className="u-grid u-grid-gap-008">
-                    <strong>{src.outlet}</strong>
-                    <span className="story-meta">{src.publishedAt ? prettyDate(src.publishedAt) : "Unknown date"}</span>
+          <section className="panel">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Coverage Samples</h2>
+              <span className="story-meta">{Math.min(samples.length, 30)} shown</span>
+            </div>
+            <div className="source-list">
+              {samples.slice(0, 30).map((src) => (
+                <article key={src.id} className="source-item">
+                  <div className="source-head">
+                    <div className="source-outlet">
+                      {src.logoUrl ? (
+                        <img src={src.logoUrl} alt={src.outlet} className="source-logo" />
+                      ) : (
+                        <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>
+                      )}
+                      <div className="u-grid u-grid-gap-008">
+                        <strong>{src.outlet}</strong>
+                        <span className="story-meta">{src.publishedAt ? prettyDate(src.publishedAt) : "Unknown date"}</span>
+                      </div>
+                    </div>
+                    <div className="chip-row source-chip-row">
+                      <span className="chip">{src.bias === "unknown" ? "Unclassified" : src.bias}</span>
+                      <span className="chip">{src.factuality === "unknown" ? "Not rated" : src.factuality}</span>
+                    </div>
                   </div>
-                </div>
-                <div className="chip-row source-chip-row">
-                  <span className="chip">{src.bias === "unknown" ? "Unclassified" : src.bias}</span>
-                  <span className="chip">{src.factuality === "unknown" ? "Not rated" : src.factuality}</span>
-                </div>
-              </div>
-              <p className="story-summary source-excerpt">{src.excerpt}</p>
-              <div className="u-flex u-flex-gap-05 u-wrap">
-                <a className="btn" href={src.url} target="_blank" rel="noreferrer">
-                  Open Original
-                </a>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+                  <p className="story-summary source-excerpt">{src.excerpt}</p>
+                  <div className="u-flex u-flex-gap-05 u-wrap">
+                    <a className="btn" href={src.url} target="_blank" rel="noreferrer">
+                      Open Original
+                    </a>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </section>
 
-      <section className="grid u-mt-1">
-        {stories.slice(0, 30).map((story) => (
-          <StoryCard key={story.id} story={story} />
-        ))}
+          <section className="grid">
+            {stories.slice(0, 30).map((story) => (
+              <StoryCard key={story.id} story={story} />
+            ))}
+          </section>
+        </div>
+
+        <aside className="feed-rail sticky-rail">
+          <section className="panel">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Similar Bias</h2>
+              <span className="story-meta">{relatedByBias.length}</span>
+            </div>
+            <ul className="topic-list">
+              {relatedByBias.map((rel) => (
+                <li key={rel.slug} className="topic-item">
+                  <Link href={`/source/${encodeURIComponent(rel.slug)}`} className="u-no-underline">
+                    {rel.name}
+                  </Link>
+                  <span className="bias-pill">{String(rel.biasRating || "unknown").replace(/_/g, "-")}</span>
+                </li>
+              ))}
+              {relatedByBias.length === 0 ? <li className="story-meta">No similar-bias sources found.</li> : null}
+            </ul>
+          </section>
+
+          <section className="panel">
+            <div className="section-title u-pt-0">
+              <h2 className="u-m0">Also Covers</h2>
+              <span className="story-meta">Top tags</span>
+            </div>
+            <div className="chip-row">
+              {alsoCovers.map(([tag, count]) => (
+                <Link key={tag} className="pill" href={`/interest/${encodeURIComponent(slugify(tag))}`}>
+                  {tag} ({count})
+                </Link>
+              ))}
+            </div>
+          </section>
+        </aside>
       </section>
     </main>
   );

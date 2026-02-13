@@ -185,6 +185,9 @@ export function TopNavClient() {
       <Link className={pathname.startsWith("/my") ? "is-active" : ""} href={hrefWithEdition("/my")}>
         For You
       </Link>
+      <Link className={pathname.startsWith("/my-news-bias") ? "is-active" : ""} href={hrefWithEdition("/my-news-bias")}>
+        My Bias
+      </Link>
       <Link className={pathname.startsWith("/local") ? "is-active" : ""} href={hrefWithEdition("/local")}>
         Local
       </Link>
@@ -208,6 +211,9 @@ export function TopNavClient() {
       <div className="nav-center">
         <nav className="navlinks" aria-label="Primary">
           {navLinks}
+          <Link className="btn btn-subscribe nav-desktop-only" href={hrefWithEdition("/subscribe")}>
+            Subscribe
+          </Link>
         </nav>
 
         {showHeaderSearch ? (
@@ -406,8 +412,14 @@ export function TopNavClient() {
               <div className="nav-drawer-title">More</div>
               <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
                 <Link href="/rating-system">Rating system</Link>
+                <Link href="/about/methodology">Methodology</Link>
+                <Link href="/newsletters">Newsletters</Link>
+                <Link href="/compare">Compare</Link>
+                <Link href="/calendar">Calendar</Link>
+                <Link href="/maps">Maps</Link>
                 <Link href="/extension">Extension</Link>
                 <Link href="/notifications">Notifications</Link>
+                <Link href="/subscribe">Subscribe</Link>
               </div>
             </div>
 

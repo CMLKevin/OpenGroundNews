@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useState } from "react";
+import { OAuthButtons } from "@/components/OAuthButtons";
+import { safeAppPath } from "@/lib/navigation";
 
 type Mode = "login" | "signup";
 
@@ -15,7 +17,7 @@ export function AuthForm({ mode }: { mode: Mode }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const redirectTo = useMemo(() => searchParams.get("next") || "/my", [searchParams]);
+  const redirectTo = useMemo(() => safeAppPath(searchParams.get("next"), "/my"), [searchParams]);
 
   async function submit() {
     setError(null);
@@ -124,6 +126,10 @@ export function AuthForm({ mode }: { mode: Mode }) {
           )}
         </div>
       </form>
+      <div className="u-grid u-grid-gap-035">
+        <span className="story-meta">Or continue with</span>
+        <OAuthButtons next={redirectTo} />
+      </div>
       <p className="story-meta u-m0">
         By continuing, you agree to the Terms and acknowledge the Privacy Policy. Passwords are stored using scrypt hashing.
         {" "}

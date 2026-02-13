@@ -53,6 +53,7 @@ async function run() {
   const opts = parseArgs(process.argv.slice(2));
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const runDir = path.resolve(process.cwd(), opts.outDir, ts);
+  const latestPath = path.resolve(process.cwd(), opts.outDir, "latest.json");
 
   const browser = await chromium.launch({ headless: !opts.headed });
   try {
@@ -72,6 +73,11 @@ async function run() {
     const routes = [
       { id: "home", url: `${opts.baseUrl}/` },
       { id: "blindspot", url: `${opts.baseUrl}/blindspot` },
+      { id: "compare", url: `${opts.baseUrl}/compare` },
+      { id: "calendar", url: `${opts.baseUrl}/calendar` },
+      { id: "maps", url: `${opts.baseUrl}/maps` },
+      { id: "newsletters", url: `${opts.baseUrl}/newsletters` },
+      { id: "methodology", url: `${opts.baseUrl}/about/methodology` },
       { id: "search", url: `${opts.baseUrl}/search?q=ukraine` },
       { id: "local", url: `${opts.baseUrl}/local` },
       { id: "my", url: `${opts.baseUrl}/my` },
@@ -134,6 +140,11 @@ async function run() {
     };
     await ensureDir(runDir);
     await fs.writeFile(path.join(runDir, "report.json"), JSON.stringify(summary, null, 2) + "\n", "utf8");
+    await fs.writeFile(
+      latestPath,
+      `${JSON.stringify({ generatedAt: summary.generatedAt, runDir, reportPath: path.join(runDir, "report.json") }, null, 2)}\n`,
+      "utf8",
+    );
 
     const okCount = results.filter((r) => r.status === "ok").length;
     const errCount = results.length - okCount;

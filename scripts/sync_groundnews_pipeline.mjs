@@ -9,6 +9,7 @@ import { chromium } from "playwright-core";
 import { runGroundNewsScrape } from "./groundnews_scrape_cdp.mjs";
 import { createBrowserSession, stopBrowserSession, requireApiKey } from "./lib/browser_use_cdp.mjs";
 import { persistIngestionRun, persistStoriesToDb } from "./lib/gn/persist_db.mjs";
+import { parseNextFlightPushExpression } from "./pipeline/extract/next_flight_parser.mjs";
 
 const STORE_PATH = path.join(process.cwd(), "data", "store.json");
 const STORE_LOCK_PATH = path.join(process.cwd(), "data", "store.lock");
@@ -21,6 +22,7 @@ const FALLBACK_IMAGE_VARIANTS = [
   "/images/fallbacks/story-fallback-3.svg",
   "/images/fallbacks/story-fallback-4.svg",
   "/images/fallbacks/story-fallback-5.svg",
+  "/images/fallbacks/story-fallback-6.svg",
 ];
 const IMAGE_CACHE_DIR = path.join(process.cwd(), "public", "images", "cache");
 const IMAGE_CACHE_MAX_BYTES = 5 * 1024 * 1024;
@@ -1160,11 +1162,7 @@ function parseNextFlightPushCalls(scriptText) {
 
 function evaluatePushArgExpression(expression) {
   if (!expression) return null;
-  try {
-    return Function(`"use strict"; return (${expression});`)();
-  } catch {
-    return null;
-  }
+  return parseNextFlightPushExpression(expression);
 }
 
 function extractNextFlightTextBlocksFromHtml(html) {
@@ -2239,8 +2237,10 @@ async function cacheStoryImage(imageUrl, storySlug) {
       cache: "no-store",
       signal: AbortSignal.timeout(IMAGE_CACHE_TIMEOUT_MS),
       headers: {
-        "user-agent": "OpenGroundNewsImageCache/1.0",
-        accept: "image/*,*/*;q=0.8",
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        referer: "https://ground.news/",
       },
     });
     if (!response.ok) return cleaned;
@@ -3022,6 +3022,11 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
     id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
     outlet,
     url: normalizedUrl,
+    headline: sanitizeSummaryText(sourceMeta.title || ""),
+    byline: normalizeText(candidate.byline || ""),
+    imageUrl: sanitizeImageUrl(sourceMeta.imageUrl || "", normalizedUrl),
+    language: normalizeText(candidate.language || ""),
+    canonicalHash: shortHash(normalizedUrl, 24),
     excerpt,
     logoUrl: normalizeAssetUrl(candidate.logoUrl, storyUrlForAssets || "https://ground.news"),
     bias: parseBiasLabel(candidate.bias),
@@ -3205,6 +3210,16 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
   const blindspotGap = Math.abs((bias.left || 0) - (bias.right || 0));
   const blindspotBySkew = dominant >= 70 && blindspotGap >= 35 && (bias.center || 0) <= 70;
   const topic = chooseTopic(rendered.topic, tags, storyTextForRelevance);
+  const earliestSource = enrichedSources
+    .filter((src) => src.publishedAt && Number.isFinite(Date.parse(String(src.publishedAt))))
+    .slice()
+    .sort((a, b) => +new Date(String(a.publishedAt)) - +new Date(String(b.publishedAt)))[0];
+  const readTimeMinutes = Math.max(
+    1,
+    Math.min(30, Math.ceil(`${title} ${summary} ${(enrichedSources || []).map((s) => s.excerpt || "").join(" ")}`.split(/\s+/).filter(Boolean).length / 220)),
+  );
+  const lastRefreshedAt = updatedAt;
+  const staleAt = new Date(Date.parse(lastRefreshedAt) + 7 * 86400000).toISOString();
 
   return {
     id: stableId(storyUrl, "story"),
@@ -3221,6 +3236,10 @@ async function enrichStory(page, storyUrl, linkSignals, sourceMetadataCache, aud
     publishedAt,
     updatedAt,
     sourceCount: Math.max(enrichedSources.length, coverageTotals.totalSources ?? 0),
+    readTimeMinutes,
+    lastRefreshedAt,
+    staleAt,
+    brokeTheNewsSourceId: earliestSource?.id,
     bias,
     blindspot: signals.blindspot || blindspotBySkew,
     local: signals.local || localHeuristic,
@@ -3479,9 +3498,10 @@ export async function runGroundNewsIngestion(opts = {}) {
     if (refreshExisting > 0) {
       const store = await readStoreSafe();
       const suspicious = new Set(["Israel-Gaza", "Top Stories"]);
+      const refreshTagPattern = new RegExp(process.env.OGN_REFRESH_TAG_FILTER || "valentine|olympics|pam bondi", "i");
       const refreshCandidates = store.stories
         .filter((story) => normalizeText(story.canonicalUrl || "").includes("ground.news/article/"))
-        .filter((story) => suspicious.has(normalizeText(story.topic)) || (story.tags || []).some((t) => /valentine|olympics|pam bondi/i.test(String(t))))
+        .filter((story) => suspicious.has(normalizeText(story.topic)) || (story.tags || []).some((t) => refreshTagPattern.test(String(t))))
         .sort((a, b) => +new Date(a.updatedAt || 0) - +new Date(b.updatedAt || 0))
         .map((story) => normalizeExternalUrl(story.canonicalUrl))
         .filter(Boolean)
@@ -3581,24 +3601,28 @@ export async function runGroundNewsIngestion(opts = {}) {
     }
   }
 
-  const merged = await withStoreLock(async () => {
-    const store = await readStoreSafe();
-    store.stories = dedupeStories([...store.stories, ...stories]).map(normalizeStoryRecordForStore);
-    store.ingestion = {
-      ...store.ingestion,
-      lastRunAt: new Date().toISOString(),
-      lastMode: "groundnews-frontpage-individual-article-pipeline",
-	      storyCount: store.stories.length,
-	      routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
-	      notes: `Synced ${stories.length} stories from ${links.length} article link(s) (refreshExisting=${refreshExisting})`,
-	    };
-    await writeStoreAtomic(store);
-    return store;
-  });
+  const normalizedStories = dedupeStories(stories).map(normalizeStoryRecordForStore);
+
+  if (process.env.OGN_PIPELINE_WRITE_JSON === "1") {
+    await withStoreLock(async () => {
+      const store = await readStoreSafe();
+      store.stories = dedupeStories([...store.stories, ...normalizedStories]).map(normalizeStoryRecordForStore);
+      store.ingestion = {
+        ...store.ingestion,
+        lastRunAt: new Date().toISOString(),
+        lastMode: "groundnews-frontpage-individual-article-pipeline",
+        storyCount: store.stories.length,
+        routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
+        notes: `Synced ${stories.length} stories from ${links.length} article link(s) (refreshExisting=${refreshExisting})`,
+      };
+      await writeStoreAtomic(store);
+      return store;
+    });
+  }
 
   // Persist to DB for the actual app runtime.
   if (process.env.DATABASE_URL) {
-    await persistStoriesToDb(merged.stories, { disconnect: false });
+    await persistStoriesToDb(normalizedStories, { disconnect: false });
   }
   await persistIngestionRun({
     startedAt,
@@ -3618,7 +3642,7 @@ export async function runGroundNewsIngestion(opts = {}) {
     ok: true,
     ingestedStories: stories.length,
     scrapedLinks: links.length,
-    totalStories: merged.stories.length,
+    totalStories: normalizedStories.length,
     routeCount: Array.isArray(options.routes) ? options.routes.length : 1,
     homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
     output: options.out,
