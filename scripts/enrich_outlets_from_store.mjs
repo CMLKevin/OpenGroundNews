@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getDb, requireDatabaseUrl } from "./lib/db_client.mjs";
+import { createOutletEnricher } from "./lib/gn/outlet_enrichment.mjs";
 
 const STORE_PATH = path.join(process.cwd(), "data", "store.json");
 
@@ -98,6 +99,11 @@ function mapFactuality(value) {
   return "";
 }
 
+function isUnknownOwnership(value) {
+  const v = normalizeText(value).toLowerCase();
+  return !v || v === "unknown" || v === "unlabeled" || v === "unlabelled" || v === "unclassified" || v === "n/a";
+}
+
 function isGoodDescription(text) {
   const clean = normalizeText(text);
   return clean.length >= 40 && clean.length <= 400;
@@ -113,6 +119,11 @@ async function readStore() {
 async function run() {
   requireDatabaseUrl();
   const store = await readStore();
+  const outletEnricher = createOutletEnricher({
+    enabled: true,
+    timeoutMs: Number(process.env.OGN_PIPELINE_OUTLET_ENRICH_TIMEOUT_MS || 12000),
+    silent: false,
+  });
   const byOutlet = new Map();
 
   for (const story of store.stories || []) {
@@ -186,16 +197,48 @@ async function run() {
     const biasRating = pickTopKey(agg.biasRatingCounts, { min: 1 });
     const factuality = pickTopKey(agg.factualityCounts, { min: 1 });
 
+    const enriched = await outletEnricher.enrich({
+      outlet: agg.name || slug,
+      url: websiteUrl || "",
+      websiteUrl: websiteUrl || "",
+      logoUrl: agg.logoUrl || "",
+      bias: bias || "unknown",
+      biasRating: (biasRating || "unknown").replace(/_/g, "-"),
+      factuality: (factuality || "unknown").replace(/_/g, "-"),
+      ownership: existing?.ownership || "",
+      country: country || "",
+      foundedYear: foundedYear || undefined,
+      description: description || "",
+    });
+
     const update = {};
     if (!existing?.name && agg.name) update.name = agg.name;
-    if (!existing?.logoUrl && agg.logoUrl) update.logoUrl = agg.logoUrl;
-    if (!existing?.websiteUrl && websiteUrl) update.websiteUrl = websiteUrl;
-    if (!existing?.country && country) update.country = country;
-    if (!existing?.foundedYear && foundedYear) update.foundedYear = foundedYear;
-    if (!existing?.description && description) update.description = description;
-    if ((existing?.bias || "unknown") === "unknown" && bias) update.bias = bias;
-    if ((existing?.biasRating || "unknown") === "unknown" && biasRating) update.biasRating = biasRating;
-    if ((existing?.factuality || "unknown") === "unknown" && factuality) update.factuality = factuality;
+    if (!existing?.logoUrl && (agg.logoUrl || enriched.logoUrl)) update.logoUrl = agg.logoUrl || enriched.logoUrl;
+    if (!existing?.websiteUrl && (websiteUrl || enriched.websiteUrl)) update.websiteUrl = websiteUrl || enriched.websiteUrl;
+    if (!existing?.country && (country || enriched.country)) update.country = country || enriched.country;
+    if (!existing?.foundedYear && (foundedYear || enriched.foundedYear)) update.foundedYear = foundedYear || enriched.foundedYear;
+    if (!existing?.description && (description || enriched.description)) update.description = description || enriched.description;
+    const enrichedBias = String(bias || enriched.bias || "").trim().toLowerCase();
+    if ((existing?.bias || "unknown") === "unknown" && enrichedBias && enrichedBias !== "unknown") {
+      update.bias = enrichedBias;
+    }
+    const enrichedBiasRating = String(biasRating || enriched.biasRating || "")
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, "_");
+    if ((existing?.biasRating || "unknown") === "unknown" && enrichedBiasRating && enrichedBiasRating !== "unknown") {
+      update.biasRating = enrichedBiasRating;
+    }
+    const enrichedFactuality = String(factuality || enriched.factuality || "")
+      .trim()
+      .toLowerCase()
+      .replace(/-/g, "_");
+    if ((existing?.factuality || "unknown") === "unknown" && enrichedFactuality && enrichedFactuality !== "unknown") {
+      update.factuality = enrichedFactuality;
+    }
+    if (isUnknownOwnership(existing?.ownership) && !isUnknownOwnership(enriched.ownership)) {
+      update.ownership = enriched.ownership;
+    }
 
     if (Object.keys(update).length === 0) {
       skipped += 1;
@@ -231,4 +274,3 @@ run().catch((error) => {
   console.error(error?.stack || error?.message || String(error));
   process.exit(1);
 });
-

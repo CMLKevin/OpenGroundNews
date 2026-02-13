@@ -2,16 +2,7 @@ import Link from "next/link";
 import type { SourceArticle } from "@/lib/types";
 import { prettyDate } from "@/lib/format";
 import { outletSlug } from "@/lib/lookup";
-
-function pickInitials(outlet: string) {
-  const words = (outlet || "")
-    .replace(/\.[a-z]{2,}$/i, "")
-    .split(/[^a-z0-9]+/i)
-    .filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return `${words[0][0] || ""}${words[1][0] || ""}`.toUpperCase();
-}
+import { OutletAvatar } from "@/components/OutletAvatar";
 
 export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
   const withTime = sources
@@ -60,15 +51,13 @@ export function BrokeTheNewsPanel({ sources }: { sources: SourceArticle[] }) {
         {top.map((src) => (
           <li key={src.id} className="topic-item">
             <span className="topic-avatar" aria-hidden="true">
-              {src.logoUrl ? (
-                <img
-                  src={src.logoUrl}
-                  alt={src.outlet}
-                  className="u-avatar-24"
-                />
-              ) : (
-                pickInitials(src.outlet)
-              )}
+              <OutletAvatar
+                outlet={src.outlet}
+                logoUrl={src.logoUrl}
+                sourceUrl={src.url}
+                websiteUrl={src.websiteUrl || ""}
+                className="u-avatar-24"
+              />
             </span>
             <Link href={`/source/${encodeURIComponent(outletSlug(src.outlet))}`} className="u-no-underline">
               {src.outlet}

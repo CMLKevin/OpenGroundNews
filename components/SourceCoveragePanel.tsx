@@ -6,6 +6,7 @@ import { compactHost, prettyDate, prettyRelativeDate } from "@/lib/format";
 import { SourceArticle } from "@/lib/types";
 import { outletSlug } from "@/lib/lookup";
 import { FollowToggle } from "@/components/FollowToggle";
+import { OutletAvatar } from "@/components/OutletAvatar";
 
 type Props = {
   storySlug: string;
@@ -226,7 +227,14 @@ export function SourceCoveragePanel({ storySlug, sources, totalSourceCount }: Pr
             <article key={src.id} className="source-item">
               <div className="source-head">
                 <div className="source-outlet">
-                  {src.logoUrl ? <img src={src.logoUrl} alt={src.outlet} className="source-logo" /> : <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>}
+                  <OutletAvatar
+                    outlet={src.outlet}
+                    logoUrl={src.logoUrl}
+                    sourceUrl={src.url}
+                    websiteUrl={src.websiteUrl || ""}
+                    className="source-logo"
+                    fallbackClassName="source-logo source-logo-fallback"
+                  />
                   <div className="u-grid u-grid-gap-008">
                     <strong>
                       <Link href={`/source/${outletSlug(src.outlet)}`} className="u-no-underline">

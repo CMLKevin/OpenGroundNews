@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { FollowToggle } from "@/components/FollowToggle";
+import { OutletAvatar } from "@/components/OutletAvatar";
 
 type SuggestResponse = {
   ok: boolean;
@@ -18,7 +19,7 @@ type SuggestResponse = {
     updatedAt?: string;
   }>;
   topics: Array<{ slug: string; label: string; count: number }>;
-  outlets: Array<{ slug: string; label: string; logoUrl?: string | null }>;
+  outlets: Array<{ slug: string; label: string; logoUrl?: string | null; websiteUrl?: string | null }>;
 };
 
 function highlightQuery(text: string, query: string) {
@@ -191,7 +192,12 @@ export function SearchBox({
                       onClick={() => setOpen(false)}
                     >
                       <span className="topic-avatar">
-                        {o.logoUrl ? <img src={String(o.logoUrl)} alt={o.label} className="u-avatar-24" /> : o.label.slice(0, 1).toUpperCase()}
+                        <OutletAvatar
+                          outlet={o.label}
+                          logoUrl={o.logoUrl || ""}
+                          websiteUrl={o.websiteUrl || ""}
+                          className="u-avatar-24"
+                        />
                       </span>
                       <span>{o.label}</span>
                     </Link>

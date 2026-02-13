@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
   const outletRows = await db.outlet.findMany({
     where: { name: { contains: q, mode: "insensitive" } },
     orderBy: { name: "asc" },
-    select: { slug: true, name: true, logoUrl: true },
+    select: { slug: true, name: true, logoUrl: true, websiteUrl: true },
     take: 8,
   });
 
@@ -51,6 +51,11 @@ export async function GET(request: NextRequest) {
       updatedAt: r.updatedAt.toISOString(),
     })),
     topics: Array.from(topicCounts.values()).sort((a, b) => b.count - a.count).slice(0, 8),
-    outlets: outletRows.map((o) => ({ slug: outletSlug(o.name) || o.slug, label: o.name, logoUrl: o.logoUrl })),
+    outlets: outletRows.map((o) => ({
+      slug: outletSlug(o.name) || o.slug,
+      label: o.name,
+      logoUrl: o.logoUrl,
+      websiteUrl: o.websiteUrl,
+    })),
   });
 }

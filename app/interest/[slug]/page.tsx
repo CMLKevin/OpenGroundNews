@@ -6,6 +6,7 @@ import { FollowToggle } from "@/components/FollowToggle";
 import { BlindspotStoryCard } from "@/components/BlindspotStoryCard";
 import { NewsletterSignup } from "@/components/NewsletterSignup";
 import { StoryListItem } from "@/components/StoryListItem";
+import { OutletAvatar } from "@/components/OutletAvatar";
 import { listStoriesByTopicSlug } from "@/lib/store";
 import { prettyDate, slugify } from "@/lib/format";
 import { topicSlug, outletSlug } from "@/lib/lookup";
@@ -132,7 +133,16 @@ export default async function InterestPage({ params, searchParams }: Props) {
     ? await db.outlet
         .findMany({
           where: { slug: { in: outletStats.map((o) => o.key) } },
-          select: { slug: true, name: true, logoUrl: true, bias: true, biasRating: true, factuality: true, ownership: true },
+          select: {
+            slug: true,
+            name: true,
+            logoUrl: true,
+            websiteUrl: true,
+            bias: true,
+            biasRating: true,
+            factuality: true,
+            ownership: true,
+          },
         })
         .catch(() => [])
     : [];
@@ -351,15 +361,12 @@ export default async function InterestPage({ params, searchParams }: Props) {
               {outletStats.map((o) => (
                 <li key={o.key} className="topic-item">
                   <span className="topic-avatar" aria-hidden="true">
-                    {outletMetaBySlug.get(o.key)?.logoUrl ? (
-                      <img
-                        src={String(outletMetaBySlug.get(o.key)?.logoUrl)}
-                        alt={o.outlet}
-                        className="u-avatar-24"
-                      />
-                    ) : (
-                      initials(o.outlet)
-                    )}
+                    <OutletAvatar
+                      outlet={o.outlet}
+                      logoUrl={String(outletMetaBySlug.get(o.key)?.logoUrl || "")}
+                      websiteUrl={String(outletMetaBySlug.get(o.key)?.websiteUrl || "")}
+                      className="u-avatar-24"
+                    />
                   </span>
                   <Link href={`/source/${o.key}`} className="u-no-underline">
                     {o.outlet}

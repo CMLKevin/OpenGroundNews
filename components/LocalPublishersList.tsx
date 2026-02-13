@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { OutletAvatar } from "@/components/OutletAvatar";
 
 type Publisher = {
   slug: string;
@@ -12,13 +13,6 @@ type Publisher = {
   count: number;
   localCount: number;
 };
-
-function initials(label: string) {
-  const words = (label || "").trim().split(/\s+/).filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return `${words[0][0]}${words[1][0]}`.toUpperCase();
-}
 
 export function LocalPublishersList({ publishers }: { publishers: Publisher[] }) {
   const [open, setOpen] = useState(false);
@@ -38,15 +32,11 @@ export function LocalPublishersList({ publishers }: { publishers: Publisher[] })
         {visible.map((o) => (
           <li key={o.slug} className="topic-item">
             <span className="topic-avatar" aria-hidden="true">
-              {o.logoUrl ? (
-                <img
-                  src={String(o.logoUrl)}
-                  alt={o.outlet}
-                  className="u-avatar-24"
-                />
-              ) : (
-                initials(o.outlet)
-              )}
+              <OutletAvatar
+                outlet={o.outlet}
+                logoUrl={o.logoUrl || ""}
+                className="u-avatar-24"
+              />
             </span>
             <Link href={`/source/${encodeURIComponent(o.slug)}`} className="u-no-underline">
               {o.outlet}

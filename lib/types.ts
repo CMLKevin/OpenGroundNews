@@ -27,6 +27,14 @@ export type SourceArticle = {
   biasRating?: BiasRatingBucket;
   factuality: FactualityBucket;
   ownership: string;
+  websiteUrl?: string;
+  country?: string;
+  foundedYear?: number;
+  description?: string;
+  groundNewsSourceId?: string;
+  groundNewsSourceSlug?: string;
+  outletProfileUrl?: string;
+  groundNewsUrl?: string;
   publishedAt?: string;
   repostedBy?: number;
   paywall?: "none" | "soft" | "hard";

@@ -10,6 +10,7 @@ import { Pool } from "pg";
 import { runGroundNewsScrape } from "./groundnews_scrape_cdp.mjs";
 import { createBrowserSession, stopBrowserSession, requireApiKey } from "./lib/browser_use_cdp.mjs";
 import { persistIngestionRun, persistStoriesToDb } from "./lib/gn/persist_db.mjs";
+import { createOutletEnricher } from "./lib/gn/outlet_enrichment.mjs";
 import { parseNextFlightPushExpression } from "./pipeline/extract/next_flight_parser.mjs";
 
 const STORE_PATH = path.join(process.cwd(), "data", "store.json");
@@ -482,6 +483,11 @@ function parseArgs(argv) {
       0,
       Math.round(envNumber(process.env.OGN_PIPELINE_MAX_TOPIC_ROUTES, DEFAULT_MAX_TOPIC_ROUTES)),
     ),
+    outletEnrichment: process.env.OGN_PIPELINE_OUTLET_ENRICHMENT !== "0",
+    outletEnrichmentTimeoutMs: Math.max(
+      2500,
+      Math.round(envNumber(process.env.OGN_PIPELINE_OUTLET_ENRICH_TIMEOUT_MS, SOURCE_FETCH_TIMEOUT_MS)),
+    ),
     silent: true,
   };
 
@@ -560,6 +566,13 @@ function parseArgs(argv) {
       i += 1;
     } else if (a === "--no-route-expansion") {
       opts.expandRoutes = false;
+    } else if (a === "--no-outlet-enrichment") {
+      opts.outletEnrichment = false;
+    } else if (a === "--outlet-enrichment-timeout-ms" && argv[i + 1]) {
+      const parsed = Number(argv[i + 1]);
+      opts.outletEnrichmentTimeoutMs =
+        Number.isFinite(parsed) && parsed > 0 ? Math.max(1000, Math.round(parsed)) : opts.outletEnrichmentTimeoutMs;
+      i += 1;
     } else if (a === "--verbose") {
       opts.silent = false;
     }
@@ -1019,6 +1032,25 @@ function looksLikeWeakExcerpt(value) {
   if (/^\d+\s+(hours?|days?|minutes?)\s+ago/.test(text)) return true;
   if (/^(updated|published)\b/.test(text)) return true;
   return false;
+}
+
+function looksLikeWeakLogoUrl(value) {
+  const lower = normalizeText(value).toLowerCase();
+  if (!lower) return true;
+  if (lower.includes("ground.news/images/story-fallback")) return true;
+  if (lower.includes("/images/story-fallback")) return true;
+  if (lower.includes("/images/fallbacks/story-fallback")) return true;
+  if (lower.includes("groundnews.b-cdn.net/interests/")) return true;
+  if (lower.includes("ground.news/images/cache/")) return true;
+  if (lower.includes("data:image/gif")) return true;
+  if (lower.includes("/assets/flags/")) return true;
+  return false;
+}
+
+function fallbackLogoUrlFromSource(sourceUrl, websiteUrl = "") {
+  const host = normalizeText(hostFromUrl(websiteUrl || sourceUrl)).toLowerCase();
+  if (!host || host === "ground.news") return "";
+  return `https://www.google.com/s2/favicons?domain=${host}&sz=128`;
 }
 
 function isGroundNewsUrl(url) {
@@ -1580,10 +1612,10 @@ function parseBiasLabel(value) {
 }
 
 function parseBiasRatingLabel(value) {
-  const text = normalizeText(value).toLowerCase();
+  const text = normalizeText(value).toLowerCase().replace(/[_-]+/g, " ");
   if (!text) return "unknown";
   if (text.includes("far left")) return "far-left";
-  if (text.includes("far-right") || text.includes("far right")) return "far-right";
+  if (text.includes("far right")) return "far-right";
   if (text.includes("lean left") || text.includes("center left") || text.includes("centre left")) return "lean-left";
   if (text.includes("lean right") || text.includes("center right") || text.includes("centre right")) return "lean-right";
   if (/(^|\s)left(\s|$)/.test(text)) return "left";
@@ -1600,7 +1632,7 @@ function bucket3FromRating(rating) {
 }
 
 function parseFactualityLabel(value) {
-  const text = normalizeText(value).toLowerCase();
+  const text = normalizeText(value).toLowerCase().replace(/[_-]+/g, " ");
   if (!text) return "unknown";
   if (text.includes("very high")) return "very-high";
   if (text.includes("veryhigh")) return "very-high";
@@ -1610,6 +1642,16 @@ function parseFactualityLabel(value) {
   if (text.includes("verylow")) return "very-low";
   if (/(^|\s)low(\s|$)/.test(text)) return "low";
   return "unknown";
+}
+
+function isUnknownOwnershipLabel(value) {
+  const text = normalizeText(value).toLowerCase();
+  if (!text) return true;
+  if (text === "unknown" || text === "na" || text === "n/a") return true;
+  if (text === "unlabeled" || text === "unlabelled") return true;
+  if (text === "unclassified" || text === "not rated") return true;
+  if (text.includes("ownership unavailable")) return true;
+  return false;
 }
 
 function parsePaywallLabel(value) {
@@ -1894,11 +1936,24 @@ function parsePaywallFromAny(value) {
 }
 
 function parseOwnershipFromAny(value) {
-  if (typeof value === "string") return normalizeText(value);
+  if (typeof value === "string") {
+    const candidate = normalizeText(value);
+    return isUnknownOwnershipLabel(candidate) ? "" : candidate;
+  }
   if (value && typeof value === "object") {
     const any = value;
-    const candidate = normalizeText(any.name || any.label || any.value || any.owner || any.ownerName || "");
-    return candidate;
+    const candidate = normalizeText(
+      any.name ||
+        any.label ||
+        any.value ||
+        any.owner ||
+        any.ownerName ||
+        any.ownershipCategory ||
+        any.ownership_category ||
+        any.category ||
+        "",
+    );
+    return isUnknownOwnershipLabel(candidate) ? "" : candidate;
   }
   return "";
 }
@@ -2002,16 +2057,35 @@ function mergeSourceCandidateRecords(base, incoming) {
   const incomingExcerpt = normalizeText(incoming.excerpt || "");
   merged.excerpt = !looksLikeWeakExcerpt(baseExcerpt) ? baseExcerpt : incomingExcerpt || baseExcerpt;
 
-  merged.logoUrl = normalizeText(base.logoUrl || "") || normalizeText(incoming.logoUrl || "");
+  const baseLogo = normalizeText(base.logoUrl || "");
+  const incomingLogo = normalizeText(incoming.logoUrl || "");
+  merged.logoUrl = !looksLikeWeakLogoUrl(baseLogo) ? baseLogo : incomingLogo || baseLogo;
   merged.bias = base.bias && base.bias !== "unknown" ? base.bias : incoming.bias || "unknown";
   merged.biasRating =
     base.biasRating && base.biasRating !== "unknown" ? base.biasRating : incoming.biasRating || "unknown";
   merged.factuality =
     base.factuality && base.factuality !== "unknown" ? base.factuality : incoming.factuality || "unknown";
-  merged.ownership = normalizeText(base.ownership || "") || normalizeText(incoming.ownership || "");
+  const baseOwnership = normalizeText(base.ownership || "");
+  const incomingOwnership = normalizeText(incoming.ownership || "");
+  merged.ownership = !isUnknownOwnershipLabel(baseOwnership)
+    ? baseOwnership
+    : incomingOwnership || baseOwnership;
   merged.paywall = normalizeText(base.paywall || "") || normalizeText(incoming.paywall || "");
   merged.locality = normalizeText(base.locality || "") || normalizeText(incoming.locality || "");
   merged.publishedAt = normalizeText(base.publishedAt || "") || normalizeText(incoming.publishedAt || "");
+  merged.outletProfileUrl = normalizeText(base.outletProfileUrl || "") || normalizeText(incoming.outletProfileUrl || "");
+  merged.groundNewsUrl = normalizeText(base.groundNewsUrl || "") || normalizeText(incoming.groundNewsUrl || "");
+  merged.sourceInfoSlug = normalizeText(base.sourceInfoSlug || "") || normalizeText(incoming.sourceInfoSlug || "");
+  merged.sourceInfoId = normalizeText(base.sourceInfoId || "") || normalizeText(incoming.sourceInfoId || "");
+  merged.websiteUrl = normalizeText(base.websiteUrl || "") || normalizeText(incoming.websiteUrl || "");
+  merged.country = normalizeText(base.country || "") || normalizeText(incoming.country || "");
+  merged.foundedYear =
+    Number.isFinite(Number(base.foundedYear)) && Number(base.foundedYear) > 1500
+      ? Math.round(Number(base.foundedYear))
+      : Number.isFinite(Number(incoming.foundedYear)) && Number(incoming.foundedYear) > 1500
+        ? Math.round(Number(incoming.foundedYear))
+        : undefined;
+  merged.description = normalizeText(base.description || "") || normalizeText(incoming.description || "");
   return merged;
 }
 
@@ -2378,6 +2452,16 @@ function extractStructuredFromNextFlightHtml(html) {
       url,
       sourceInfoId: resolvedSourceInfoId,
       sourceInfoSlug: normalizeText(resolvedSourceInfo?.slug || ""),
+      outletProfileUrl:
+        normalizeText(node.outletProfileUrl || node.groundNewsUrl || node.sourceProfileUrl || "") ||
+        (normalizeText(resolvedSourceInfo?.slug || "")
+          ? `https://ground.news/interest/${encodeURIComponent(normalizeText(resolvedSourceInfo?.slug || ""))}`
+          : ""),
+      groundNewsUrl:
+        normalizeText(node.groundNewsUrl || node.outletProfileUrl || "") ||
+        (normalizeText(resolvedSourceInfo?.slug || "")
+          ? `https://ground.news/interest/${encodeURIComponent(normalizeText(resolvedSourceInfo?.slug || ""))}`
+          : ""),
       outlet:
         normalizeText(node.outlet || node.publisher || node.publisherName || node.sourceName || resolvedSourceInfo?.name || "") ||
         normalizeText(outletMeta?.outletName || ""),
@@ -2404,6 +2488,15 @@ function extractStructuredFromNextFlightHtml(html) {
       paywall: parsePaywallFromAny(node.paywall || node.paywallType || node.isPaywalled || node.hasPaywall) || normalizeText(outletMeta?.paywall || ""),
       locality: parseLocalityLabel(node.locality || "") || "",
       publishedAt: normalizeText(node.publishedAt || node.publishDate || node.date || ""),
+      websiteUrl:
+        normalizeExternalUrl(
+          node.websiteUrl ||
+            node.website ||
+            resolvedSourceInfo?.website ||
+            resolvedSourceInfo?.siteUrl ||
+            resolvedSourceInfo?.url ||
+            "",
+        ) || "",
     };
     const existing = sourceByUrl.get(url);
     sourceByUrl.set(url, existing ? mergeSourceCandidateRecords(existing, incoming) : incoming);
@@ -2897,12 +2990,12 @@ async function fetchSourceMetadata(url, cache) {
       });
 
       if (!response.ok) {
-        return { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
+        return { excerpt: "", publishedAt: null, title: "", imageUrl: "", iconUrl: "", websiteUrl: "" };
       }
 
       const contentType = response.headers.get("content-type") || "";
       if (!contentType.toLowerCase().includes("text/html")) {
-        return { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
+        return { excerpt: "", publishedAt: null, title: "", imageUrl: "", iconUrl: "", websiteUrl: "" };
       }
 
       const html = await response.text();
@@ -2934,15 +3027,29 @@ async function fetchSourceMetadata(url, cache) {
         $("meta[property='og:image']").attr("content") ||
         $("meta[name='twitter:image']").attr("content") ||
         "";
+      const iconUrl =
+        $("link[rel='apple-touch-icon']").attr("href") ||
+        $("link[rel='icon']").attr("href") ||
+        $("link[rel='shortcut icon']").attr("href") ||
+        "";
+      const websiteUrl = (() => {
+        try {
+          return new URL(url).origin;
+        } catch {
+          return "";
+        }
+      })();
 
       return {
         excerpt: summarizeText(sanitizeSummaryText(excerpt), ""),
         publishedAt: parsePublishedAt(publishedAt),
         title: normalizeText(title),
         imageUrl: normalizeText(imageUrl),
+        iconUrl: normalizeAssetUrl(normalizeText(iconUrl), url) || "",
+        websiteUrl,
       };
     } catch {
-      return { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
+      return { excerpt: "", publishedAt: null, title: "", imageUrl: "", iconUrl: "", websiteUrl: "" };
     }
   })();
 
@@ -3284,7 +3391,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
 	      if (!match) return "";
 	      const cleaned = cleanSnippet(match[1].split(/paywall|locality|read|open|reposted|published|updated/i)[0]);
 	      if (!cleaned || cleaned.length < 2) return "";
-	      if (/^(unknown|na|n\/a)$/i.test(cleaned)) return "";
+	      if (isUnknownOwnershipLabel(cleaned)) return "";
 	      return cleaned;
 	    };
 
@@ -3482,6 +3589,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
 	        excerpt,
 	        logoUrl,
           outletProfileUrl,
+          groundNewsUrl: outletProfileUrl,
           groundNewsSourceId: undefined,
           groundNewsSourceSlug: undefined,
 	        bias: extractBiasFromText(`${biasLabel} ${block}`),
@@ -3583,6 +3691,9 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
 	          const logoUrl = normalize(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || sourceInfo?.icon || "");
 	          const groundNewsSourceId = normalize(sourceInfo?.id || sourceInfo?.sourceInfoId || "");
 	          const groundNewsSourceSlug = normalize(sourceInfo?.slug || "");
+            const profileFromSourceInfo = groundNewsSourceSlug
+              ? toAbs(`/interest/${encodeURIComponent(groundNewsSourceSlug)}`)
+              : "";
 
           const outletFromExisting = existing?.outlet || "";
           const excerptFromExisting = existing?.excerpt || "";
@@ -3594,7 +3705,8 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
 	            outlet: outletResolved || outlet || sourceUrl.hostname.replace(/^www\./, ""),
 	            excerpt: excerptResolved || excerpt || "",
 	            logoUrl: existing?.logoUrl || logoUrl,
-              outletProfileUrl: existing?.outletProfileUrl || "",
+              outletProfileUrl: existing?.outletProfileUrl || profileFromSourceInfo || "",
+              groundNewsUrl: existing?.groundNewsUrl || existing?.outletProfileUrl || profileFromSourceInfo || "",
               groundNewsSourceId: existing?.groundNewsSourceId || groundNewsSourceId || undefined,
               groundNewsSourceSlug: existing?.groundNewsSourceSlug || groundNewsSourceSlug || undefined,
 	            bias: existing?.bias !== "unknown" ? existing?.bias : bias,
@@ -3793,7 +3905,7 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
   return rendered;
 }
 
-async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, storyUrlForAssets) {
+async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, storyUrlForAssets, outletEnricher = null) {
   const normalizedUrl = normalizeExternalUrl(candidate.url);
   if (!normalizedUrl || isGroundNewsUrl(normalizedUrl)) return null;
 
@@ -3802,7 +3914,7 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
   const shouldFetchSourceMeta = candidateExcerpt.length < 48 || !candidatePublishedAt;
   const sourceMeta = shouldFetchSourceMeta
     ? await fetchSourceMetadata(normalizedUrl, sourceMetadataCache)
-    : { excerpt: "", publishedAt: null, title: "", imageUrl: "" };
+    : { excerpt: "", publishedAt: null, title: "", imageUrl: "", iconUrl: "", websiteUrl: "" };
   const outlet = normalizeText(candidate.outlet) || hostFromUrl(normalizedUrl);
   const excerptFromMeta = normalizeText(sourceMeta.excerpt);
   const excerptCandidate = looksLikeWeakExcerpt(candidateExcerpt) ? "" : candidateExcerpt;
@@ -3816,8 +3928,9 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
   const candidateImage = normalizeExternalImageCandidate(candidate.imageUrl || "", normalizedUrl);
   const metaImage = normalizeExternalImageCandidate(sourceMeta.imageUrl || "", normalizedUrl);
   const sourceImage = candidateImage || metaImage || undefined;
+  const groundNewsUrl = normalizeExternalUrl(candidate.groundNewsUrl || candidate.outletProfileUrl || "") || "";
 
-  const baseSource = {
+  let baseSource = {
     id: stableId(`${storySlug}:${normalizedUrl}`, `${storySlug}-src`),
     outlet,
     url: normalizedUrl,
@@ -3827,13 +3940,17 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
     language: normalizeText(candidate.language || ""),
     canonicalHash: shortHash(normalizedUrl, 24),
     excerpt,
-    logoUrl: normalizeAssetUrl(candidate.logoUrl, storyUrlForAssets || "https://ground.news"),
+    logoUrl:
+      normalizeAssetUrl(candidate.logoUrl, storyUrlForAssets || "https://ground.news") ||
+      normalizeAssetUrl(sourceMeta.iconUrl || "", normalizedUrl),
     bias: parseBiasLabel(candidate.bias),
       biasRating: parseBiasRatingLabel(candidate.biasRating || ""),
     factuality: parseFactualityLabel(candidate.factuality),
     ownership: normalizeText(candidate.ownership) || "Unlabeled",
       groundNewsSourceId: normalizeText(candidate.sourceInfoId || candidate.groundNewsSourceId || "") || undefined,
       groundNewsSourceSlug: normalizeText(candidate.sourceInfoSlug || candidate.groundNewsSourceSlug || "") || undefined,
+      outletProfileUrl: groundNewsUrl || undefined,
+      groundNewsUrl: groundNewsUrl || undefined,
     repostedBy:
       typeof candidate.repostedBy === "number" && Number.isFinite(candidate.repostedBy)
         ? Math.max(0, Math.round(candidate.repostedBy))
@@ -3841,13 +3958,24 @@ async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, 
     publishedAt: candidatePublishedAt || sourceMeta.publishedAt || undefined,
     paywall: parsePaywallLabel(candidate.paywall),
     locality: parseLocalityLabel(candidate.locality),
-    websiteUrl: normalizeExternalUrl(candidate.websiteUrl || websiteFromUrl || ""),
+    websiteUrl: normalizeExternalUrl(candidate.websiteUrl || sourceMeta.websiteUrl || websiteFromUrl || ""),
     country: normalizeText(candidate.country || inferCountryFromUrl(normalizedUrl) || ""),
     foundedYear: Number.isFinite(Number(candidate.foundedYear)) ? Number(candidate.foundedYear) : undefined,
     description: descriptionFallback,
   };
 
-  return applyReferenceToSource(baseSource);
+  baseSource = applyReferenceToSource(baseSource);
+
+  if (outletEnricher?.enrich) {
+    baseSource = await outletEnricher.enrich(baseSource);
+  }
+
+  if (!normalizeText(baseSource.logoUrl) || looksLikeWeakLogoUrl(baseSource.logoUrl)) {
+    const fallbackLogo = fallbackLogoUrlFromSource(baseSource.url, baseSource.websiteUrl);
+    if (fallbackLogo) baseSource.logoUrl = fallbackLogo;
+  }
+
+  return baseSource;
 }
 
 async function enrichStory(
@@ -3858,6 +3986,7 @@ async function enrichStory(
   auditState,
   articleOrdinal,
   sourceFetchConcurrency = DEFAULT_SOURCE_FETCH_CONCURRENCY,
+  outletEnricher = null,
 ) {
   const rendered = await extractStoryFromDom(page, storyUrl, auditState, articleOrdinal);
   const renderedHtml = await page.content().catch(() => "");
@@ -3920,11 +4049,25 @@ async function enrichStory(
         excerpt: normalizeText(anyNode.excerpt || anyNode.summary || anyNode.description || ""),
         logoUrl: normalizeText(anyNode.logo || anyNode.logoUrl || anyNode.icon || anyNode.image || ""),
         bias: parseBiasLabel(anyNode.bias || anyNode.biasRating || ""),
+        biasRating: parseBiasRatingLabel(anyNode.bias || anyNode.biasRating || ""),
         factuality: parseFactualityLabel(anyNode.factuality || anyNode.factualityRating || ""),
         ownership: normalizeText(anyNode.ownership || ""),
         paywall: parsePaywallLabel(anyNode.paywall || "") || "",
         locality: parseLocalityLabel(anyNode.locality || "") || "",
         publishedAt: normalizeText(anyNode.publishedAt || anyNode.publishDate || anyNode.date || ""),
+        sourceInfoSlug: normalizeText(anyNode.sourceInfo?.slug || anyNode.source?.slug || ""),
+        sourceInfoId: normalizeText(anyNode.sourceInfo?.id || anyNode.source?.id || ""),
+        outletProfileUrl:
+          normalizeText(anyNode.outletProfileUrl || anyNode.groundNewsUrl || anyNode.sourceProfileUrl || "") ||
+          (normalizeText(anyNode.sourceInfo?.slug || anyNode.source?.slug || "")
+            ? `https://ground.news/interest/${encodeURIComponent(normalizeText(anyNode.sourceInfo?.slug || anyNode.source?.slug || ""))}`
+            : ""),
+        groundNewsUrl:
+          normalizeText(anyNode.groundNewsUrl || anyNode.outletProfileUrl || anyNode.sourceProfileUrl || "") ||
+          (normalizeText(anyNode.sourceInfo?.slug || anyNode.source?.slug || "")
+            ? `https://ground.news/interest/${encodeURIComponent(normalizeText(anyNode.sourceInfo?.slug || anyNode.source?.slug || ""))}`
+            : ""),
+        websiteUrl: normalizeExternalUrl(anyNode.websiteUrl || anyNode.website || anyNode.publisherUrl || anyNode.sourceInfo?.url || "") || "",
       };
       byUrl.set(normalized, mergeSourceCandidateRecords(existing, incoming));
     }
@@ -3935,7 +4078,7 @@ async function enrichStory(
   const fetchConcurrency = Math.max(1, Math.round(sourceFetchConcurrency || DEFAULT_SOURCE_FETCH_CONCURRENCY));
   let enrichedSources = (
     await mapWithConcurrency(candidates, fetchConcurrency, (candidate) =>
-      enrichSourceCandidate(slug, candidate, sourceMetadataCache, storyUrl),
+      enrichSourceCandidate(slug, candidate, sourceMetadataCache, storyUrl, outletEnricher),
     )
   )
     .filter(Boolean)
@@ -4126,7 +4269,12 @@ function mergeStoryRecords(preferred, candidate) {
   for (const source of [...(preferred.sources || []), ...(candidate.sources || [])]) {
     const url = normalizeText(source?.url || "");
     if (!url) continue;
-    byUrl.set(url, source);
+    const existing = byUrl.get(url);
+    if (!existing) {
+      byUrl.set(url, source);
+      continue;
+    }
+    byUrl.set(url, mergeSourceCandidateRecords(existing, source));
   }
   const mergedSources = Array.from(byUrl.values());
   const preferredCoverage = preferred.coverage || {};
@@ -4216,6 +4364,10 @@ function normalizeStoryRecordForStore(story) {
       paywall: normalizeText(src.paywall || "") || undefined,
       locality: normalizeText(src.locality || "") || undefined,
       publishedAt: normalizeText(src.publishedAt || "") || undefined,
+      groundNewsUrl: normalizeExternalUrl(src.groundNewsUrl || src.outletProfileUrl || "") || undefined,
+      outletProfileUrl: normalizeExternalUrl(src.outletProfileUrl || src.groundNewsUrl || "") || undefined,
+      groundNewsSourceId: normalizeText(src.groundNewsSourceId || src.sourceInfoId || "") || undefined,
+      groundNewsSourceSlug: normalizeText(src.groundNewsSourceSlug || src.sourceInfoSlug || "") || undefined,
       websiteUrl: normalizeText(src.websiteUrl || "") || undefined,
       country: normalizeText(src.country || "") || undefined,
       foundedYear:
@@ -4383,6 +4535,11 @@ export async function runGroundNewsIngestion(opts = {}) {
 
   const stories = [];
   const sourceMetadataCache = new Map();
+  const outletEnricher = createOutletEnricher({
+    enabled: options.outletEnrichment,
+    timeoutMs: options.outletEnrichmentTimeoutMs,
+    silent: options.silent,
+  });
   let sourceFetchConcurrency = Math.max(
     1,
     Number.isFinite(options.sourceFetchConcurrency) && options.sourceFetchConcurrency > 0
@@ -4600,6 +4757,7 @@ export async function runGroundNewsIngestion(opts = {}) {
               auditState,
               ordinal,
               sourceFetchConcurrency,
+              outletEnricher,
             );
             stories.push(story);
             processedInSession += 1;
@@ -4684,6 +4842,8 @@ export async function runGroundNewsIngestion(opts = {}) {
       scrapeUniqueStoryLinkCount: scrapeOutput.uniqueStoryLinkCount || 0,
       scrapeRouteCount: scrapeOutput.routeCount || 0,
       sourceFetchConcurrency,
+      outletEnrichment: Boolean(options.outletEnrichment),
+      outletEnrichmentTimeoutMs: options.outletEnrichmentTimeoutMs,
       storyWorkers: options.storyWorkerCount,
       auditEnabled: Boolean(auditState.enabled),
       imagePreRepairAttempted: preRepairStats?.attempted || 0,

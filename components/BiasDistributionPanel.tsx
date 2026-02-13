@@ -1,4 +1,5 @@
 import { Story, SourceArticle } from "@/lib/types";
+import { OutletAvatar } from "@/components/OutletAvatar";
 
 type Props = {
   story: Story;
@@ -9,28 +10,17 @@ function pct(value: number) {
   return Math.max(0, Math.round(value));
 }
 
-function pickInitials(outlet: string) {
-  const words = outlet
-    .replace(/\.[a-z]{2,}$/i, "")
-    .split(/[^a-z0-9]+/i)
-    .filter(Boolean);
-  if (words.length === 0) return "?";
-  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-  return `${words[0][0] || ""}${words[1][0] || ""}`.toUpperCase();
-}
-
 function SourceBadge({ source }: { source: SourceArticle }) {
-  if (source.logoUrl) {
-    return (
-      <span className="bias-source-badge" title={source.outlet}>
-        <img src={source.logoUrl} alt={source.outlet} />
-      </span>
-    );
-  }
-
   return (
-    <span className="bias-source-badge bias-source-badge-fallback" title={source.outlet}>
-      {pickInitials(source.outlet)}
+    <span className="bias-source-badge" title={source.outlet}>
+      <OutletAvatar
+        outlet={source.outlet}
+        logoUrl={source.logoUrl}
+        websiteUrl={source.websiteUrl || ""}
+        sourceUrl={source.url}
+        className="bias-source-badge-img"
+        fallbackClassName="bias-source-badge-fallback-text"
+      />
     </span>
   );
 }
@@ -44,12 +34,15 @@ function SourceColumn({
   tone: "far-left" | "lean-left" | "center" | "lean-right" | "far-right" | "unknown";
   sources: SourceArticle[];
 }) {
-  const visible = sources.slice(0, 7);
+  const visible = sources.slice(0, 6);
   const rest = sources.length - visible.length;
 
   return (
     <div className={`bias-column bias-column-${tone}`}>
-      <div className="bias-column-title">{title}</div>
+      <div className="bias-column-head">
+        <div className="bias-column-title">{title}</div>
+        <div className="bias-column-count">{sources.length}</div>
+      </div>
       <div className="bias-column-stack">
         {visible.map((source) => (
           <SourceBadge key={source.id} source={source} />
@@ -109,25 +102,30 @@ export function BiasDistributionPanel({ story }: Props) {
     { side: "Center", value: centerPct },
     { side: "Right", value: rightPct },
   ].sort((a, b) => b.value - a.value)[0];
+  const trackedCount = left.length + center.length + right.length;
 
   return (
     <section className="panel bias-dist-panel">
       <div className="section-title u-pt-0">
         <h2 className="u-m0">Bias Distribution</h2>
+        <span className="story-meta">{story.sources.length} sources</span>
       </div>
       <p className="bias-dist-lead">
-        • {dominant.value}% of the sources lean {dominant.side}
+        • {dominant.value}% of tracked sources lean {dominant.side}
+        {trackedCount > 0 && trackedCount < story.sources.length
+          ? ` (${story.sources.length - trackedCount} untracked)`
+          : ""}
       </p>
 
       <div className="bias-dist-progress" aria-label="Bias distribution">
         <div className="seg seg-left" style={{ width: `${leftPct}%` }}>
-          {leftPct > 0 ? `L ${leftPct}%` : ""}
+          {leftPct >= 8 ? `L ${leftPct}%` : ""}
         </div>
         <div className="seg seg-center" style={{ width: `${centerPct}%` }}>
-          {centerPct > 0 ? `C ${centerPct}%` : ""}
+          {centerPct >= 8 ? `C ${centerPct}%` : ""}
         </div>
         <div className="seg seg-right" style={{ width: `${rightPct}%` }}>
-          {rightPct > 0 ? `R ${rightPct}%` : ""}
+          {rightPct >= 8 ? `R ${rightPct}%` : ""}
         </div>
       </div>
 

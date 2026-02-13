@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { LogoLockup } from "@/components/LogoLockup";
 import { DEFAULT_EDITION, EDITIONS } from "@/lib/constants";
 import { FollowToggle } from "@/components/FollowToggle";
+import { OutletAvatar } from "@/components/OutletAvatar";
 
 const EDITION_KEY = "ogn_edition";
 const THEME_KEY = "ogn_theme";
@@ -24,7 +25,7 @@ type SuggestResponse = {
     updatedAt?: string;
   }>;
   topics: Array<{ slug: string; label: string; count: number }>;
-  outlets: Array<{ slug: string; label: string; logoUrl?: string | null }>;
+  outlets: Array<{ slug: string; label: string; logoUrl?: string | null; websiteUrl?: string | null }>;
 };
 
 function highlightQuery(text: string, query: string) {
@@ -329,7 +330,12 @@ export function TopNavClient() {
                             onClick={() => setSuggestOpen(false)}
                           >
                             <span className="topic-avatar">
-                              {o.logoUrl ? <img src={String(o.logoUrl)} alt={o.label} className="u-avatar-24" /> : o.label.slice(0, 1).toUpperCase()}
+                              <OutletAvatar
+                                outlet={o.label}
+                                logoUrl={o.logoUrl || ""}
+                                websiteUrl={o.websiteUrl || ""}
+                                className="u-avatar-24"
+                              />
                             </span>
                             <span>{o.label}</span>
                           </Link>

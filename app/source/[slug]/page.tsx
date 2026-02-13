@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { StoryCard } from "@/components/StoryCard";
 import { FollowToggle } from "@/components/FollowToggle";
+import { OutletAvatar } from "@/components/OutletAvatar";
 import { listStoriesByOutletSlug } from "@/lib/store";
 import { prettyDate, slugify } from "@/lib/format";
 import { outletSlug, sourceMatchesOutletSlug } from "@/lib/lookup";
@@ -120,11 +121,12 @@ export default async function SourcePage({ params, searchParams }: Props) {
         <div className="section-title u-pt-0">
           <div className="u-flex u-flex-gap-065 u-items-center">
             <span className="topic-avatar" aria-hidden="true">
-              {outlet?.logoUrl ? (
-                <img src={String(outlet.logoUrl)} alt={displayOutlet} className="u-avatar-28" />
-              ) : (
-                displayOutlet.slice(0, 2).toUpperCase()
-              )}
+              <OutletAvatar
+                outlet={displayOutlet}
+                logoUrl={String(outlet?.logoUrl || "")}
+                websiteUrl={String(outlet?.websiteUrl || "")}
+                className="u-avatar-28"
+              />
             </span>
             <h1 className="topic-page-title">
               {displayOutlet}
@@ -217,11 +219,14 @@ export default async function SourcePage({ params, searchParams }: Props) {
                 <article key={src.id} className="source-item">
                   <div className="source-head">
                     <div className="source-outlet">
-                      {src.logoUrl ? (
-                        <img src={src.logoUrl} alt={src.outlet} className="source-logo" />
-                      ) : (
-                        <span className="source-logo source-logo-fallback">{src.outlet.slice(0, 2).toUpperCase()}</span>
-                      )}
+                      <OutletAvatar
+                        outlet={src.outlet}
+                        logoUrl={src.logoUrl}
+                        sourceUrl={src.url}
+                        websiteUrl={src.websiteUrl || ""}
+                        className="source-logo"
+                        fallbackClassName="source-logo source-logo-fallback"
+                      />
                       <div className="u-grid u-grid-gap-008">
                         <strong>{src.outlet}</strong>
                         <span className="story-meta">{src.publishedAt ? prettyDate(src.publishedAt) : "Unknown date"}</span>

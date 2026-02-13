@@ -4,6 +4,7 @@ import { FollowToggle } from "@/components/FollowToggle";
 import { outletSlug, topicSlug } from "@/lib/lookup";
 import { topicDisplayName } from "@/lib/topics";
 import { getCurrentUser } from "@/lib/authStore";
+import { OutletAvatar } from "@/components/OutletAvatar";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,7 @@ export default async function MyDiscoverPage({ searchParams }: DiscoverProps) {
       .catch(() => []),
     db.outlet
       .findMany({
-        select: { slug: true, name: true, logoUrl: true, biasRating: true, factuality: true },
+        select: { slug: true, name: true, logoUrl: true, websiteUrl: true, biasRating: true, factuality: true },
         orderBy: [{ sources: { _count: "desc" } }],
         take: 80,
       })
@@ -176,7 +177,12 @@ export default async function MyDiscoverPage({ searchParams }: DiscoverProps) {
             {filteredOutlets.map((outlet) => (
               <li key={outlet.slug} className="topic-item">
                 <span className="topic-avatar" aria-hidden="true">
-                  {outlet.logoUrl ? <img src={String(outlet.logoUrl)} alt={outlet.name} className="u-avatar-24" /> : initials(outlet.name)}
+                  <OutletAvatar
+                    outlet={outlet.name}
+                    logoUrl={String(outlet.logoUrl || "")}
+                    websiteUrl={String(outlet.websiteUrl || "")}
+                    className="u-avatar-24"
+                  />
                 </span>
                 <Link href={`/source/${encodeURIComponent(outlet.slug)}`} className="u-no-underline">
                   {outlet.name}
