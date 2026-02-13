@@ -15,9 +15,24 @@
   --bias-far-right: #204986;
 
   --subscribe-accent: #262626;
+
+  /* Halftone / bitmap shading system */
+  --ht-color: rgba(24, 32, 38, 0.07);
+  --ht-color-accent: rgba(17, 58, 75, 0.09);
+  --ht-color-brand: rgba(193, 90, 45, 0.08);
+  --ht-dot: 0.6px;
+  --ht-gap: 5px;
+  --ht-dot-sm: 0.5px;
+  --ht-gap-sm: 3px;
+  --ht-dot-lg: 1.2px;
+  --ht-gap-lg: 5px;
 }
 
 html[data-theme="dark"] {
   --card-bg: #393938;
   --bias-center: #dadbd6;
+
+  --ht-color: rgba(238, 239, 233, 0.045);
+  --ht-color-accent: rgba(209, 189, 145, 0.05);
+  --ht-color-brand: rgba(209, 189, 145, 0.06);
 }
