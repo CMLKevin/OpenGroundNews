@@ -2,33 +2,34 @@
 
 ## 1. Runtime Requirements
 
-- Node.js (modern LTS recommended)
+Required:
+- Node.js (modern LTS)
 - npm
 - PostgreSQL
-- Browser Use Cloud account/API key for ingestion and archive automation
+- Browser Use API key for ingestion/archive automation
 
-Optional but supported:
-- Resend account for digest sends
-- VAPID keys for Web Push
-- Upstash Redis for distributed rate limiting
-- Cloudflare R2 for object/image cache backing
+Optional integrations:
+- Resend (newsletter digest delivery)
+- VAPID keys (`web-push`)
+- Upstash Redis (distributed rate limiting)
+- Cloudflare R2 (durable image/object cache)
 
 ## 2. Environment Setup
 
-Use `.env.example` as baseline.
+Use `.env.example` as baseline and set values in `.env.local`.
 
-### Required to run full app + ingestion
+### 2.1 Minimum required for full app + ingestion
 - `DATABASE_URL`
 - `BROWSER_USE_API_KEY`
 - `OGN_API_KEY` (or `OPEN_GROUND_NEWS_API_KEY`)
 
-### Common auth variables
-- `AUTH_SECRET` / `NEXTAUTH_SECRET`
-- `AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET` (or Google alias vars)
+### 2.2 Auth and session
+- `AUTH_SECRET` or `NEXTAUTH_SECRET`
+- `AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET` (or `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`)
 - `NEXTAUTH_URL`
-- `OGN_ADMIN_EMAILS`
+- `OGN_ADMIN_EMAILS` (or `OGN_ADMIN_EMAIL`)
 
-### Email + push
+### 2.3 Newsletter and push
 - `RESEND_API_KEY`
 - `EMAIL_FROM`
 - `NEXT_PUBLIC_SITE_URL`
@@ -36,7 +37,7 @@ Use `.env.example` as baseline.
 - `VAPID_PRIVATE_KEY`
 - `VAPID_SUBJECT`
 
-### Rate limit + proxy tuning
+### 2.4 Rate limit and image proxy tuning
 - `API_STORIES_RATE_LIMIT`
 - `API_STORIES_RATE_WINDOW_SEC`
 - `IMAGE_PROXY_RATE_LIMIT`
@@ -46,7 +47,7 @@ Use `.env.example` as baseline.
 - `IMAGE_PROXY_MAX_BYTES`
 - `IMAGE_PROXY_FALLBACK_TTL_SEC`
 
-### Optional distributed infra
+### 2.5 Optional distributed/remote storage
 - `UPSTASH_REDIS_REST_URL`
 - `UPSTASH_REDIS_REST_TOKEN`
 - `R2_ACCOUNT_ID`
@@ -55,40 +56,49 @@ Use `.env.example` as baseline.
 - `R2_BUCKET`
 - `R2_PUBLIC_BASE_URL`
 
-### Pipeline controls (selected)
+### 2.6 Ingestion and pipeline controls
 - `OGN_PIPELINE_MAX_ATTEMPTS`
 - `OGN_PIPELINE_RETRY_DELAY_MS`
 - `OGN_PIPELINE_CHECKPOINT`
 - `OGN_PIPELINE_EDITIONS`
 - `OGN_PIPELINE_STORY_WORKERS`
 - `OGN_PIPELINE_SOURCE_FETCH_CONCURRENCY`
+- `OGN_PIPELINE_SCROLL_PASSES`
+- `OGN_PIPELINE_FRONTPAGE_SCROLL_PASSES`
 - `OGN_PIPELINE_ROUTE_EXPANSION`
+- `OGN_PIPELINE_MAX_DISCOVERED_ROUTES`
+- `OGN_PIPELINE_MAX_TOPIC_ROUTES`
 - `OGN_PIPELINE_MAX_LINKS_PER_ROUTE`
+- `OGN_PIPELINE_OUTLET_ENRICHMENT`
+- `OGN_PIPELINE_OUTLET_ENRICH_TIMEOUT_MS`
+- `OGN_PIPELINE_WRITE_JSON`
 
-## 3. Starting The App
+## 3. Starting the Application
 
-### Option A: standard dev
+### Preferred local flow
 
 ```bash
 npm install
-npm run dev
-```
-
-### Option B: managed restart script (recommended)
-
-```bash
 ./restart.sh dev
 ```
 
-What `restart.sh` does:
+`restart.sh` behavior:
 - loads `.env` and `.env.local`
-- auto-provisions local Postgres in dev if `DATABASE_URL` is missing
+- auto-provisions local Postgres in dev when `DATABASE_URL` is absent
 - runs `db:generate` and `db:deploy`
-- restarts cleanly by stopping stale lock/port holders
+- clears stale Next.js locks/listeners
+- starts app with pid/log tracking in `.run/`
 
-Production mode:
+### Manual local flow
 
 ```bash
+npm run dev
+```
+
+### Production runtime
+
+```bash
+npm run build
 PORT=3000 ./restart.sh prod
 ```
 
@@ -101,30 +111,26 @@ npm run db:deploy
 npm run db:studio
 ```
 
-If bootstrap importing from JSON is needed:
+Data bootstrap/import utility:
 
 ```bash
 npm run db:import-json
 ```
 
-## 5. Ingestion And Archive Jobs
+## 5. Ingestion and Archive Operations
 
-### Manual ingestion run
+### Full ingestion
 
 ```bash
 npm run ingest:groundnews
 ```
 
-Pass-through tuning flags are supported when needed:
+Common override flags:
 
 ```bash
 npm run ingest:groundnews -- --verbose --no-article-audit --source-fetch-concurrency 20
-```
-
-If Browser Use returns concurrent-session `429` errors, clear stale CDP sessions first:
-
-```bash
-npm run browseruse:stop-active-browsers
+npm run ingest:groundnews -- --frontpage-only --editions international,us,uk
+npm run ingest:groundnews -- --repair-images-only --repair-image-limit 200
 ```
 
 ### Scrape-only run
@@ -133,7 +139,7 @@ npm run browseruse:stop-active-browsers
 npm run groundnews:scrape -- --routes /,/blindspot,/my,/search
 ```
 
-### Archive single URL check
+### Archive single URL verification
 
 ```bash
 npm run archive:extract -- --url https://example.com/article
@@ -145,78 +151,134 @@ npm run archive:extract -- --url https://example.com/article
 npm run archive:verify -- --urls-file output/browser_use/archive_tests/test_urls.txt
 ```
 
-## 6. Recommended Scheduling
+### Recover from Browser Use concurrent-session saturation
 
-Suggested baseline cadence:
+```bash
+npm run browseruse:stop-active-browsers
+```
+
+### Outlet enrichment backfill
+
+```bash
+npm run ingest:enrich-outlets
+```
+
+## 6. Script Environment Loading
+
+Important:
+- Next.js runtime auto-loads `.env.local`
+- Plain `node scripts/*.mjs` does not by default
+- This repo solves that with `scripts/lib/load_env.mjs`, imported by operational scripts
+
+Recommendation:
+- Prefer npm scripts (or `restart.sh`) to avoid missing env at execution time
+
+## 7. Notifications and Scheduled Jobs
+
+### Newsletter digest
+- Endpoint: `POST /api/newsletter/digest`
+- Auth: API key
+- Dependency: `RESEND_API_KEY`
+
+Local trigger helper:
+
+```bash
+npm run newsletter:digest
+```
+
+### Web push daily send
+- Endpoint: `POST /api/push/send-daily`
+- Auth: API key
+- Dependency: VAPID keys
+
+### Generate VAPID keys
+
+```bash
+npm run push:vapid
+```
+
+## 8. Suggested Scheduler Cadence
+
+Baseline recommendation:
 
 1. Every 5-10 minutes
 - `npm run ingest:groundnews`
 
-2. Every day (or as needed)
-- `npm run archive:verify` for sampled high-traffic URLs
+2. Daily
+- `npm run archive:verify` for sampled URLs
 
-3. Daily digest send
-- trigger `POST /api/newsletter/digest` with API key
+3. Daily digest window
+- `POST /api/newsletter/digest` with API key
 
-4. Daily push send
-- trigger `POST /api/push/send-daily` with API key
+4. Daily push window
+- `POST /api/push/send-daily` with API key
 
-Use external scheduler (cron/GitHub Actions/CI runner) to invoke these commands or endpoints.
+Use cron, CI runner, or another scheduler. Keep API keys in secret storage.
 
-## 7. Health Checks
+## 9. Health Checks
 
-### App/API health
-- Home page renders with story data
-- `GET /api/stories` responds and includes rate-limit headers
-- Auth session resolve works via `GET /api/auth/me`
+### App/API checks
+- `/` renders with story content
+- `GET /api/stories` returns data + rate-limit headers
+- `GET /api/auth/me` resolves session state
 
-### Ingestion health
-- `IngestionRun` rows update regularly
-- Non-zero `uniqueStoryLinks` and `ingestedStories`
-- Output artifacts generated in `output/browser_use/groundnews_cdp/`
+### Ingestion checks
+- New `IngestionRun` rows appear
+- `uniqueStoryLinks` and `ingestedStories` are non-zero
+- Output artifacts update under `output/browser_use/groundnews_cdp/`
 
-### Reader/archive health
-- `POST /api/archive/read` returns `success` or usable `fallback`
-- Archive failures do not hard-fail reader UX
+### Reader/archive checks
+- `POST /api/archive/read` returns `success`, `fallback`, or explicit error
+- Reader route degrades gracefully when archive hosts are unavailable
 
-### Notification health
-- `GET /api/push/public-key` returns key (when configured)
-- Digest route returns sent/failed counts
+### Push/digest checks
+- `GET /api/push/public-key` returns key when configured
+- Digest route returns delivery summary (`sent` + per-email statuses)
 
-## 8. Troubleshooting
+## 10. Troubleshooting Playbooks
 
 ### `DATABASE_URL is not set`
-- Define `DATABASE_URL` in `.env.local`, or run `./restart.sh dev` to auto-provision local Postgres.
+- Set `DATABASE_URL` in `.env.local`
+- Or use `./restart.sh dev` to auto-provision local Postgres
 
-### Browser session creation failures
-- Verify `BROWSER_USE_API_KEY`
-- Reduce session concurrency
-- Increase `BROWSER_USE_CREATE_RETRIES`
-- Adjust rotation profile/proxy pool (see `ROTATION_STRATEGIES.md`)
-- Stop stale browser sessions: `npm run browseruse:stop-active-browsers`
+### Ingestion route unauthorized
+`/api/ingest/groundnews` needs both:
+- valid API key header
+- admin `ogn_session` cookie
 
-### Ingestion endpoint unauthorized
-- Ensure both are present for `/api/ingest/groundnews`:
-  - Valid API key header
-  - Admin `ogn_session` cookie
+### Browser session creation failures / 429s
+- verify `BROWSER_USE_API_KEY`
+- reduce session concurrency
+- tune retries/timeouts
+- rotate profile/proxy pools (`ROTATION_STRATEGIES.md`)
+- stop stale active sessions (`browseruse:stop-active-browsers`)
 
-### Push not working
-- Confirm VAPID env vars exist
-- Re-subscribe client via `/api/push/subscribe`
-- Check for dead endpoint pruning on 410 responses
+### Digest failures
+- verify `RESEND_API_KEY`
+- verify `EMAIL_FROM`
+- verify API key header for digest endpoint
 
-### Digest route failing
-- Confirm `RESEND_API_KEY` and `EMAIL_FROM`
-- Confirm API key auth header for `/api/newsletter/digest`
+### Push failures
+- verify VAPID env vars
+- re-subscribe client (`/api/push/subscribe`)
+- inspect dead-endpoint pruning (`410/Gone`)
 
-### Image proxy 429 spikes
-- Increase `IMAGE_PROXY_RATE_LIMIT` / window settings as needed
-- Consider enabling R2 cache for better hit ratio
+### Image proxy 429 or poor hit ratio
+- tune `IMAGE_PROXY_*` values
+- enable R2-backed cache to improve warm-cache durability
 
-## 9. Artifacts And Operational Paths
+## 11. Operational Artifacts and Paths
 
 - Ingestion outputs: `output/browser_use/groundnews_cdp/`
 - Archive outputs: `output/browser_use/archive_cdp/`
-- Rotation state: `output/browser_use/rotation_state.json`
 - Pipeline checkpoint: `output/browser_use/groundnews_cdp/checkpoint.json`
-- Local run logs (restart script): `.run/`
+- Rotation state: `output/browser_use/rotation_state.json`
+- Image cache: `output/cache/images/`
+- Restart logs and pid files: `.run/`
+
+## 12. Security and Secrets Guidance
+
+- Keep `OGN_API_KEY` in secrets manager or CI secret storage
+- Never commit `.env.local`
+- Use least-privilege DB credentials for production
+- Rotate Browser Use and email/push credentials periodically

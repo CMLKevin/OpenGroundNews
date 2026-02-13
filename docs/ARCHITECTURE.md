@@ -2,40 +2,70 @@
 
 ## 1. System Overview
 
-OpenGroundNews is a Next.js App Router application backed by PostgreSQL (Prisma), with a Browser Use Cloud + Playwright ingestion pipeline and archive-first reader fallback.
+OpenGroundNews is a Next.js App Router application backed by PostgreSQL via Prisma.
 
-Core layers:
-- Web UI and server components (`app/`, `components/`)
-- API route handlers (`app/api/`)
-- Domain/data services (`lib/`)
-- Ingestion and archive automation (`scripts/`)
-- Persistence (`prisma/schema.prisma`)
+It combines:
+- Server-rendered and client-enhanced news UI surfaces
+- A DB-backed store layer for feeds/search/story detail
+- Browser Use + Playwright ingestion and archive retrieval pipelines
+- User personalization, newsletter, and push infrastructure
 
-## 2. Runtime Composition
+## 2. Runtime Topology
 
-### Frontend runtime
-- Root shell: `app/layout.tsx`
-- Global styles/tokens: `app/globals.css`, `app/styles/tokens.css`
-- Shared nav/chrome: `components/TopNav.tsx`, `components/TopNavClient.tsx`, `components/MobileBottomNav.tsx`, `components/SiteFooter.tsx`
-- Primary page model: server-rendered pages with client components for interaction-heavy surfaces
+```mermaid
+flowchart LR
+  UI["Next.js UI Pages"] --> API["Route Handlers /api"]
+  API --> DOMAIN["Domain Services lib/*"]
+  DOMAIN --> DB["Postgres via Prisma"]
+  API --> EXT["External Services"]
+  EXT --> BU["Browser Use Cloud"]
+  EXT --> OM["Open-Meteo and IP Providers"]
+  EXT --> RS["Resend"]
+  EXT --> WP["Web Push Gateway"]
+  DOMAIN --> FS["Local File Caches output/*"]
+  DOMAIN --> R2["Optional R2 Object Cache"]
+```
 
-### Data runtime
-- DB client bootstrapping: `lib/db.ts`
-- Store facade (DB-backed): `lib/store.ts` -> `lib/dbStore.ts`
-- Story shaping + parity enrichment: `lib/dbStore.ts`, `lib/format.ts`, `lib/topics.ts`, `lib/lookup.ts`
-- Search scoring and fallback: `lib/search.ts`
+### Primary runtime packages
+- UI shell and routes: `app/`, `components/`
+- API handlers: `app/api/`
+- Domain/data services: `lib/`
+- Persistence schema: `prisma/schema.prisma`
+- Offline/ops pipelines: `scripts/`
 
-### Auth/session runtime
-- Auth persistence + session logic: `lib/dbAuth.ts`
-- Session cookie options: `lib/authCookies.ts`
-- NextAuth provider configuration: `lib/authOptions.ts`
-- Current-user resolution used across pages/APIs: `lib/authStore.ts` (re-exported from `dbAuth`)
+## 3. Core Runtime Layers
 
-## 3. Data Model
+### 3.1 Web and UI layer
+- Root layout and theme boot: `app/layout.tsx`
+- Global styles and tokens: `app/globals.css`, `app/styles/tokens.css`
+- Major product surfaces:
+  - Home feed (`/`)
+  - Story detail (`/story/[slug]`)
+  - Topic/source hubs (`/interest/[slug]`, `/source/[slug]`)
+  - Compare/calendar/maps (`/compare`, `/calendar`, `/maps`)
+  - Reader (`/reader`)
+  - Personalization area (`/my/*`, `/my-news-bias`)
+  - Admin (`/admin`)
+
+### 3.2 API layer
+- Route handlers under `app/api/**/route.ts`
+- Two endpoint families:
+  - Product APIs: `/api/*`
+  - Legacy/parity APIs: `/api/v1/*`
+
+### 3.3 Domain/data layer
+- Prisma client bootstrap and runtime-safe lazy behavior: `lib/db.ts`
+- Store façade: `lib/store.ts` (re-exporting DB-backed `lib/dbStore.ts`)
+- Search engine: `lib/search.ts`
+- Archive retrieval and fallback: `lib/archive.ts`
+- Media proxy and object storage: `lib/media/*`
+- Auth/session/prefs: `lib/dbAuth.ts`, `lib/authOptions.ts`, `lib/authCookies.ts`
+
+## 4. Persistence Model
 
 Defined in `prisma/schema.prisma`.
 
-### Core content entities
+### 4.1 Content graph
 - `Story`
 - `SourceArticle`
 - `Outlet`
@@ -47,7 +77,7 @@ Defined in `prisma/schema.prisma`.
 - `StoryRelatedStory`
 - `StoryGeo`
 
-### User/account entities
+### 4.2 User and auth
 - `User`
 - `Session`
 - `OAuthAccount`
@@ -59,7 +89,7 @@ Defined in `prisma/schema.prisma`.
 - `CustomFeed`
 - `Feedback`
 
-### Operations/infra entities
+### 4.3 Operations and messaging
 - `ArchiveEntry`
 - `IngestionRun`
 - `PushSubscription`
@@ -68,103 +98,156 @@ Defined in `prisma/schema.prisma`.
 - `DigestDelivery`
 - `ApiRateLimitCounter`
 
-### Outlet intelligence entities
+### 4.4 Outlet intelligence
 - `OutletOwnershipEntity`
 - `OutletOwnershipEdge`
 
-## 4. Request And Data Flow
+## 5. Request and Data Flows
 
-### Feed/story read flow
-1. Page/API calls store functions from `lib/store.ts`.
-2. `lib/dbStore.ts` queries Prisma, applies filters, dedupe, and normalization.
-3. Responses include bias, source metadata, and parity fields (read time/freshness where applicable).
+### 5.1 Feed and story retrieval
 
-### Story detail flow
-1. `/story/[slug]` calls `getStoryBySlug`.
-2. Detail include graph returns timeline, snapshots, podcasts, reader links, related stories, and geo.
-3. UI modules (`SourceCoveragePanel`, `FactualityPanel`, `OwnershipPanel`, etc.) render from normalized story shape.
+```mermaid
+sequenceDiagram
+  participant Page as UI Page
+  participant Api as API Route
+  participant Store as lib/dbStore
+  participant Db as Postgres
 
-### Reader (archive-first) flow
-1. Client posts URL to `/api/reader` (auth required) or `/api/archive/read` (API key path).
-2. `readArchiveForUrl` in `lib/archive.ts` checks archive cache first (`ArchiveEntry`).
-3. It calls `scripts/archive_extract_cdp.mjs` for Browser Use remote CDP archive retrieval.
-4. On blocked/not_found/error or circuit-open state, it falls back to direct HTML extraction via `cheerio`.
-5. Final entry is persisted back to DB archive cache.
+  Page->>Api: Request feed or story
+  Api->>Store: listStories or getStoryBySlug
+  Store->>Db: Prisma query with includes
+  Db-->>Store: story rows and relations
+  Store-->>Api: normalized Story shape
+  Api-->>Page: JSON or rendered page payload
+```
 
-## 5. Ingestion Pipeline Architecture
+Key behaviors:
+- `listStories` supports topic/view/edition/location filtering
+- In-memory store cache (`OGN_STORE_CACHE_TTL_MS`, default ~45s)
+- Story dedupe by canonical URL/title/topic heuristics
+- Story detail includes timeline, snapshots, podcasts, reader links, related stories, geo
 
-### Pipeline entry
-- `scripts/ingest_groundnews.mjs` -> `scripts/pipeline/index.mjs`
+### 5.2 Reader and archive retrieval
 
-### Orchestration
-- Retry and checkpoint wrapper: `scripts/pipeline/index.mjs`
-- Checkpoint storage: `scripts/pipeline/checkpoint/index.mjs`
-- Core ingestion: `scripts/sync_groundnews_pipeline.mjs`
+```mermaid
+sequenceDiagram
+  participant Client as Reader Client
+  participant Api as Reader Endpoint
+  participant Archive as lib/archive
+  participant Script as archive_extract_cdp
+  participant Db as ArchiveEntry
 
-### Scrape/discover
-- Ground News scrape worker: `scripts/groundnews_scrape_cdp.mjs`
-- Browser session lifecycle + rotation: `scripts/lib/browser_use_cdp.mjs`
+  Client->>Api: POST url
+  Api->>Archive: readArchiveForUrl
+  Archive->>Db: cache lookup
+  alt cache hit
+    Db-->>Archive: cached entry
+  else cache miss
+    Archive->>Script: Browser Use CDP extract
+    alt blocked or failed
+      Archive->>Archive: fallback direct HTML parse
+    end
+    Archive->>Db: upsert archive entry
+  end
+  Archive-->>Api: entry
+  Api-->>Client: entry JSON
+```
 
-### Persistence/enrichment
-- Story/outlet upserts: `scripts/lib/gn/persist_db.mjs`
-- Outlet profile enrichment (catalog + profile scraping fallbacks): `scripts/lib/gn/outlet_enrichment.mjs`
-- Additional outlet enrichment pass: `scripts/enrich_outlets_from_store.mjs`
+Key behaviors:
+- URL safety validation blocks private/local/credentialed URLs
+- Circuit breaker (`archive-read`) opens after repeated failures, cools down after 60s
+- Fallback extraction uses direct fetch + `cheerio`
 
-### Operational metadata
-- Ingestion run records persisted in `IngestionRun`
-- Output artifacts under `output/browser_use/`
+## 6. Ingestion Architecture
 
-## 6. API Surface Topology
+Pipeline entrypoint chain:
+- `scripts/ingest_groundnews.mjs`
+- `scripts/pipeline/index.mjs` (retry + checkpoint wrapper)
+- `scripts/sync_groundnews_pipeline.mjs` (core orchestration)
 
-- Product APIs: `/api/*`
-- Parity APIs: `/api/v1/*`
-- Auth and session APIs combine custom cookie auth with NextAuth OAuth synchronization
-- Mutating/user endpoints are generally `ogn_session` protected
-- Operational endpoints (ingest/archive/digest/send-daily) are API-key protected, with admin checks where required
+### 6.1 Pipeline stages
+1. Load script env (`scripts/lib/load_env.mjs`)
+2. Parse CLI flags + env tuning
+3. Run route discovery/scrape (`scripts/groundnews_scrape_cdp.mjs`)
+4. Expand routes (optional)
+5. Enrich stories via CDP sessions
+6. Optional outlet enrichment
+7. Placeholder image repair and cache normalization
+8. Persist to DB (`scripts/lib/gn/persist_db.mjs`)
+9. Persist ingestion telemetry (`IngestionRun`)
 
-Full endpoint contract details: `docs/API.md`
+### 6.2 Reliability mechanisms
+- Retry wrapper with attempt backoff
+- Checkpoint writes (`output/browser_use/groundnews_cdp/checkpoint.json`)
+- Browser session rotation strategies (profile/proxy pools)
+- Recovery script for stale sessions: `browseruse:stop-active-browsers`
 
-## 7. Caching And Reliability
+## 7. Auth and Authorization Model
 
-### Cache layers
-- In-memory store cache in `lib/dbStore.ts` (`OGN_STORE_CACHE_TTL_MS`)
-- Archive entry DB cache (`ArchiveEntry`)
-- Image cache stack: local file cache + optional R2 (`lib/media/imageProxy.ts`, `lib/media/objectStore.ts`)
+OpenGroundNews uses a hybrid model:
+- Custom cookie sessions (`ogn_session`) stored in `Session`
+- NextAuth JWT sessions for OAuth state
+- OAuth sync endpoint bridges NextAuth session into `ogn_session`
 
-### Rate limiting
+Auth modules:
+- `lib/dbAuth.ts` (session/password/reset/admin role logic)
+- `lib/authOptions.ts` (NextAuth provider callbacks)
+- `lib/authCookies.ts` (cookie options)
+
+Important behavior:
+- `/api/auth/signup` is intentionally disabled (`410`)
+- Google OAuth is enabled only when keys are configured
+- First user or allowlisted emails can become admin
+
+## 8. Security and Guardrails
+
+- API key gate (`x-ogn-api-key` or Bearer) for sensitive automation endpoints
+- URL SSRF protection via `validateExternalUrl`
+- Same-origin enforcement for OAuth sync route
+- Sanitized server errors (`sanitizeServerErrorMessage`) to avoid path leakage
+- Session cookies are `HttpOnly`, `SameSite=Lax`, secure in production
+
+## 9. Caching Strategy
+
+### 9.1 App data
+- In-process story cache in `lib/dbStore.ts` (short TTL)
+
+### 9.2 Archive cache
+- Durable DB cache in `ArchiveEntry`
+
+### 9.3 Image cache
+- Local file cache: `output/cache/images`
+- Optional Cloudflare R2 backing store
+- SVG fail-open fallback for unavailable sources
+
+### 9.4 Rate limiting
 - `lib/infra/rateLimit.ts`
-- Uses Upstash Redis when configured, with in-memory fallback
-- Applied to story and image proxy endpoints
+- Uses Upstash Redis when available, falls back to in-memory counters
 
-### Circuit breaking
-- Archive reader path uses `lib/infra/circuitBreaker.ts` to reduce repeated hard failures
-
-## 8. Notification Architecture
+## 10. Notifications and Messaging
 
 ### Newsletter
-- Signup persistence: `NewsletterSignup`
-- Digest send endpoint: `app/api/newsletter/digest/route.ts`
-- Delivery provider: Resend (`RESEND_API_KEY`)
+- Signup API stores `NewsletterSignup`
+- Digest endpoint uses `Resend`
 
 ### Web Push
-- Subscription lifecycle: `/api/push/subscribe`, `/api/push/unsubscribe`
-- Admin testing: `/api/push/test`
-- Batch daily sends: `/api/push/send-daily`
-- Delivery layer: `lib/push.ts` with VAPID keys
+- Subscription endpoints upsert/delete `PushSubscription`
+- Delivery via `lib/push.ts` with VAPID keys
+- Daily push route fans out to users with `notifyDailyBriefing=true`
 
-## 9. Security Model (Practical)
+## 11. Browser Extension Surface
 
-- API key gate for sensitive automation endpoints (`lib/security.ts`)
-- Session cookies are HTTP-only and same-site lax (`sessionCookieOptions`)
-- External URL validation for SSRF-resistant archive/image paths (`validateExternalUrl`)
-- Origin checks in OAuth sync endpoint
-- Server error sanitization before returning failures to clients
+The MV3 extension in `extension/`:
+- opens current tab in `/reader?url=...`
+- opens `/search?q=...` for the active page
+- supports configurable base app URL in options
 
-## 10. Extension Surface
+It does not use privileged backend APIs directly.
 
-`extension/` contains a Manifest V3 browser extension that:
-- Opens current tab URL in OpenGroundNews Reader
-- Opens search for current URL
-- Supports configurable base app URL in extension options
+## 12. Operational Interfaces
 
-It is standalone and communicates via opening app URLs, not direct privileged backend access.
+- Admin page (`/admin`) reads dashboard stats from store/DB
+- Admin ingest trigger calls `/api/ingest/groundnews` with API key + admin session
+- `IngestionRun` rows provide run history and quick diagnostics
+
+For runbooks and scheduler guidance, see `OPERATIONS.md`.

@@ -1,124 +1,155 @@
 # Browser Use Rotation Strategies
 
-OpenGroundNews supports profile/proxy rotation directly in `scripts/lib/browser_use_cdp.mjs`.
+OpenGroundNews supports built-in Browser Use profile/proxy rotation in `scripts/lib/browser_use_cdp.mjs`.
 
-This is an operational reliability strategy for high-volume scraping/archive workloads. It is not a CAPTCHA bypass feature.
+This is an operational reliability feature for high-volume automation. It is not a CAPTCHA bypass system.
 
 ## 1. Why Rotation Exists
 
-Without rotation, repeated requests can reuse identical browser identity and network traits, increasing challenge/block rates. Rotation spreads session characteristics over profile and proxy pools.
+Repeated scraping with identical browser identity/network settings increases block/challenge risk. Rotation spreads requests across configured identity/network pools.
 
-## 2. Environment Variables
+## 2. Rotation Inputs
 
-### Core mode and pools
+### Core controls
 - `BROWSER_USE_ROTATION_MODE`
   - `round_robin` (default)
   - `random`
   - `sticky`
+- `BROWSER_USE_ROTATION_STATE_FILE`
+  - default: `output/browser_use/rotation_state.json`
+
+### Profile pools
 - `BROWSER_USE_PROFILE_IDS` (comma-separated UUIDs)
-- `BROWSER_USE_PROFILE_ID` (single UUID fallback)
-- `BROWSER_USE_PROXY_COUNTRY_CODES` (comma-separated 2-letter codes)
-- `BROWSER_USE_PROXY_COUNTRY_CODE` (single code fallback)
-- `BROWSER_USE_ROTATION_STATE_FILE` (override default state file path)
+- `BROWSER_USE_PROFILE_ID` (single fallback)
 
-### Edition-aware proxy mapping
-- `BROWSER_USE_EDITION_PROXY_MAP`
+Invalid profile IDs are ignored if they are not UUID-shaped.
 
-Supported forms:
+### Proxy pools
+- `BROWSER_USE_PROXY_COUNTRY_CODES` (comma-separated ISO-2 codes)
+- `BROWSER_USE_PROXY_COUNTRY_CODE` (single fallback)
+- `BROWSER_USE_EDITION_PROXY_MAP` (edition-aware mapping)
+
+`BROWSER_USE_EDITION_PROXY_MAP` forms:
 
 JSON form:
+
 ```json
 {"us":["us"],"uk":["gb","ie"],"europe":["de","fr","nl"]}
 ```
 
 Compact form:
+
 ```text
 us:us;uk:gb,ie;europe:de,fr,nl
 ```
 
-Built-in defaults (used when env map is absent):
+Built-in edition defaults (used when env map is absent):
 - `international -> us,gb,ca`
 - `us -> us`
 - `uk -> gb,ie`
 - `canada -> ca,us`
 - `europe -> de,fr,nl,be`
 
-### Session creation retry behavior
-- `BROWSER_USE_CREATE_RETRIES` (default 4)
-- `BROWSER_USE_VERBOSE_RETRIES=1` (enable retry logs)
-- `BROWSER_USE_TIMEOUT_MINUTES` (session timeout hint sent to Browser Use API)
+## 3. Candidate Resolution Order
 
-## 3. Selection Modes
+### Profile candidates
+1. Context payload `profileIds`
+2. `BROWSER_USE_PROFILE_IDS`
+3. `BROWSER_USE_PROFILE_ID` (fallback)
+
+### Proxy candidates
+1. Context payload `proxyCountryCode` (single)
+2. Context payload `proxyCountryCodes` (list)
+3. Context payload `preferredProxyCountryCodes`
+4. Edition-derived map (`BROWSER_USE_EDITION_PROXY_MAP` + defaults)
+5. `BROWSER_USE_PROXY_COUNTRY_CODES`
+6. `BROWSER_USE_PROXY_COUNTRY_CODE` (fallback)
+
+## 4. Rotation Modes
 
 ### `round_robin`
-- Deterministic cycle across candidates
-- Persists counters to rotation state file
-- Best when you want even pool utilization
+- Deterministic cycling through pool values
+- Persists counters in rotation state file
+- Best for balanced utilization
 
 ### `random`
-- Random candidate each session
+- Random value each selection
 - No counter persistence
-- Useful for reducing predictable patterns quickly
+- Best for quick anti-pattern dispersion
 
 ### `sticky`
-- Deterministic selection based on rotation key
-- Same key tends to get same profile/proxy pairing
-- Useful for host- or route-stable behavior
+- Deterministic hash selection by rotation key
+- Same key tends to map to same profile/proxy
+- Best for route/host affinity
 
-## 4. Rotation Keys Used In This Repo
+## 5. Rotation Keys Used by Scripts
 
-- `groundnews_scrape_cdp.mjs`: route/edition-aware key patterns
-- `archive_extract_cdp.mjs`: `archive-extract:<source-host>`
-- `archive_verify_cdp.mjs`: `archive-verify-batch`
+- `groundnews_scrape_cdp.mjs`
+  - route/edition/session scoped keys
+- `sync_groundnews_pipeline.mjs`
+  - worker/session scoped enrichment keys
+- `archive_extract_cdp.mjs`
+  - archive host/URL-scoped keys
+- `archive_verify_cdp.mjs`
+  - batch verification scoped keys
 
-## 5. Candidate Resolution Order
+## 6. Session Creation Retry Strategy
 
-Proxy candidates are assembled from:
-1. Explicit context payload (`proxyCountryCode`/`proxyCountryCodes`)
-2. Preferred context list
-3. Edition-derived map (`BROWSER_USE_EDITION_PROXY_MAP` + defaults)
-4. Env pool (`BROWSER_USE_PROXY_COUNTRY_CODES`)
-5. Single env fallback (`BROWSER_USE_PROXY_COUNTRY_CODE`)
+`createBrowserSession` plans and retries payload variants when session creation fails.
 
-Profile candidates are assembled from:
-1. Explicit context payload (`profileIds`)
-2. Env pool (`BROWSER_USE_PROFILE_IDS`)
-3. Single env fallback (`BROWSER_USE_PROFILE_ID`)
+### Controls
+- `BROWSER_USE_CREATE_RETRIES` (default 4)
+- `BROWSER_USE_VERBOSE_RETRIES=1` (emit retry details)
+- `BROWSER_USE_REQUEST_TIMEOUT_MS` (API request timeout)
+- `BROWSER_USE_TIMEOUT_MINUTES` (session timeout hint sent to Browser Use API)
 
-Invalid profile IDs are ignored unless they match UUID format.
+### Behavior
+- 401/403 failures do not retry
+- Retry path can adjust profile/proxy combinations (`matrix`, `proxy-disabled`, `profile-disabled`, `bare-minimum`)
+- Returned session metadata includes chosen rotation strategy per attempt
 
-## 6. Practical Presets
+## 7. Practical Presets
 
-### Low-complexity stable identity
+### Minimal stable identity
+
 ```bash
 export BROWSER_USE_ROTATION_MODE="sticky"
 export BROWSER_USE_PROFILE_ID="<uuid>"
 export BROWSER_USE_PROXY_COUNTRY_CODE="US"
 ```
 
-### Balanced multi-region round robin
+### Balanced multi-profile multi-region
+
 ```bash
 export BROWSER_USE_ROTATION_MODE="round_robin"
-export BROWSER_USE_PROXY_COUNTRY_CODES="US,CA,GB,DE"
 export BROWSER_USE_PROFILE_IDS="<uuid1>,<uuid2>,<uuid3>"
+export BROWSER_USE_PROXY_COUNTRY_CODES="US,CA,GB,DE"
 ```
 
 ### Edition-aware routing
+
 ```bash
 export BROWSER_USE_ROTATION_MODE="round_robin"
 export BROWSER_USE_EDITION_PROXY_MAP='{"us":["us"],"uk":["gb"],"canada":["ca"],"europe":["de","fr"]}'
 ```
 
-## 7. Verification And Observability
+## 8. Observability and Verification
 
-Most script outputs include rotation metadata fields such as:
-- `sessionRotation`
-- `sessionPayload`
+Look for rotation metadata in script outputs:
+- `rotation.mode`
+- `rotation.rotationKey`
+- selected profile/proxy values
+- attempt index and strategy
+- state file path
 
-Use these fields to verify selected profile/proxy and retry strategy per run.
+When debugging high block/challenge rates:
+1. Verify active pool sizes are > 1
+2. Enable `BROWSER_USE_VERBOSE_RETRIES=1`
+3. Check for stale active sessions and prune via `npm run browseruse:stop-active-browsers`
+4. Lower concurrency before increasing retries
 
-## 8. Guardrails
+## 9. Guardrails
 
-- Rotation reduces repeated-pattern risk but cannot guarantee challenge-free sessions.
-- Keep archive fallback extraction enabled for user-facing reliability.
-- Use moderate session concurrency and retries to avoid quota/churn spikes.
+- Rotation reduces repeated-pattern risk; it does not guarantee challenge-free sessions
+- Keep archive fallback extraction enabled for reader reliability
+- Avoid aggressive concurrency spikes that trigger quota/churn collapse
