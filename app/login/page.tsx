@@ -13,11 +13,11 @@ export default function LoginPage() {
           <ul className="auth-benefits">
             <li>Bias ratings and 7-category outlet system</li>
             <li>Blindspot stories that one side barely sees</li>
-            <li>Local + Weather context for your city</li>
+            <li>Weather context for your city</li>
             <li>Saved stories, citations, and custom feeds</li>
           </ul>
           <p className="story-meta u-m0">
-            New here? <a href="/get-started">Get started</a> to pick topics, sources, and location.
+            New here? Create an account to sync your feed preferences.
           </p>
         </aside>
       </div>

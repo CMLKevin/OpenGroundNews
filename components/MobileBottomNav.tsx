@@ -51,12 +51,6 @@ export function MobileBottomNav() {
         icon: <Icon d="M12 5c-7 0-10 7-10 7s3 7 10 7 10-7 10-7-3-7-10-7zm0 12a5 5 0 1 1 5-5 5 5 0 0 1-5 5zm0-8a3 3 0 1 0 3 3 3 3 0 0 0-3-3z" />,
         match: (p) => p.startsWith("/blindspot"),
       },
-      {
-        href: `/local${editionSuffix}`,
-        label: "Local",
-        icon: <Icon d="M12 2a7 7 0 0 0-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 14.5 9 2.5 2.5 0 0 1 12 11.5z" />,
-        match: (p) => p.startsWith("/local"),
-      },
     ],
     [editionSuffix],
   );

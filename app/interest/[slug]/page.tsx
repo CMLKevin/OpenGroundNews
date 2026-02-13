@@ -86,9 +86,6 @@ export default async function InterestPage({ params, searchParams }: Props) {
             This topic hub is not populated yet for your current edition. Try switching editions or run ingestion again.
           </p>
           <div className="chip-row">
-            <Link className="btn" href="/get-started">
-              Get started
-            </Link>
             <Link className="btn" href={`/search?q=${encodeURIComponent(topicLabel)}`}>
               Search
             </Link>
@@ -221,19 +218,6 @@ export default async function InterestPage({ params, searchParams }: Props) {
   )
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .slice(0, 12);
-  const localPublishers = Array.from(
-    sourceCards
-      .filter((source) => source.locality === "local")
-      .reduce((acc, source) => {
-        const key = outletSlug(source.outlet);
-        acc.set(key, { slug: key, outlet: source.outlet, count: (acc.get(key)?.count || 0) + 1 });
-        return acc;
-      }, new Map<string, { slug: string; outlet: string; count: number }>())
-      .values(),
-  )
-    .sort((a, b) => b.count - a.count || a.outlet.localeCompare(b.outlet))
-    .slice(0, 8);
-
   const hrefFor = (next: Record<string, string | undefined>) => {
     const params = new URLSearchParams();
     if (edition?.trim()) params.set("edition", edition.trim());
@@ -457,30 +441,6 @@ export default async function InterestPage({ params, searchParams }: Props) {
             ) : (
               <p className="story-meta u-m0">
                 Ownership metadata unavailable for this topic sample.
-              </p>
-            )}
-          </section>
-
-          <section className="panel">
-            <div className="section-title u-pt-0">
-              <h2 className="u-m0">Local News Publishers</h2>
-              <span className="story-meta">Nearby coverage</span>
-            </div>
-            {localPublishers.length > 0 ? (
-              <ul className="topic-list">
-                {localPublishers.map((publisher) => (
-                  <li key={publisher.slug} className="topic-item">
-                    <span className="topic-avatar">{initials(publisher.outlet)}</span>
-                    <Link href={`/source/${publisher.slug}`} className="u-no-underline">
-                      {publisher.outlet}
-                    </Link>
-                    <span className="story-meta">{publisher.count}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="story-meta u-m0">
-                No local publisher metadata for this topic yet.
               </p>
             )}
           </section>

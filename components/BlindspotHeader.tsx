@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 export function BlindspotHeader({ subtitle, scopeLabel }: { subtitle?: string; scopeLabel?: string }) {
   return (
     <div className="blindspot-brand">
@@ -37,9 +35,6 @@ export function BlindspotHeader({ subtitle, scopeLabel }: { subtitle?: string; s
         <div className="blindspot-brand-sub">{subtitle || "Stories that one side barely sees."}</div>
         {scopeLabel ? <div className="blindspot-scope">{scopeLabel}</div> : null}
       </div>
-      <Link className="btn" href="/get-started">
-        Get Started
-      </Link>
     </div>
   );
 }

@@ -49,23 +49,10 @@ export async function UtilityBar() {
           ) : null}
         </div>
         <div className="utility-right">
-          <Link href="/about/methodology">Methodology</Link>
-          <span className="utility-dot">•</span>
-          <Link href="/get-started">Get started</Link>
-          <span className="utility-dot">•</span>
-          <Link href="/extension">Extension</Link>
-          <span className="utility-dot">•</span>
-          <Link href="/notifications" className="utility-icon-label">
-            <UtilityIcon path="M12 22a2.3 2.3 0 0 0 2.3-2.3H9.7A2.3 2.3 0 0 0 12 22zm7-6.3v-5c0-3.1-1.8-5.7-4.8-6.4V3.5a2.2 2.2 0 1 0-4.4 0v.8C6.8 5 5 7.6 5 10.7v5L3 17.7v1h18v-1l-2-2z" />
-            Notifications
-          </Link>
           {user ? (
-            <>
-              <span className="utility-dot">•</span>
-              <Link href="/my" className="utility-avatar-link" aria-label="Open your profile">
-                <span className="utility-avatar-circle" aria-hidden="true">{initials(user.email)}</span>
-              </Link>
-            </>
+            <Link href="/my" className="utility-avatar-link" aria-label="Open your profile">
+              <span className="utility-avatar-circle" aria-hidden="true">{initials(user.email)}</span>
+            </Link>
           ) : null}
         </div>
       </div>

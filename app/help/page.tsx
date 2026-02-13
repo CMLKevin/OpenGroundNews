@@ -23,8 +23,7 @@ export default function HelpPage() {
         </div>
 
         <div className="chip-row">
-          <Link className="btn" href="/get-started">Get Started</Link>
-          <Link className="btn" href="/about/methodology">Methodology</Link>
+          <Link className="btn" href="/search">Search stories</Link>
         </div>
       </section>
     </main>

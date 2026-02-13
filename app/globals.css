@@ -380,22 +380,6 @@ a:hover {
   top: -1px;
 }
 
-.navlinks a.btn-subscribe {
-  border-radius: 4px;
-  border: 1px solid color-mix(in srgb, var(--subscribe-accent) 68%, black 0%);
-  background: var(--subscribe-accent);
-  color: #eeefe9;
-  padding: 0.35rem 0.9rem;
-  font-weight: 800;
-  box-shadow: none;
-  text-decoration: none;
-}
-
-.navlinks a.btn-subscribe:hover {
-  background: color-mix(in srgb, var(--subscribe-accent) 88%, black 12%);
-  text-decoration: none;
-}
-
 .searchbar {
   display: flex;
   gap: 0.4rem;
@@ -603,68 +587,6 @@ a:hover {
   place-items: center;
   font-weight: 800;
   font-size: 0.8rem;
-}
-
-.nav-hamburger {
-  display: inline-flex;
-}
-
-.nav-drawer-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 120;
-  background: rgba(0, 0, 0, 0.55);
-  display: grid;
-  justify-items: start;
-}
-
-.nav-drawer {
-  width: min(420px, calc(100% - 2rem));
-  height: 100%;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--line);
-  padding: 1rem;
-  display: grid;
-  gap: 0.9rem;
-  overflow: auto;
-}
-
-.nav-drawer-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.7rem;
-}
-
-.nav-drawer-section {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.nav-drawer-title {
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.09em;
-  color: var(--ink-muted);
-}
-
-.nav-drawer-links {
-  display: grid;
-  gap: 0.45rem;
-}
-
-.nav-drawer-links a {
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 0.55rem 0.65rem;
-  background: rgba(255, 255, 255, 0.6);
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.nav-drawer-links a:hover {
-  border-color: var(--line-strong);
-  background: rgba(255, 255, 255, 0.75);
 }
 
 .hero {
@@ -3513,10 +3435,6 @@ a:hover {
     display: none;
   }
 
-  .nav-hamburger {
-    display: inline-flex;
-  }
-
   .kpi-strip {
     grid-template-columns: 1fr;
   }
@@ -3600,8 +3518,7 @@ html[data-theme="dark"] .topbar-utility {
   border-bottom-color: rgba(166, 166, 161, 0.55);
 }
 
-html[data-theme="dark"] .suggest-item,
-html[data-theme="dark"] .nav-drawer-links a {
+html[data-theme="dark"] .suggest-item {
   background: rgba(35, 41, 47, 0.86);
   border-color: #3b454e;
 }
@@ -3740,8 +3657,7 @@ html[data-theme="dark"] .site-footer::after {
     border-bottom-color: rgba(166, 166, 161, 0.55);
   }
 
-  html[data-theme="auto"] .suggest-item,
-  html[data-theme="auto"] .nav-drawer-links a {
+  html[data-theme="auto"] .suggest-item {
     background: rgba(35, 41, 47, 0.86);
     border-color: #3b454e;
   }

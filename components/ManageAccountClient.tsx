@@ -206,7 +206,7 @@ export function ManageAccountClient() {
         </div>
 
         <label className="story-meta u-grid u-grid-gap-02">
-          Location (for Local + Weather)
+          Location (for Weather)
           <input
             className="input-control"
             value={location}
@@ -247,15 +247,6 @@ export function ManageAccountClient() {
           </div>
         ) : null}
 
-        <div className="chip-row">
-          <Link className="btn" href="/local">
-            Go to Local
-          </Link>
-          <Link className="btn" href="/notifications">
-            Notifications
-          </Link>
-        </div>
-
         {status ? (
           <p className="note u-m0">
             {status}
@@ -265,4 +256,3 @@ export function ManageAccountClient() {
     </div>
   );
 }
-

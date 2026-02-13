@@ -33,7 +33,7 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
   const [followedTopics, setFollowedTopics] = useState<string[]>([]);
   const [followedOutlets, setFollowedOutlets] = useState<string[]>([]);
 
-  const [view, setView] = useState<"all" | "trending" | "blindspot" | "local">("all");
+  const [view, setView] = useState<"all" | "trending" | "blindspot">("all");
   const [bias, setBias] = useState<"all" | "left" | "center" | "right">("all");
   const [q, setQ] = useState("");
 
@@ -76,7 +76,6 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
     const base = initialStories.filter((s) => {
       if (view === "trending" && !s.trending) return false;
       if (view === "blindspot" && !s.blindspot) return false;
-      if (view === "local" && !s.local) return false;
       if (bias === "left") return s.bias.left > s.bias.center && s.bias.left > s.bias.right;
       if (bias === "center") return s.bias.center >= s.bias.left && s.bias.center >= s.bias.right;
       if (bias === "right") return s.bias.right > s.bias.center && s.bias.right > s.bias.left;
@@ -125,7 +124,6 @@ export function MyFeedClient({ initialStories }: { initialStories: Story[] }) {
               <option value="all">All</option>
               <option value="trending">Trending</option>
               <option value="blindspot">Blindspot</option>
-              <option value="local">Local</option>
             </select>
           </label>
           <label className="story-meta u-grid u-grid-gap-02">

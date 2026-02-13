@@ -1,5 +1,3 @@
-import Link from "next/link";
-
 export const dynamic = "force-dynamic";
 
 const posts = [
@@ -14,7 +12,6 @@ export default function BlogPage() {
       <section className="panel u-grid u-grid-gap-07">
         <div className="section-title u-pt-0">
           <h1 className="u-m0 u-font-serif">Blog</h1>
-          <Link className="btn" href="/about/methodology">Methodology</Link>
         </div>
         <div className="u-grid u-grid-gap-06">
           {posts.map((post) => (

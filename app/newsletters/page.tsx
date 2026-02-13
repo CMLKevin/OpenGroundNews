@@ -11,7 +11,7 @@ export default function NewslettersPage() {
           <span className="story-meta">Bias-aware briefings</span>
         </div>
         <p className="u-m0 u-text-soft">
-          Subscribe to editorial briefings built from your perspective preferences and coverage blindspots.
+          Sign up for editorial briefings built from your perspective preferences and coverage blindspots.
         </p>
       </section>
 
@@ -29,13 +29,6 @@ export default function NewslettersPage() {
             <span className="story-meta">Twice weekly</span>
           </div>
           <NewsletterSignup list="blindspot" />
-        </section>
-        <section className="panel u-grid u-grid-gap-06">
-          <div className="section-title u-pt-0">
-            <h2 className="u-m0">Local Watch</h2>
-            <span className="story-meta">Weekly</span>
-          </div>
-          <NewsletterSignup list="local" />
         </section>
       </section>
     </main>

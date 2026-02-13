@@ -57,7 +57,6 @@ export function TopNavClient() {
   const [theme, setTheme] = useState<"dark" | "light" | "auto">("light");
   const [user, setUser] = useState<null | { id: string; email: string; role: "user" | "admin" }>(null);
 
-  const [menuOpen, setMenuOpen] = useState(false);
   const [q, setQ] = useState("");
   const [suggest, setSuggest] = useState<SuggestResponse | null>(null);
   const [suggestOpen, setSuggestOpen] = useState(false);
@@ -127,7 +126,6 @@ export function TopNavClient() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key === "Escape") {
-        setMenuOpen(false);
         setSuggestOpen(false);
       }
     }
@@ -221,9 +219,6 @@ export function TopNavClient() {
       <Link className={pathname.startsWith("/my-news-bias") ? "is-active" : ""} href={hrefWithEdition("/my-news-bias")}>
         My Bias
       </Link>
-      <Link className={pathname.startsWith("/local") ? "is-active" : ""} href={hrefWithEdition("/local")}>
-        Local
-      </Link>
       <Link className={pathname.startsWith("/blindspot") ? "is-active" : ""} href={hrefWithEdition("/blindspot")}>
         Blindspot
       </Link>
@@ -244,9 +239,6 @@ export function TopNavClient() {
       <div className="nav-center">
         <nav className="navlinks" aria-label="Primary">
           {navLinks}
-          <Link className="btn btn-subscribe nav-desktop-only" href={hrefWithEdition("/subscribe")}>
-            Subscribe
-          </Link>
         </nav>
 
         {showHeaderSearch ? (
@@ -358,20 +350,6 @@ export function TopNavClient() {
       </div>
 
       <div className="nav-actions">
-        <button
-          className="btn nav-hamburger"
-          type="button"
-          aria-label="Open menu"
-          onClick={() => setMenuOpen(true)}
-        >
-          <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <path
-              fill="currentColor"
-              d="M4 6h16v2H4V6zm0 5h16v2H4v-2zm0 5h16v2H4v-2z"
-            />
-          </svg>
-        </button>
-
         <label className="story-meta nav-desktop-only u-grid u-grid-gap-02">
           <span className="nav-edition-label">
             <svg width="13" height="13" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -440,125 +418,6 @@ export function TopNavClient() {
           </Link>
         )}
       </div>
-
-      {menuOpen ? (
-        <div
-          className="nav-drawer-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Navigation menu"
-          onMouseDown={(e) => {
-            if (e.currentTarget === e.target) setMenuOpen(false);
-          }}
-        >
-          <aside className="nav-drawer">
-            <div className="nav-drawer-head">
-              <strong>OpenGroundNews</strong>
-              <button className="btn" type="button" onClick={() => setMenuOpen(false)} aria-label="Close menu">
-                Close
-              </button>
-            </div>
-
-            <div className="nav-drawer-section">
-              <div className="nav-drawer-title">Navigation</div>
-              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
-                {navLinks}
-              </div>
-            </div>
-
-            <div className="nav-drawer-section">
-              <div className="nav-drawer-title">Topic Categories</div>
-              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
-                <Link href="/interest/politics">International Politics</Link>
-                <Link href="/interest/business">Finance</Link>
-                <Link href="/interest/science">Science</Link>
-                <Link href="/interest/technology">Technology</Link>
-                <Link href="/interest/health">Health</Link>
-                <Link href="/interest/sports">Sports</Link>
-              </div>
-            </div>
-
-            <div className="nav-drawer-section">
-              <div className="nav-drawer-title">More</div>
-              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
-                <Link href="/rating-system">Rating system</Link>
-                <Link href="/about/methodology">Methodology</Link>
-                <Link href="/newsletters">Newsletters</Link>
-                <Link href="/compare">Compare</Link>
-                <Link href="/calendar">Calendar</Link>
-                <Link href="/maps">Maps</Link>
-                <Link href="/extension">Extension</Link>
-                <Link href="/notifications">Notifications</Link>
-                <Link href="/subscribe">Subscribe</Link>
-              </div>
-            </div>
-
-            <div className="nav-drawer-section">
-              <div className="nav-drawer-title">Search</div>
-              <Link className="btn" href={searchActionUrl} onClick={() => setMenuOpen(false)}>
-                Search for “{q.trim() || "..." }”
-              </Link>
-            </div>
-
-            <div className="nav-drawer-section">
-              <div className="nav-drawer-title">Preferences</div>
-              <label className="story-meta u-grid u-grid-gap-02">
-                <span className="nav-edition-label">{edition}: Edition</span>
-                <select className="select-control" value={edition} onChange={(e) => updateEdition(e.target.value)}>
-                  {EDITIONS.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="theme-toggle" aria-label="Theme selector">
-                <span className="story-meta">Theme:</span>
-                <button type="button" className={`theme-link ${theme === "light" ? "is-active" : ""}`} onClick={() => applyTheme("light")}>
-                  Light
-                </button>
-                <span className="theme-dot" aria-hidden="true">|</span>
-                <button type="button" className={`theme-link ${theme === "dark" ? "is-active" : ""}`} onClick={() => applyTheme("dark")}>
-                  Dark
-                </button>
-                <span className="theme-dot" aria-hidden="true">|</span>
-                <button type="button" className={`theme-link ${theme === "auto" ? "is-active" : ""}`} onClick={() => applyTheme("auto")}>
-                  Auto
-                </button>
-              </div>
-            </div>
-
-            <div className="nav-drawer-section">
-              <div className="nav-drawer-title">Account</div>
-              {user ? (
-                <>
-                  <div className="story-meta">Signed in as {user.email}</div>
-                  <button className="btn" type="button" onClick={() => { setMenuOpen(false); logout(); }}>
-                    Sign out
-                  </button>
-                </>
-              ) : (
-                <Link
-                  className="btn"
-                  href={`/login?next=${encodeURIComponent(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : ""))}`}
-                  onClick={() => setMenuOpen(false)}
-                >
-                  My Account
-                </Link>
-              )}
-            </div>
-
-            <div className="nav-drawer-section">
-              <div className="nav-drawer-title">Contact Us</div>
-              <div className="nav-drawer-links" onClick={() => setMenuOpen(false)}>
-                <Link href="/help">Help Center</Link>
-                <Link href="/about/methodology">About OpenGroundNews</Link>
-                <a href={`mailto:${process.env.NEXT_PUBLIC_OGN_SUPPORT_EMAIL || "support@opengroundnews.com"}`}>Email support</a>
-              </div>
-            </div>
-          </aside>
-        </div>
-      ) : null}
     </div>
   );
 }

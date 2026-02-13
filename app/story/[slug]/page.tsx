@@ -128,7 +128,6 @@ export default async function StoryPage({ params, searchParams }: Props) {
             {repostMax > 0 ? <span className="story-stat-pill">Reposted by {repostMax} other sources</span> : null}
             {story.blindspot ? <span className="story-stat-pill">Blindspot candidate</span> : null}
             {story.trending ? <span className="story-stat-pill">Trending</span> : null}
-            {story.local ? <span className="story-stat-pill">Local perspective</span> : null}
           </div>
           <LinkedSummary summary={story.summary} tags={story.tags} />
           <SummaryFeedbackLink storySlug={story.slug} url={shareUrl} />

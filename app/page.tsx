@@ -2,7 +2,6 @@ import Link from "next/link";
 import { DailyBriefingList } from "@/components/DailyBriefingList";
 import { HeroLeadStoryCard } from "@/components/HeroLeadStoryCard";
 import { MyNewsBiasWidget } from "@/components/MyNewsBiasWidget";
-import { DailyLocalNewsWidget } from "@/components/DailyLocalNewsWidget";
 import { sourceCountLabel } from "@/lib/format";
 import { listStories } from "@/lib/store";
 import { getCurrentUser } from "@/lib/authStore";
@@ -57,7 +56,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
         });
   const viewFiltered = filtered.filter((story) => {
     if (normalizedView === "blindspot") return story.blindspot;
-    if (normalizedView === "local") return story.local;
     if (normalizedView === "trending") return story.trending;
     return true;
   });
@@ -161,9 +159,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
       <section className="panel home-promo-banner u-mt-1">
         <div className="section-title u-pt-0">
           <h2 className="u-m0">See every side of every news story</h2>
-          <Link className="btn" href="/get-started">
-            Get Started
-          </Link>
         </div>
       </section>
 
@@ -197,7 +192,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
 
         <aside className="home-hero-right">
           <MyNewsBiasWidget />
-          <DailyLocalNewsWidget />
           <BlindspotWidget stories={blindspotStories} />
           <section className="panel">
             <div className="section-title u-pt-0">
@@ -261,9 +255,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
               <h2>Explore</h2>
             </div>
             <div className="chip-row">
-              <Link className="pill" href="/local">
-                Local
-              </Link>
               <Link className="pill" href="/my">
                 For You
               </Link>
@@ -364,7 +355,6 @@ export default async function HomePage({ searchParams }: HomeProps) {
                   <option value="all">All</option>
                   <option value="trending">Trending</option>
                   <option value="blindspot">Blindspot</option>
-                  <option value="local">Local</option>
                 </select>
               </label>
               <label className="story-meta u-grid u-grid-gap-02">

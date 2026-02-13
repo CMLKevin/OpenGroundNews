@@ -9,7 +9,6 @@ export function StoryCard({ story }: { story: Story }) {
   const isSingleSource = Math.max(story.coverage?.totalSources ?? 0, story.sourceCount ?? 0, story.sources?.length ?? 0) <= 1;
   const chips = [
     story.blindspot ? "Blindspot" : null,
-    story.local ? "Local" : null,
     story.trending ? "Trending" : null,
     stale ? "Stale" : null,
   ].filter(Boolean) as string[];

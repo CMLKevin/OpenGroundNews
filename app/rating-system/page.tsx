@@ -47,7 +47,7 @@ export default async function RatingSystemPage() {
       <section className="panel u-grid u-grid-gap-075">
         <div className="section-title u-pt-0">
           <h1 className="u-m0 u-font-serif">Rating System</h1>
-          <span className="story-meta">Methodology</span>
+          <span className="story-meta">Overview</span>
         </div>
         <p className="u-m0 u-maxw-75ch">
           OpenGroundNews mirrors the Ground News-style media bias spectrum and shows you how story coverage changes
