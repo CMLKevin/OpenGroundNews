@@ -51,6 +51,15 @@ jobs:
           cat /tmp/opengroundnews.log || true
           exit 1
 
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
+
+      - name: Install Playwright Chromium
+        run: npx playwright-core install --with-deps chromium
+
       - name: Parity Gate (Smoke + Visual Diff)
         run: npm run parity:gate -- --base-url http://127.0.0.1:3000
 

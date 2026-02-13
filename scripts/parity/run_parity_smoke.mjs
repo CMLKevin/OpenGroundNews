@@ -2,6 +2,7 @@
 /* eslint-disable no-console */
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { chromium } from "playwright-core";
 
 function parseArgs(argv) {
@@ -49,13 +50,62 @@ async function assertTruthy(name, value) {
   if (!value) throw new Error(`assertion failed: ${name}`);
 }
 
+function shouldAutoInstallPlaywright() {
+  const raw = String(process.env.PARITY_AUTO_INSTALL_PLAYWRIGHT || "").trim().toLowerCase();
+  if (raw === "1" || raw === "true" || raw === "yes") return true;
+  if (raw === "0" || raw === "false" || raw === "no") return false;
+  return String(process.env.CI || "").trim().toLowerCase() === "true";
+}
+
+function isMissingBrowserError(err) {
+  const message = err instanceof Error ? err.message : String(err);
+  return /executable doesn't exist|download new browsers|browsertype\.launch/i.test(message);
+}
+
+function runNodeCommand(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: "inherit",
+    });
+    child.on("error", reject);
+    child.on("exit", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`command failed with exit code ${code}: node ${args.join(" ")}`));
+    });
+  });
+}
+
+async function installChromium() {
+  const cliPath = path.resolve(process.cwd(), "node_modules", "playwright-core", "cli.js");
+  const args = [cliPath, "install"];
+  const isCiLinux = process.platform === "linux" && String(process.env.CI || "").trim().toLowerCase() === "true";
+  if (isCiLinux) args.push("--with-deps");
+  args.push("chromium");
+  console.log(`playwright: installing Chromium (${isCiLinux ? "with system deps" : "browser only"})`);
+  await runNodeCommand(args);
+}
+
+async function launchChromium(headed) {
+  try {
+    return await chromium.launch({ headless: !headed });
+  } catch (err) {
+    const canRecover = shouldAutoInstallPlaywright() && isMissingBrowserError(err);
+    if (!canRecover) throw err;
+    console.warn("playwright: Chromium executable missing, attempting one-time install and retry");
+    await installChromium();
+    return chromium.launch({ headless: !headed });
+  }
+}
+
 async function run() {
   const opts = parseArgs(process.argv.slice(2));
   const ts = new Date().toISOString().replace(/[:.]/g, "-");
   const runDir = path.resolve(process.cwd(), opts.outDir, ts);
   const latestPath = path.resolve(process.cwd(), opts.outDir, "latest.json");
 
-  const browser = await chromium.launch({ headless: !opts.headed });
+  const browser = await launchChromium(opts.headed);
   try {
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
