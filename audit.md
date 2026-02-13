@@ -1,550 +1,552 @@
-# OpenGroundNews → Ground News Parity Audit
+# OpenGroundNews Parity Audit
 
-> **Date:** 2026-02-13
-> **Methodology:** Automated multi-agent exploration of ground.news (baseline) + Chrome-based audit of OpenGroundNews (localhost:3000). 12 agents total: 6 exploring Ground News design/features, 6 auditing OGN pages and code.
+> Comprehensive audit comparing OpenGroundNews (OGN) against Ground News (GN).
+> Generated: 2026-02-13
+> Methodology: Automated browser exploration of both sites via Chrome DevTools Protocol with screenshot-driven visual comparison and accessibility tree analysis. 12 agents total: 6 exploring GN baseline, 6 auditing OGN pages.
 
 ---
 
 ## Table of Contents
 
-1. [Critical Issues](#1-critical-issues)
-2. [Visual & UI Parity Gaps](#2-visual--ui-parity-gaps)
-3. [Feature Gaps](#3-feature-gaps)
-4. [Data Ingestion Pipeline](#4-data-ingestion-pipeline)
-5. [Page-by-Page Breakdown](#5-page-by-page-breakdown)
-6. [Architecture & Technical Debt](#6-architecture--technical-debt)
-7. [Recommended Fix Priorities](#7-recommended-fix-priorities)
+1. [Critical Bugs (P0)](#1-critical-bugs-p0)
+2. [Homepage Parity](#2-homepage-parity)
+3. [Story Detail Page Parity](#3-story-detail-page-parity)
+4. [Blindspot Page Parity](#4-blindspot-page-parity)
+5. [Topic/Interest Page Parity](#5-topicinterest-page-parity)
+6. [My Feed & User Pages Parity](#6-my-feed--user-pages-parity)
+7. [Local Page Parity](#7-local-page-parity)
+8. [Search Parity](#8-search-parity)
+9. [Navigation & Chrome Parity](#9-navigation--chrome-parity)
+10. [Footer Parity](#10-footer-parity)
+11. [CSS & Visual Design System](#11-css--visual-design-system)
+12. [Dark Mode](#12-dark-mode)
+13. [Responsive / Mobile](#13-responsive--mobile)
+14. [Missing Pages & Features](#14-missing-pages--features)
+15. [Priority Summary](#15-priority-summary)
+16. [OGN Strengths Beyond GN](#16-ogn-strengths-beyond-gn)
 
 ---
 
-## 1. Critical Issues
+## 1. Critical Bugs (P0)
 
-These are show-stopping bugs or security vulnerabilities that need immediate attention.
+Issues that are functionally broken and must be fixed immediately.
 
-### 1.1 All Images Show SVG Fallback Placeholders
+### 1.1 All Homepage Images Are SVG Placeholders
 
-**Severity:** CRITICAL
-**Location:** Site-wide (every page with story cards)
+- **Location**: Homepage `/`, all `StoryCard` / `StoryListItem` components
+- **Problem**: Every story image on the homepage renders as `story-fallback-thumb.svg`. Not a single real news image loads. The `StoryImage.tsx` component filters out Ground News URLs and the image proxy appears to fail for all external URLs, or stories lack `imageUrl` data in the database.
+- **Impact**: The homepage looks like an unfinished wireframe. This is the single biggest visual quality gap.
+- **GN Baseline**: Every story card shows a real photographic thumbnail.
 
-Every story card across the entire site displays a generic SVG fallback placeholder instead of actual news article images. This affects 51+ images on the homepage alone and makes the entire site look broken/incomplete.
+### 1.2 Source Card Bias/Factuality Badges Are Invisible
 
-**Root Cause:** The `<img>` tags reference image URLs that fail to load. The CSS fallback SVG kicks in universally. Likely causes:
-- Image URLs from Ground News are proxied/CDN URLs that reject cross-origin requests
-- The ingestion pipeline captures image URLs but doesn't download/cache them locally
-- No image proxy or CDN rewrite layer exists in the OGN stack
+- **Location**: Story detail page `/story/[slug]`, source article cards
+- **File**: `app/globals.css` (`.bias-tone-unknown` styles)
+- **Problem**: `.bias-tone-unknown` sets text color `rgb(238, 239, 233)` on background `rgb(242, 246, 232)`. The contrast ratio is ~1.02:1 -- text is invisible. This affects ALL source cards where bias is classified as "unknown", which is the majority.
+- **Impact**: Source cards appear to have empty badge areas. Users cannot read bias or factuality information.
 
-**Fix:**
-1. Add an image proxy route (`/api/img?url=...`) that fetches and caches remote images server-side
-2. Alternatively, download images during ingestion and store them locally or in S3/R2
-3. Implement `next/image` with a custom loader that routes through the proxy
-4. Add proper fallback behavior that shows a styled placeholder with the outlet logo rather than a raw SVG
+### 1.3 Bias Distribution Panel Text Invisible in Light Mode
 
----
+- **Location**: Story detail page sidebar, "Bias Distribution" section
+- **File**: `app/globals.css`, line ~1062
+- **Problem**: `.bias-dist-panel` hardcodes `color: #f3f5f6` (near-white) and `background: #2f3135` (dark). But `.panel` overrides the background to `var(--bg-panel)` which in light mode is `#f8faf5` (near-white). Result: near-white text on near-white background.
+- **Impact**: The bias distribution heading and subtitle are invisible in light mode.
 
-### 1.2 Remote Code Execution via `Function()` Constructor
+### 1.4 Blindspot Badge Shows Wrong Percentage (Inverted Semantics)
 
-**Severity:** CRITICAL (Security)
-**Location:** `scripts/sync_groundnews_pipeline.mjs:1164`
+- **Location**: `/blindspot`, `BlindspotStoryCard.tsx`
+- **File**: `components/BlindspotStoryCard.tsx`, lines 9-12
+- **Problem**: GN shows the MISSING side's percentage as the badge (e.g., "0% Right" for a story the Right missed). OGN shows the DOMINANT side's percentage (e.g., "90% Left" instead of "0% Right"). This completely inverts the meaning of the Blindspot feature.
+- **Impact**: The core value proposition of the Blindspot feature is semantically wrong.
 
-The pipeline uses `new Function()` to evaluate JavaScript extracted from scraped HTML:
+### 1.5 Blindspot Bias Bars Have No Fill Color
 
-```js
-const fn = new Function(scriptContent);
-fn();
-```
+- **Location**: `/blindspot`, bias distribution bars on each card
+- **File**: `app/globals.css`, line ~2274
+- **Problem**: `.blindspot-row-bar .seg` only sets `display: block; height: 100%` with no `background` property. The `.seg-left`, `.seg-center`, `.seg-right` backgrounds are defined for `.bias-mini-bar` and `.bias-dist-progress` contexts but NOT for `.blindspot-row-bar`. All bars render as empty gray tracks.
+- **Impact**: Bias distribution bars are completely non-functional on blindspot cards.
 
-This evaluates arbitrary JavaScript from untrusted web content. A malicious or compromised page could execute arbitrary code on the server running the ingestion pipeline.
+### 1.6 Topic Slug Routing Bug -- Ampersand Topics Fail
 
-**Fix:**
-1. Replace `Function()` with a JSON parser or regex extraction for the specific data structures needed (likely `__NEXT_DATA__` or inline JSON)
-2. If dynamic evaluation is truly required, use `vm2` or Node's `vm` module with a sandboxed context
-3. Add input validation and sanitization before any evaluation
+- **Location**: `/interest/business-and-markets`, `/interest/health-and-medicine`, etc.
+- **File**: `lib/topics.ts`, line ~49
+- **Problem**: The alias "business & markets" slugifies to "business-&-markets" (with ampersand), not "business-and-markets". The `canonicalTopicSlug` function fails to match, treating it as a unique, empty topic. The page shows "No stories yet."
+- **Impact**: Any topic with an ampersand in its name (Business & Markets, Health & Medicine, Arts & Entertainment) returns an empty page.
 
----
+### 1.7 Wrong Topic Name Due to Alias Merging
 
-### 1.3 Hero Card Dark Mode Bug
-
-**Severity:** CRITICAL (Visual)
-**Location:** `app/globals.css` — `.hero-lead` class (~line 565)
-
-The hero/lead story card has `background: #fff` hardcoded, which doesn't adapt to dark mode. In dark mode, this creates a jarring white rectangle against the dark background.
-
-**Fix:**
-```css
-.hero-lead {
-  background: var(--card-bg); /* or use a CSS custom property */
-}
-```
+- **Location**: `/interest/artificial-intelligence`
+- **File**: `lib/topics.ts`, line ~43
+- **Problem**: The slug "artificial-intelligence" is aliased to "technology" in `TOPIC_DEFS`. GN treats "Artificial Intelligence" as its own distinct topic, but OGN merges it into "Technology". The page title, heading, and browser tab all show "Technology" instead of "Artificial Intelligence".
+- **Impact**: AI-related content is incorrectly labeled. Users navigating to `/interest/artificial-intelligence` see "News about Technology".
 
 ---
 
-### 1.4 No Dedicated "My News Bias" Page
+## 2. Homepage Parity
 
-**Severity:** CRITICAL (Feature)
-**Location:** Missing — only `components/MyNewsBiasWidget.tsx` exists
+### 2.1 Missing Sections
 
-Ground News's marquee feature is the My News Bias dashboard — a full page with 10+ analysis modules:
-- Overall bias distribution (pie chart)
-- Bias over time (line chart)
-- Most-read outlets ranked by bias
-- "Blind spots" analysis (what you're missing)
-- Political leaning spectrum
-- Factuality score breakdown
-- Reading history timeline
-- Recommendations to diversify
+| # | GN Feature | Status in OGN | Severity |
+|---|-----------|---------------|----------|
+| 1 | Gold/tan promotional banner (`#D1BD91` bg, "See every side of every news story" + "Get Started" CTA) | MISSING | Medium |
+| 2 | Separate utility bar (notifications bell, user avatar, location display) | MISSING | Medium |
+| 3 | Per-topic section blocks (e.g., "Israel-Gaza News", "Politics News" carousels for followed topics) | MISSING | High |
+| 4 | Blindspot email signup box (dark bg with email input for weekly Blindspot Report) | MISSING | Medium |
+| 5 | "Similar News Topics" sidebar section (circular icons with follow buttons) | MISSING | Medium |
+| 6 | Image attribution button ("i" icon) on hero card | MISSING | Low |
+| 7 | "View Blindspot Feed" full-width CTA button | MISSING | Low |
+| 8 | Original Reporting badge in Daily Briefing ("78% of sources are Original Reporting") | MISSING | Medium |
+| 9 | Bullet summary items in Daily Briefing (e.g., additional story teasers with links) | MISSING | Medium |
+| 10 | "For You" accent mark / notification dot on nav | MISSING | Low |
 
-OGN reduces this to a compact sidebar widget showing just an L/C/R bar and read count. This is Ground News's core differentiator and its absence is a major parity gap.
+### 2.2 Visual Differences
 
-**Fix:**
-1. Create `app/my-news-bias/page.tsx` as a full dashboard page
-2. Track per-user article reads with bias metadata in the database
-3. Implement chart components (recharts or Chart.js) for:
-   - Bias distribution pie/donut chart
-   - Bias-over-time line chart
-   - Most-read outlets table
-   - Factuality breakdown
-4. Add "Diversify your reading" recommendations engine
-5. Keep the existing widget as a compact summary that links to the full page
-
----
-
-## 2. Visual & UI Parity Gaps
-
-### 2.1 Typography
-
-| Property | Ground News | OpenGroundNews | Gap |
-|----------|-------------|----------------|-----|
-| Primary font | `universalSans` (custom) | `Bricolage Grotesque` (Google) | Different typeface entirely |
-| Heading weight | 800 (extra-bold) | 700 (bold) | Thinner headings |
-| Page title size | 42px | 36.8px | ~12% smaller |
-| Body text | 16px / 1.6 line-height | 16px / 1.5 line-height | Slightly tighter |
-
-**Fix:** Update CSS custom properties to use `font-weight: 800` for headings and `font-size: 42px` for page titles. Consider sourcing a closer match to universalSans or licensing it.
-
-### 2.2 Color System
-
-Ground News uses a precise 7-bucket bias color system:
-
-| Bias | Ground News Color | Usage |
-|------|-------------------|-------|
-| Far Left | `#802727` (dark red) | Badge background |
-| Left | `#994040` | Badge background |
-| Lean Left | `#B35959` | Badge background |
-| Center | `#FFFFFF` (white) | Badge with border |
-| Lean Right | `#5980B3` | Badge background |
-| Right | `#406699` | Badge background |
-| Far Right | `#204986` (dark blue) | Badge background |
-
-OGN uses simplified red/white/blue but lacks the graduated tints. Bias badges on article cards don't use color coding at all — they're plain text.
-
-**Fix:**
-1. Add the full 7-color palette to CSS custom properties
-2. Apply colored backgrounds to bias badges on article cards
-3. Use the 3-bucket simplified system (red/white/blue) for bias bars, 7-bucket for detailed views
-
-### 2.3 Missing Visual Elements
-
-- **Subscribe/CTA button** in the top navigation bar — Ground News has a prominent green "Subscribe" button
-- **App store badges** in footer — Ground News links to iOS/Android apps
-- **Social proof counters** — Ground News shows "X sources" prominently on cards
-- **Outlet logos** — Ground News shows small circular logos next to outlet names; OGN shows text only
-- **"See the Story" links** on homepage story cards — Ground News cards have an explicit link below the headline
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Bias bar shape | Flat rectangular, 24px tall, 0px border-radius | Rounded pill, 10px tall, 999px radius, 1px border | High |
+| 2 | Bias bar labels | Inside the bar: "Left 46%" | Below the bar: "46% left" (lowercase) | Medium |
+| 3 | Hero card corners | Sharp, 0px border-radius | 18px rounded corners | Medium |
+| 4 | Topic pills strip | Light chips on cream `#EEEFE9` bg | Dark strip `#262626` with light text | Medium |
+| 5 | Subscribe button | Dark `#262626` bg, 4px radius | Green `#2d6a4f` bg, pill shape (999px radius) | High |
+| 6 | Section headings | 32px font-size | 24px font-size | Medium |
+| 7 | Column separators | Thin vertical dividers between 3 columns | No dividers | Low |
+| 8 | Card shadows | No box-shadow (flat design) | `box-shadow: rgba(24,32,38,0.04) 0px 3px 12px` | Low |
+| 9 | Default theme | Light mode | Dark mode | Medium |
+| 10 | Feed items | Entire row is clickable (no explicit button) | Has explicit "See the Story" buttons | Low |
 
 ---
 
-## 3. Feature Gaps
+## 3. Story Detail Page Parity
 
-### 3.1 Missing Pages / Routes
+### 3.1 Missing Sections
 
-| Ground News Page | OGN Equivalent | Status |
-|------------------|----------------|--------|
-| `/my-news-bias` | None | **MISSING** — Only a widget exists |
-| `/search` (global) | `/search` | Exists but limited |
-| `/newsletters` | None | **MISSING** |
-| `/about/methodology` | None | **MISSING** — Important for credibility |
-| `/compare` (source comparison) | None | **MISSING** |
-| `/calendar` (news calendar) | None | **MISSING** |
-| `/maps` (geographic view) | None | **MISSING** |
-| Terms of Service | `/legal/terms` | Placeholder content |
-| Privacy Policy | `/legal/privacy` | Placeholder content |
+| # | GN Feature | Status in OGN | Severity |
+|---|-----------|---------------|----------|
+| 1 | Sidebar "Factuality" section (colored bar chart of factuality ratings) | MISSING entirely | High |
+| 2 | Sidebar "Ownership" section (corporate ownership data visualization) | MISSING entirely | High |
+| 3 | Podcast/Opinion section (artwork, bias badge, quote block, "Listen to Full Episode" link) | Template exists but never renders (no podcast data flows through) | High |
+| 4 | "Insights by Ground AI" attribution footer below summary | MISSING | Medium |
+| 5 | Hyperlinked entities in AI summary (e.g., "Tom Homan" linking to topic page) | MISSING -- summary is plain text | Medium |
+| 6 | "Reposted by N other sources" on syndicated source cards | MISSING | Medium |
+| 7 | Share icons: Embed, Block/Hide, Flag/Report | MISSING (OGN has 8 icons, GN has 10) | Low |
+| 8 | "Broke the News" location narrative ("Sources are mostly out of United States") | MISSING | Medium |
 
-### 3.2 Missing Interactive Features
+### 3.2 Visual Differences
 
-1. **Article search within story pages** — Ground News lets you search/filter the source list on a story page. OGN has no search input.
-2. **Share buttons** — Ground News has share-to-social on every story. OGN has none.
-3. **Bookmark/save stories** — Ground News lets users save stories for later. OGN has no save functionality.
-4. **Email digest/notifications** — Ground News sends daily/weekly bias-aware email digests. OGN has web-push scaffolding but no email integration.
-5. **OAuth/social login** — Ground News supports Google/Apple/Facebook login. OGN only has email/password with scrypt hashing.
-6. **Reading time estimates** — Ground News shows "X min read" on articles. OGN does not.
-7. **"Broke the news" indicator** — Ground News highlights which outlet first reported a story. Not captured in ingestion.
-8. **Timeline/chronology view** — Ground News shows how a story evolved over time. Not implemented.
-9. **Podcast references** — Ground News shows podcast coverage. Extracted in pipeline but never persisted.
-
-### 3.3 Blindspot Page Differences
-
-| Feature | Ground News | OGN |
-|---------|-------------|-----|
-| Card layout order | Image → Headline → Metadata → Bias | Badge → Image → Metadata → Headline → Bias |
-| Filter tabs | Dedicated tab UI with counts | Basic tab styling |
-| Blind spot explanation | Detailed methodology popover | Brief static text |
-| Card click behavior | Opens story page | Works correctly |
-| Weather widget | Icon-based with visual indicators | Text-only "Partly cloudy" |
-
-### 3.4 Source Page Gaps
-
-- Missing two-column layout (Ground News has content + sidebar)
-- Missing sidebar sections: "Related Sources", "Similar Bias", "Also Covers"
-- Missing visual factuality indicator (Ground News uses a colored bar/meter)
-- Ownership information is text-only (Ground News shows corporate hierarchy)
-- No historical bias tracking or trend visualization
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | H1 font family | `universalSans` (sans-serif) | `Newsreader` (serif) | High |
+| 2 | Sidebar title | "Coverage Details" | "At a Glance" | Medium |
+| 3 | Sidebar field labels | "Leaning Left", "Leaning Right" | "Left", "Right" | Low |
+| 4 | Timestamps | Relative: "13 hours ago" | Absolute: "Feb 12, 2026, 10:12 AM" | Medium |
+| 5 | Location in metadata | Clickable link to topic page | Plain text, not a link | Medium |
+| 6 | Perspective tab styling | Flat buttons, 4px radius, transparent bg | 9px radius, green-tinted bg, 1px border | Medium |
+| 7 | Sidebar bias bar gradients | Left: `rgb(153,82,82)` to `rgb(217,190,190)`, Right: `270deg, rgb(77,109,158)` to `rgb(210,219,231)` | Left: `rgb(169,90,92)` to `rgb(200,158,160)`, Right: `90deg` (reversed direction) | Medium |
+| 8 | Source logo grid | 6-column grid (one per bias tier) | 3-column grid (Left/Center/Right only) | Low |
+| 9 | "Read Full Article" link | Single CTA per source card | Dual links: "Read in OGN Reader" + "Open Original" | Low (OGN improvement) |
+| 10 | External link to ground.news | N/A | "Open Ground News source" sends users to ground.news | Medium |
 
 ---
 
-## 4. Data Ingestion Pipeline
+## 4. Blindspot Page Parity
 
-### Overview
+### 4.1 Structural Issues
 
-The ingestion pipeline is the backbone of OGN and currently has the most technical debt. It consists of:
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Column divider | Thin `0.56px solid rgb(166,166,161)` vertical line | No divider | Medium |
+| 2 | Section headings | H3, 32px, weight 600, universalSans | H2, 24px, weight 800, Bricolage Grotesque | Medium |
+| 3 | Story count next to heading | Not shown | Shows count (e.g., "3") | Low |
+| 4 | Info banner bg | Dark `rgb(38,38,38)` with cream text | Light panel with dark text | Medium |
+| 5 | Info banner heading | "New to the Blindspot feed?" | "New to Blindspot?" | Low |
+| 6 | Info banner link target | `/blindspot/about` | `/rating-system` | Low |
+| 7 | Newsletter | Single button: "Sign up for the Blindspot Report newsletter" | Full form with email input, frequency dropdown, submit button | Medium |
 
-```
-Browser-Use Cloud API → Playwright CDP → groundnews_scrape_cdp.mjs
-    → sync_groundnews_pipeline.mjs (3,639-line monolith)
-        → persist_db.mjs → PostgreSQL
-        → *.json flat-file store (dual-write)
-```
+### 4.2 Card Design Issues
 
-### 4.1 Architecture Issues
-
-#### 4.1.1 The 3,639-Line Monolith
-
-**File:** `scripts/sync_groundnews_pipeline.mjs`
-
-This single file handles: discovery, URL normalization, extraction, enrichment, bias parsing, outlet matching, deduplication, and persistence. It should be decomposed into focused modules:
-
-```
-scripts/pipeline/
-  ├── discover.mjs       — URL collection and routing
-  ├── extract.mjs        — HTML parsing and data extraction
-  ├── enrich.mjs         — Bias scoring, outlet matching, factuality
-  ├── normalize.mjs      — Data cleaning, deduplication
-  ├── persist.mjs        — Database writes
-  └── validate.mjs       — Schema validation between stages
-```
-
-#### 4.1.2 Dual-Write Consistency Risk
-
-The pipeline writes to both JSON flat files AND PostgreSQL. These can drift apart with no reconciliation mechanism. The JSON store appears to be the "source of truth" for some operations while PostgreSQL serves the webapp.
-
-**Fix:** Pick one canonical store (PostgreSQL) and deprecate the JSON flat-file store, or implement a write-ahead log pattern where JSON is the WAL and PG is the materialized view.
-
-#### 4.1.3 Zero Test Coverage
-
-The entire `scripts/` directory has no test files. For a 3,600+ line data pipeline, this is a significant reliability risk. Any refactoring is high-risk without tests.
-
-**Fix:**
-1. Add unit tests for pure functions (bias parsing, URL normalization, deduplication)
-2. Add integration tests with fixture data (sample Ground News HTML → expected DB rows)
-3. Add snapshot tests for the extraction layer (detect when Ground News changes their HTML structure)
-
-### 4.2 Data Not Being Captured
-
-The following data is extracted from Ground News but never persisted to the database:
-
-| Data | Extracted? | Persisted? | Notes |
-|------|-----------|------------|-------|
-| Article images | Yes (URLs) | Yes (URLs only) | But they fail to load — no proxy/cache |
-| Podcast references | Yes | **NO** | Extracted then discarded |
-| Reader links | Yes | **NO** | Extracted then discarded |
-| Timeline headers | Yes | **NO** | Extracted then discarded |
-| "Broke the news" outlet | **NO** | N/A | Not scraped at all |
-| Article publish timestamps | Partial | Partial | Often missing/null |
-| Outlet ownership chain | **NO** | N/A | Not in schema |
-| Story geographic locality | Partial | Yes | Shows "Locality unavailable" everywhere |
-| Full article text | **NO** | N/A | Only headline + URL captured |
-| Source factuality score | Hardcoded | Yes | Uses `OUTLET_REFERENCE_DATA` instead of scraping |
-| Related stories | **NO** | N/A | Ground News shows "Related stories" |
-
-### 4.3 Pipeline Code Quality Issues
-
-#### 4.3.1 Silent Error Swallowing (32 empty catch blocks)
-
-```js
-try {
-  // complex extraction logic
-} catch (e) {
-  // nothing — error silently swallowed
-}
-```
-
-This means extraction failures are invisible. Stories may have missing data with no way to diagnose why.
-
-**Fix:** At minimum, add structured logging to every catch block. Ideally, implement a pipeline-level error accumulator that reports all extraction failures in a summary.
-
-#### 4.3.2 Hardcoded Outlet Bias Data
-
-`OUTLET_REFERENCE_DATA` in the pipeline hardcodes bias ratings for 30+ outlets instead of scraping them from Ground News's source pages. This data goes stale immediately.
-
-**Fix:**
-1. Scrape outlet metadata (bias, factuality, ownership) from Ground News source pages during ingestion
-2. Store in the `Outlet` table with a `lastScrapedAt` timestamp
-3. Fall back to hardcoded data only for outlets not yet scraped
-
-#### 4.3.3 O(n²) Deduplication
-
-The deduplication algorithm compares every story against every other story, resulting in O(n²) complexity. With thousands of stories, this becomes a bottleneck.
-
-**Fix:** Use a hash-based approach:
-1. Generate a normalized fingerprint (lowercase title, remove punctuation, sort words)
-2. Use a `Map` or `Set` for O(1) lookups
-3. For fuzzy matching, use locality-sensitive hashing (LSH) or trigram similarity
-
-#### 4.3.4 Hardcoded Debug Filters
-
-`refreshExisting` contains hardcoded test filters: `valentine|olympics|pam bondi`. These should be environment variables or CLI arguments, not embedded in source code.
-
-#### 4.3.5 Bot User-Agent Strings
-
-Fetch calls use recognizable bot user-agent strings that can trigger anti-scraping protections. Use realistic browser user-agents with rotation.
-
-#### 4.3.6 `stableId` Argument Order Inconsistency
-
-The `stableId()` function is called with different argument orders in different files, which could produce different IDs for the same story.
-
-**Fix:** Standardize on named parameters or a config object:
-```js
-stableId({ title, outlets, date })
-```
-
-#### 4.3.7 No Archive Cache TTL
-
-When an archive lookup returns "not_found", that result is cached forever. If the archive site later has the content available, OGN will never retry.
-
-**Fix:** Add a TTL (e.g., 24 hours) for "not_found" cache entries. Successful entries can have a longer TTL.
-
-#### 4.3.8 Topic Alias Duplication
-
-Topic slug → display name mappings are duplicated between `scripts/sync_groundnews_pipeline.mjs` and `lib/topics.ts`. They can drift apart.
-
-**Fix:** Create a single source of truth in `lib/topics.ts` and import it in the pipeline.
-
-#### 4.3.9 `FALLBACK_IMAGE_VARIANTS` Count Mismatch
-
-The pipeline defines 5 fallback image variants while another file references 6. This causes index-out-of-bounds edge cases.
-
-#### 4.3.10 No Story Staleness/TTL
-
-Stories are ingested but never expire or get refreshed. A story from 6 months ago looks the same as one from today, with no indication of age or relevance.
-
-**Fix:**
-1. Add `lastRefreshedAt` to the Story model
-2. Implement a staleness threshold (e.g., stories older than 7 days get a "stale" badge)
-3. Add a refresh job that re-scrapes active stories periodically
-
-### 4.4 Browser-Use Cloud Specific Issues
-
-- **15-minute session limit** (free tier) — Long ingestion runs get cut off mid-scrape with no resume capability
-- **No retry/resume mechanism** — If a session dies, progress is lost
-- **No rate limiting awareness** — The pipeline doesn't track API usage or respect rate limits
-- **CDP connection fragility** — The Playwright CDP connection to Browser-Use Cloud can drop without clean error handling
-
-**Fix:**
-1. Implement checkpointing — save progress after each page so ingestion can resume
-2. Add session rotation — when approaching the 15-min limit, start a new session
-3. Implement exponential backoff for transient failures
-4. Add a session health monitor that detects dropped connections early
+| # | Issue | Severity |
+|---|-------|----------|
+| 1 | Cards have colored border frames (`#802727` / `#204986`) -- GN has no card borders | High |
+| 2 | Frame colors are swapped: `.is-for-right` uses `#802727` (left's color) | High |
+| 3 | "SEVERE" / "High" / "Moderate" / "Low" severity system is OGN invention, not in GN | High |
+| 4 | Blindspot badge is plain text, not a colored pill (should have `#802727` / `#204986` bg) | High |
+| 5 | Badge text should use "Only X%" prefix from GN; OGN does not | Medium |
+| 6 | Card headline font size: 15.68px/700 vs GN's 22px/800 | Medium |
+| 7 | Cards include summary paragraph and metadata -- GN cards do not | Low |
+| 8 | Image aspect ratio: OGN 16:9 vs GN 608:440 (~1.38:1) | Low |
+| 9 | Card is not fully clickable -- only headline is a link (GN wraps entire card in `<a>`) | Low |
+| 10 | "BLINDSPOT TM" wordmark appears inside each card -- GN shows only a small icon + "Blindspot:" label | Medium |
 
 ---
 
-## 5. Page-by-Page Breakdown
+## 5. Topic/Interest Page Parity
 
-### 5.1 Homepage (`/`)
+### 5.1 Structural Differences
 
-| Element | Ground News | OGN | Status |
-|---------|-------------|-----|--------|
-| Hero story card | Full-bleed image, overlay text | White card, no image loads | **BROKEN** |
-| Story card images | Actual article images | SVG fallback placeholders | **BROKEN** |
-| Navigation bar | Logo + Topics + Search + Subscribe | Logo + Topics + Search | Missing Subscribe |
-| Story card bias bar | 3-color gradient (L/C/R) with percentages | Present and functional | OK |
-| "See the Story" link | Below headline on each card | Missing | **MISSING** |
-| Trending sidebar | "Trending" with ranked stories | Present | OK |
-| Topic chips | Colored topic pills above story | Present | OK |
-| Source count | "12 sources" badge on cards | Present | OK |
-| Dark mode | Full theme toggle | Toggle exists, hero card broken | **PARTIAL** |
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Topic icon | Single uppercase letter in circle | Two-letter initials (e.g., "PO" for Politics) | Low |
+| 2 | Description text | Dynamic: "Stay current... **Politics**... **27,627** stories... past 3 months" | Generic: "A topic hub showing coverage splits..." | Medium |
+| 3 | Bias bar in header | NOT present (only in sidebar) | Present in header area | Low (OGN enhancement) |
+| 4 | Blindspots section | 3-column grid (2 cards + newsletter card in same row) | 2-column grid; newsletter below | Medium |
+| 5 | "Covered Most By" labels | Granular: "Lean Left", "Center", "Lean Right" | Simplified: "LEFT", "CENTER", "RIGHT" | Medium |
+| 6 | "Local News Publishers" sidebar | Present | MISSING | Medium |
+| 7 | "Suggest a source" card bg | Gold/tan `#D1BD91` | Plain panel, no gold bg | Low |
 
-### 5.2 Story Page (`/story/[slug]`)
+### 5.2 Extra OGN Sidebar Sections (Not in GN)
 
-| Element | Ground News | OGN | Status |
-|---------|-------------|-----|--------|
-| Bias distribution bar | Full-width gradient bar with percentages | Present and functional | OK |
-| Source tabs (L/C/R) | Tabs with colored indicators + counts | Present, functional | OK |
-| Article cards | Image + Headline + Outlet + Date | Image(broken) + Outlet + Date — **no headline** | **BROKEN** |
-| Bias badges on articles | Color-coded (red/white/blue) | Plain text, no color | **MISSING** |
-| "Broke the News" | First reporter highlighted | Not captured | **MISSING** |
-| Article search | Search/filter input in source list | Not present | **MISSING** |
-| Share button | Social sharing options | Not present | **MISSING** |
-| Related stories | "Related stories" section at bottom | Not present | **MISSING** |
-| Timeline view | Chronological story evolution | Not present | **MISSING** |
+- Factuality Distribution grid
+- Ownership section
+- Explore section
 
-### 5.3 Blindspot Page (`/blindspot`)
-
-| Element | Ground News | OGN | Status |
-|---------|-------------|-----|--------|
-| Header | "BLINDSPOT™" with binoculars icon | SVG binoculars + "BLINDSPOT TM" text | OK (close) |
-| Card layout | Image → Headline → Meta → Bias | Badge → Image → Meta → Headline → Bias | **DIFFERENT** |
-| Filter tabs | Styled tabs with story counts | Basic tab buttons | **PARTIAL** |
-| Bias breakdown | 3-row colored bars per card | 3-row colored bars per card | OK |
-| Methodology popup | Detailed explanation of algorithm | Brief text description | **PARTIAL** |
-
-### 5.4 Topic/Interest Pages (`/interest/[slug]`)
-
-| Element | Ground News | OGN | Status |
-|---------|-------------|-----|--------|
-| Page title | 42px, weight 800 | 36.8px, weight 700 | **WRONG** |
-| Topic description | Dynamic, contextual | Static generic text | **PARTIAL** |
-| Featured stories | 2-up layout with large images | Present but images broken | **BROKEN** |
-| "Covered Most By" sidebar | Top 5 outlets | Shows 18 outlets (no limit) | **WRONG** |
-| "Media Bias Breakdown" | Pie/donut chart | Present (implementation TBD) | **PARTIAL** |
-| Blindspot section | Inline blindspot stories | Present | OK |
-
-### 5.5 Source Pages (`/source/[slug]`)
-
-| Element | Ground News | OGN | Status |
-|---------|-------------|-----|--------|
-| Layout | Two-column (content + sidebar) | Single column | **MISSING** |
-| Bias indicator | Visual colored bar/meter | Text label only | **PARTIAL** |
-| Factuality score | Visual indicator | Text label | **PARTIAL** |
-| Ownership | Corporate hierarchy visualization | Text only | **PARTIAL** |
-| Related sources sidebar | "Similar Bias", "Also Covers" | Not present | **MISSING** |
-| Historical coverage | Coverage stats over time | Not present | **MISSING** |
-| Story cards | Standard cards with images | Cards present, images broken | **BROKEN** |
-
-### 5.6 Auth & User Pages
-
-| Element | Ground News | OGN | Status |
-|---------|-------------|-----|--------|
-| Login | Email + OAuth (Google/Apple/Facebook) | Email/password only | **PARTIAL** |
-| Registration | Email + OAuth with onboarding flow | Email/password, no onboarding | **PARTIAL** |
-| My News Bias | Full dashboard page (10+ modules) | Sidebar widget only | **MISSING** |
-| Settings | Account, notifications, subscriptions | Basic account settings | **PARTIAL** |
-| Legal pages | Full terms and privacy policy | Placeholder text | **PLACEHOLDER** |
+These are OGN enhancements beyond GN parity.
 
 ---
 
-## 6. Architecture & Technical Debt
+## 6. My Feed & User Pages Parity
 
-### 6.1 CSS Architecture
+### 6.1 My Feed (`/my`)
 
-- **2,900+ lines** in `globals.css` — Should be broken into component-level CSS modules or Tailwind utilities
-- Dark mode rules tacked on at line 2806+ rather than integrated with custom properties throughout
-- Multiple hardcoded color values instead of CSS custom properties
-- No design token system — colors, spacing, and typography are scattered
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Tab labels | "Saved Stories", "Manage Sources & Topics" | "Saved", "Manage" (shorter) | Low |
+| 2 | "Following: N topics" link | Present between tabs and feed | MISSING | Medium |
+| 3 | Favorites sidebar | Rich: circular icons, checkboxes, star buttons per topic | Simple: pill-style text links | Medium |
+| 4 | Filter position | Right sidebar | Left sidebar | Medium |
+| 5 | Filter controls | Topic search + "Search all Interests" checkbox | Feed dropdown, bias dropdown, keyword search, Reset button | Low (OGN has more filters) |
 
-### 6.2 Database Schema Gaps
+### 6.2 Discover Page (`/my/discover`)
 
-The Prisma schema is missing models for:
-- User reading history (needed for My News Bias)
-- Bookmarks/saved stories
-- Notification preferences (beyond basic push)
-- Story timeline events
-- Outlet ownership relationships
-- Podcast references
-
-### 6.3 API Layer
-
-- No public API documentation
-- No rate limiting on API routes
-- No API versioning strategy
-- Archive fetch (`lib/archive.ts`) has no circuit breaker — if archive.is is down, every request will timeout
-
-### 6.4 Caching
-
-- `lib/dbStore.ts` uses a 45-second in-memory cache TTL — this is very short and will cause high DB load under traffic
-- No CDN or edge caching strategy
-- No HTTP cache headers on API responses
-- Image caching is non-existent (root cause of the broken images)
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Topic display | Rich grid: circular photo icons, follow toggles, organized into Favorites/Following/All | Flat tag cloud: pill tags with counts, no icons, no follow buttons | High |
+| 2 | Search input | "Search all Interests" at top | MISSING | Medium |
+| 3 | "Topics You Follow" section | Present with "See All" button | MISSING -- no distinction between followed/unfollowed | Medium |
 
 ---
 
-## 7. Recommended Fix Priorities
+## 7. Local Page Parity
 
-### P0 — Fix Immediately (Broken/Security)
-
-1. **Fix image loading** — Implement server-side image proxy or download during ingestion
-2. **Remove `Function()` constructor** — Replace with safe JSON extraction
-3. **Fix hero card dark mode** — Use CSS custom property instead of hardcoded `#fff`
-
-### P1 — High Priority (Core Parity)
-
-4. **Add article headlines to story page source cards** — Currently showing outlet + date but no headline
-5. **Add color-coded bias badges** — Apply the 7-color system to all bias indicators
-6. **Cap "Covered Most By" to 5 outlets** — Add `LIMIT 5` to the query
-7. **Fix heading typography** — 42px / weight 800 to match Ground News
-8. **Persist podcast references, reader links, timeline headers** — Add to schema and persist layer
-9. **Add "Broke the news" scraping** — Capture first-reporter data during ingestion
-10. **Fix locality data** — Currently shows "Locality unavailable" everywhere
-
-### P2 — Important (Feature Parity)
-
-11. **Build My News Bias page** — Full dashboard with charts and analysis modules
-12. **Add source page sidebar** — Two-column layout with related sources
-13. **Add article search in story pages** — Filter/search within source list
-14. **Add share buttons** — Social sharing on stories
-15. **Implement OAuth login** — Google + Apple at minimum
-16. **Add story staleness/TTL** — Mark old stories, implement refresh jobs
-17. **Split pipeline monolith** — Decompose into focused modules
-18. **Add pipeline tests** — Unit + integration + snapshot tests
-19. **Fix blindspot card layout order** — Match Ground News ordering
-
-### P3 — Nice to Have (Polish)
-
-20. **Add Subscribe button** to navigation
-21. **Fix font** — Source a closer match to universalSans
-22. **Implement "See the Story" links** on homepage cards
-23. **Add reading time estimates**
-24. **Weather widget icons** instead of text
-25. **Improve blindspot methodology popup**
-26. **Break up globals.css** into component-level styles
-27. **Add pipeline checkpointing** for Browser-Use Cloud session resilience
-28. **Remove hardcoded debug filters** from pipeline
-29. **Fix deduplication algorithm** — O(n²) → hash-based O(n)
-30. **Add structured logging** to replace 32 empty catch blocks
-31. **Eliminate dual-write** — Pick one canonical data store
-32. **Write actual legal page content** for terms and privacy
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | IP geolocation auto-detect | Yes, auto-detects on first visit | No, defaults to "United States" | High |
+| 2 | Weather icons | Visual weather condition icons (sun, clouds, rain) | Text-only labels ("Overcast", "Thunderstorm") | Medium |
+| 3 | Weather initial state | Shows immediately | "Weather unavailable" flash before coordinates load | Medium |
+| 4 | Publisher bias ratings | Actual bias labels (even "Untracked bias") | ALL show "UNKNOWN" | High |
+| 5 | Publisher bias styling | Color-coded dots/circles | Plain text "UNKNOWN" badges | Medium |
+| 6 | Single-source stories | Show "Read Article" instead of "See the Story" | All show "See the Story" regardless | Medium |
+| 7 | Weather position | In main content area above featured cards | In sidebar (right rail) | Low |
+| 8 | Location header | "News about [City Name]" with Follow button | "Set Your Local Feed" default | Medium |
+| 9 | Follow button on location | Yes | MISSING | Low |
 
 ---
 
-## Appendix: Ground News Design Reference
+## 8. Search Parity
+
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Daily Briefing card below search | Present | MISSING (has "Discover" section instead) | Medium |
+| 2 | Topic matches in typeahead | Circular icons, story counts ("25,276 Stories"), follow buttons | Chip pills, counts but no circular icons, no follow buttons | Medium |
+| 3 | Story matches in typeahead | Thumbnails, highlighted keywords in gold/tan, source counts, dates | No thumbnails, no keyword highlighting | Medium |
+| 4 | Tab navigation (Stories/Topics/Sources) | Not visible in GN | PRESENT in OGN | Low (OGN enhancement) |
+| 5 | Time and Bias filters on results | Not visible in GN | PRESENT in OGN | Low (OGN enhancement) |
+
+---
+
+## 9. Navigation & Chrome Parity
+
+### 9.1 Top Navigation
+
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Nav items | Home, For You, Local, Blindspot | Home, For You, My Bias, Local, Blindspot | Low (OGN adds My Bias) |
+| 2 | "For You" notification dot | Red dot indicator | MISSING | Low |
+| 3 | Search in nav | Magnifying glass icon + "Search" text | Full inline search bar | Low |
+| 4 | Subscribe button color | Dark/black `#262626` | Green `#2d6a4f` | High |
+| 5 | Hamburger menu position | Left side | Right side | Low |
+| 6 | Location in date bar | Shows city name (e.g., "Shanghai, China") | No city name displayed | Medium |
+| 7 | Edition selector | Globe icon + "International: Edition" dropdown in header utility bar | Dropdown labeled "Edition" in nav area, no globe icon | Low |
+
+### 9.2 Hamburger Menu
+
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Slide direction | From left | From right | Low |
+| 2 | Topic categories | Present (International Politics, Finance, etc.) | MISSING from drawer | Medium |
+| 3 | "Contact us" submenu | Present | MISSING | Low |
+| 4 | "About Ground News" collapsible submenu | Present | Flat "Methodology" link instead | Low |
+| 5 | Product submenu (apps, extension, newsletters, tools) | Present with full list | Partial: Extension + Newsletters links only | Low |
+
+### 9.3 Mobile Bottom Nav
+
+- **Status**: AT PARITY -- 5 items (News, For You, Search, Blindspot, Local) match GN exactly.
+
+---
+
+## 10. Footer Parity
+
+| # | Element | GN | OGN | Severity |
+|---|---------|----|----|----------|
+| 1 | Upper topic navigation grid (News, International, Trending columns by region) | Present (5-column grid) | COMPLETELY MISSING | High |
+| 2 | Social media icons (Facebook, X, Instagram, LinkedIn, Reddit) | Present | Placeholder text: "Community links will appear here..." | High |
+| 3 | App Store / Google Play badges | Present | MISSING | Medium |
+| 4 | Footer column structure | Company / Help / Tools (15+ links per column) | About / Features / Support / Legal (3-5 links per column) | High |
+| 5 | Copyright notice | "(c) 2026 Snapwise Inc" | "OpenGroundNews - Open-source..." | Low (intentional) |
+| 6 | Edition switcher in footer | Present with globe icon | MISSING | Low |
+
+---
+
+## 11. CSS & Visual Design System
+
+### 11.1 Color System
+
+| Token | GN Value | OGN Value | Status |
+|-------|---------|-----------|--------|
+| Page background | `#EEEFE9` | `#ecefe8` (+ subtle gradient) | Close |
+| Primary text | `#262626` | `#182026` | Close |
+| Left bias | `#802727` (dark red/maroon) | `#802727` | MATCH |
+| Right bias | `#204986` (dark navy/blue) | `#204986` | MATCH |
+| Center bias | `#FFFFFF` | `#FFFFFF` | MATCH |
+| Gold accent | `#D1BD91` | `#d1bd91` | MATCH |
+| Lean Left | `#C85C5C` (light red) | Varies | Approximate |
+| Lean Right | `#5C8EE6` (light blue) | Varies | Approximate |
+| Subscribe button | `#262626` (dark) | `#2d6a4f` (green) | MISMATCH |
+| Card background | White, no shadow | White + subtle shadow | Different |
+
+### 11.2 Typography
+
+| Element | GN | OGN | Status |
+|---------|----|----|--------|
+| Primary font | `universalSans` (custom sans-serif) | `Bricolage Grotesque` (sans-serif) | Different but visually similar |
+| Serif accent | `sohneSerif` | `Newsreader` | Different |
+| H1 story headline | universalSans, 42px, weight 800 | **Newsreader (serif!)**, 42px, weight 800 | Wrong family -- uses serif! |
+| Body text | 16px, weight 400 | 16px, weight 400 | MATCH |
+| Font weights | 480, 680, 800 | 400, 600, 700, 800 | Close |
+
+### 11.3 Component Patterns
+
+| Component | GN | OGN | Status |
+|-----------|----|----|--------|
+| Hero bias bar height | 24px | 10px | MISMATCH |
+| Mini bias bar height | 8px | 12px | Close |
+| Bias bar border-radius | 0px (flat/square) | 999px (pill) | MISMATCH |
+| Card border-radius | 8px | 8px | MATCH |
+| Card border | 2px solid tertiary-light | 1px solid `rgb(210,217,205)` | Different |
+| Card box-shadow | None (flat design) | `rgba(24,32,38,0.04) 0px 3px 12px` | Different |
+| Button border-radius | 4px | 9px | Different |
+| Subscribe button radius | 4px (rounded rect) | 999px (pill) | Different |
+
+---
+
+## 12. Dark Mode
+
+### 12.1 Overall Assessment: Well Implemented
+
+- Background `#262626` matches GN baseline
+- Text `#eeefe9` matches GN baseline
+- Card backgrounds properly themed
+- Bias bar colors remain consistent across themes (matches GN behavior)
+
+### 12.2 Dark Mode Issues
+
+| # | Issue | Severity |
+|---|-------|----------|
+| 1 | `.bias-dist-panel` text invisible in light mode (see Critical Bug 1.3) | Critical |
+| 2 | `data-theme="auto"` uses different tokens (`--bg: #181b1f`) vs manual dark (`--bg: #262626`) | Low |
+| 3 | Default theme is Dark instead of GN's Light | Medium |
+
+---
+
+## 13. Responsive / Mobile
+
+### 13.1 Breakpoint Comparison
+
+| Purpose | GN Breakpoint | OGN Breakpoint | Status |
+|---------|--------------|----------------|--------|
+| Tablet | 602px | 760px | Different (OGN stays desktop longer) |
+| Desktop | 1200px | 1120px | Close |
+| Max width | 1440px | 1440px | MATCH |
+| Mobile bottom nav | ~600px | 860px | Different |
+
+### 13.2 Mobile Bottom Nav
+
+- Correctly shows 5 items matching GN: Home, For You, Search, Blindspot, Local
+- Dark mode styling properly applied
+
+---
+
+## 14. Missing Pages & Features
+
+### 14.1 Missing Pages
+
+| # | GN Page | URL | Status |
+|---|---------|-----|--------|
+| 1 | Blindspot About | `/blindspot/about` | MISSING |
+| 2 | Source bias ratings | `/interest/{source}#bias-ratings` | MISSING |
+| 3 | Blog | `/blog` | MISSING |
+| 4 | Help Center | `/help` | MISSING |
+| 5 | Testimonials | `/testimonials` | MISSING |
+| 6 | Individual newsletter pages | `/newsletters/blindspot-report`, `/newsletters/burst-your-bubble`, `/newsletters/daily-ground` | MISSING |
+| 7 | Checkout / Gift / Careers | Various | N/A (non-commercial) |
+
+### 14.2 Missing Cross-Cutting Features
+
+| # | Feature | Description | Severity |
+|---|---------|-------------|----------|
+| 1 | IP geolocation | Auto-detect user location for Local feed | High |
+| 2 | Weather icons | Visual weather condition icons (not just text labels) | Medium |
+| 3 | Podcast context | Podcast mentions with bias badges, timestamps, "Listen" links | High |
+| 4 | Factuality sidebar | Dedicated factuality visualization on story detail pages | High |
+| 5 | Ownership sidebar | Corporate ownership data visualization on story detail pages | High |
+| 6 | Repost tracking | "Reposted by N other sources" on source cards | Medium |
+| 7 | Entity linking | Hyperlinked named entities in AI summaries linking to topic pages | Medium |
+| 8 | Image attribution | "i" info icon on story card images | Low |
+| 9 | "Read Article" variant | Single-source stories should link directly instead of "See the Story" | Medium |
+| 10 | Per-topic feed sections | Homepage sections for each followed topic (e.g., "Israel-Gaza News") | High |
+| 11 | Duplicate story dedup | Same story appearing multiple times in topic feeds | Medium |
+| 12 | Edition selector display bug | Shows "International" text but "United States" is actually selected | Medium |
+
+---
+
+## 15. Priority Summary
+
+### P0 -- Critical Bugs (7 issues)
+
+1. **All homepage images are SVG placeholders** -- no real images load
+2. **Source card bias/factuality badge text invisible** -- contrast ~1:1 on "unknown" badges
+3. **Bias distribution panel text invisible in light mode** -- hardcoded dark theme colors
+4. **Blindspot badge percentage semantics inverted** -- shows dominant side, not missing side
+5. **Blindspot bias bar segments have no fill color** -- all render as empty gray tracks
+6. **Topic slug routing bug** -- ampersand topics (business-and-markets, health-and-medicine) resolve to empty pages
+7. **Wrong topic name due to alias merging** -- /interest/artificial-intelligence shows "Technology"
+
+### P1 -- High Severity (15 issues)
+
+1. Bias bar shape wrong: pill (999px radius, 10px tall) vs flat rectangle (0px radius, 24px tall)
+2. Subscribe button green `#2d6a4f` instead of dark `#262626`
+3. Story headline uses serif font (Newsreader) instead of sans-serif
+4. Missing Factuality sidebar section on story detail pages
+5. Missing Ownership sidebar section on story detail pages
+6. Missing Podcast/Opinion section on story detail pages
+7. Per-topic homepage sections completely missing
+8. Discover page is flat tag cloud instead of rich grid with icons and follow toggles
+9. Blindspot cards have wrong colored border frames (GN uses no frames)
+10. Blindspot "SEVERE" severity system is OGN invention (not in GN)
+11. No IP geolocation auto-detection on Local page
+12. All publisher bias ratings show "UNKNOWN" on Local page
+13. Footer missing upper topic navigation grid
+14. Footer missing social media icons
+15. Footer content depth severely lacking (3-5 links vs 15+ per column)
+
+### P2 -- Medium Severity (25+ issues)
+
+Includes: missing gold promotional banner, missing utility bar, missing blindspot email signup, no column dividers, section heading sizes wrong (24px vs 32px), timestamps absolute vs relative, sidebar bias bar gradient colors/direction wrong, filter sidebar position swapped, My Feed tab labels shortened, "Following: N topics" missing, weather text-only (no icons), search typeahead missing thumbnails and keyword highlighting, hamburger menu slides from wrong side and missing topic categories, location not shown in date bar, blindspot info banner wrong styling, newsletter section wrong design, "Covered Most By" uses simplified labels, topic description text is generic not dynamic, edition selector display bug, and more.
+
+### P3 -- Low Severity / Polish (15+ issues)
+
+Card shadows, border widths, button border-radii, topic icon initials, semantic HTML differences, image aspect ratios, column separator lines, responsive breakpoint differences, "For You" notification dot, image attribution icons, and other polish items.
+
+---
+
+## 16. OGN Strengths Beyond GN
+
+While this audit focuses on parity gaps, OGN has several features that go BEYOND Ground News:
+
+1. **Additional filters**: Factuality, Ownership, and Paywall filters on source lists
+2. **Dual reader links**: "Read in OGN Reader" + "Open Original" (vs GN's single external link)
+3. **Factuality Distribution** sidebar on topic pages (GN doesn't have this)
+4. **Ownership** sidebar on topic pages (GN doesn't have this)
+5. **Search filters**: Time range, bias filters, quick topic/outlet facets on search results
+6. **Tab navigation on search**: Stories/Topics/Sources tabs
+7. **Reading History** tracking in My Feed
+8. **Source discovery** with follow buttons in Discover
+9. **Calendar, Maps, Compare** pages (unique to OGN)
+10. **Archive-first reader** with fallback extraction
+11. **Browser extension** (Chrome MV3)
+12. **More filter options in My Feed**: Feed type dropdown, bias filter, keyword search
+
+---
+
+## Appendix: GN Design Reference
 
 ### Color Palette
 ```
-Page Background:  #EEEFE9
-Card Background:  #FFFFFF
-Text Primary:     #262626
-Text Secondary:   #6B7280
-Left Bias:        #802727 → #994040 → #B35959
-Center:           #FFFFFF (bordered)
-Right Bias:       #5980B3 → #406699 → #204986
-Accent Green:     #2D6A4F (Subscribe button)
+Page Background:     #EEEFE9 (cream)
+Dark Background:     #262626 (near-black)
+Card Background:     #FFFFFF
+Text Primary:        #262626
+Text on Dark:        #EEEFE9
+Gold Accent:         #D1BD91
+
+Bias Colors:
+  Far Left:          #802727 (dark red/maroon)
+  Left:              #994040
+  Lean Left:         #B35959 / #C85C5C
+  Center:            #FFFFFF (white with border)
+  Lean Right:        #5980B3 / #5C8EE6
+  Right:             #406699
+  Far Right:         #204986 (dark navy/blue)
+
+Bias Bar Gradients:
+  Left segment:      linear-gradient(90deg, #993852 -> #D9BEBE)
+  Center segment:    #FFFFFF (solid white)
+  Right segment:     linear-gradient(270deg, #4D6D9E -> #D2DBE7)
+
+Tint Columns (Source Grid):
+  Left:              #C09393
+  Lean Left:         #D9BEBE
+  Center:            #FFFFFF
+  Lean Right:        #D2DBE7
+  Right:             #90A4C3
+
+Green (Orig. Reporting): #57912B
+Yellow (Search accent):  #FFD902
 ```
 
 ### Typography
 ```
-Font Family:      universalSans (custom)
-Heading Weight:   800
-Body Weight:      400
-Page Title:       42px
-Section Title:    24px
-Card Title:       18px
-Body Text:        16px / 1.6
-Small Text:       14px
+Primary Font:     universalSans (custom, weights: 480, 680, 800)
+Secondary Font:   sohneSans (weights: 400, 600, 700)
+Serif Accent:     sohneSerif (weight: 600)
+
+H1 (Story):       42px, weight 800, line-height 47.5px
+H2 (Section):     32px, weight 800, line-height 35px
+H3 (Subsection):  22px, weight 680-800
+H4 (Source card):  22px, weight 800, line-height 27.5px
+Body:             16px, weight 400-480, line-height 24px
+Bias badges:      12px, weight 680
+Bias bar labels:  12px, weight 600
+Metadata:         14px
 ```
 
 ### Layout
 ```
-Max Width:        1440px
-Grid:             12-column
-Gutter:           24px
-Card Border:      1px solid #E5E7EB
-Card Radius:      8px
-Card Shadow:      0 1px 3px rgba(0,0,0,0.1)
+Max Width:          1440px
+Grid:               12-column CSS grid
+Desktop Padding:    48px horizontal
+Mobile Padding:     16px horizontal
+Column Gap:         32px
+
+Homepage Layout:    3 | 6 | 3 columns
+Topic Page Layout:  9 | 3 columns
+Story Page Layout:  8 | 4 columns (approx)
+My Feed Layout:     Flex, max-width 1120px
+
+Breakpoints:
+  Tablet:           602px
+  Desktop:          1200px
+  Design Max:       1440px
+
+Cards:
+  Border-radius:    8px
+  Border:           2px solid tertiary-light
+  Shadow:           None (flat design)
+
+Buttons:
+  Border-radius:    4px
+  Primary:          Dark filled (#262626)
+  Secondary:        Outline
+
+Bias Bar (Hero):    24px tall, 0px border-radius
+Bias Bar (Mini):    8px tall, 0px border-radius
 ```
