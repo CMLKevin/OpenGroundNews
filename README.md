@@ -1,218 +1,221 @@
 # OpenGroundNews
 
-OpenGroundNews is a full open-source, perspective-aware news aggregation web app inspired by products like Ground News, but built with independent branding, open code, and resilient ingestion pipelines.
+OpenGroundNews is an open-source, perspective-aware news aggregation app inspired by Ground News style workflows, with its own product surface, ingestion pipeline, and API stack.
 
-It provides:
-- Multi-source story aggregation with bias distribution views
-- Blindspot and local feed surfaces
-- Story detail pages with source-level filtering and perspective tabs
-- Archive-first reader mode with automatic fallback extraction
-- Remote-browser ingestion via Browser Use Cloud browser sessions + Playwright CDP (no Browser Use task runner dependency)
+The codebase now runs as a full Next.js + Postgres platform with:
+- Server-rendered feeds, topic/source hubs, and story detail pages
+- Authenticated reader mode with archive-first retrieval + fallback extraction
+- Personalized follows, saved stories, reading analytics, and custom feeds
+- Browser Use Cloud + Playwright CDP ingestion pipeline
+- Newsletter digest and Web Push delivery pipelines
+- Parity-focused `v1` API endpoints for compare/calendar/maps/my-bias modules
 
-## Table of Contents
-1. Project status
-2. Core features
-3. Architecture
-4. Quick start
-5. Configuration
-6. Rotation strategies (profiles/regions)
-7. Scripts
-8. API endpoints
-9. Data layout
-10. Operations and scheduling
-11. Safety/legal notes
-12. Documentation index
+## What Is In This Repo
 
-## 1) Project Status
-- Framework: Next.js App Router
-- Runtime: Node.js + TypeScript
-- Storage: Postgres + Prisma (required for app runtime + ingestion)
-- Browser automation: Playwright Core connected to Browser Use Cloud CDP sessions
-- Current state: fully runnable web app + ingestion + archive fallback flow
+- App: Next.js App Router (`app/`, `components/`)
+- Data + auth layer: Prisma/Postgres (`prisma/`, `lib/db*.ts`, `lib/auth*.ts`)
+- Ingestion + archive tooling: Node scripts (`scripts/*.mjs`)
+- Browser extension: MV3 helper (`extension/`)
+- Operational docs + API contracts (`docs/`)
 
-## 2) Core Features
-- Home feed with lead story, story cards, bias bars, topic chips, and right rail modules
-- Blindspot feed (`/blindspot`)
-- Local feed (`/local`)
-- Story detail view (`/story/[slug]`) with source coverage panel
-- Ratings explainer (`/rating-system`)
-- Project support page (`/subscribe`) (non-commercial)
-- Admin panel (`/admin`) with ingestion controls and status
-- Notifications setup (`/notifications`) via Web Push (requires VAPID keys)
-- Browser extension surface (`/extension`) + MV3 extension in `extension/`
-- Archive-first reader page (`/reader`) (requires sign-in)
-- JSON APIs for stories, story detail, archive-read, and ingestion trigger
+## Current Product Surfaces
 
-## 3) Architecture
-High-level flow:
-1. Browser Use Cloud creates remote browser sessions
-2. Playwright CDP scripts scrape Ground News routes and discover story links
-3. Ingestion script enriches stories and upserts normalized data into Postgres
-4. App server renders feeds/details from the database
-5. Reader API tries archive hosts first; if blocked/unavailable, falls back to direct extraction
+### Public pages
+- `/` home feed
+- `/blindspot`
+- `/interest/[slug]`
+- `/source/[slug]`
+- `/story/[slug]`
+- `/search`
+- `/compare`
+- `/calendar`
+- `/maps`
+- `/newsletters`
+- `/about`, `/help`, `/privacy`, `/terms`, `/rating-system`, `/blog`, `/testimonials`
 
-See full details in docs:
-- `/Users/kevinlin/OpenGroundNews/docs/ARCHITECTURE.md`
+### Authenticated pages
+- `/my`
+- `/my/discover`
+- `/my/saved`
+- `/my/custom-feeds`
+- `/my/citations`
+- `/my/manage`
+- `/my-news-bias`
+- `/reader`
+- `/admin` (admin role required)
 
-## 4) Quick Start
+### Auth routes
+- `/login`
+- `/signup` (UI exists, but password sign-up API is intentionally disabled)
+- `/forgot-password`
+- `/reset-password`
+- `/auth/oauth-complete`
+
+## Tech Stack
+
+- Next.js 16 + React 19
+- TypeScript + App Router
+- Prisma + PostgreSQL (`@prisma/adapter-pg`)
+- NextAuth (Google OAuth when configured) + custom cookie session model
+- Browser Use Cloud API + Playwright CDP for scraping/archive retrieval
+- Resend for digest email sending
+- Web Push (`web-push`) with VAPID keys
+- Optional Upstash Redis-backed rate limiting (falls back to in-memory)
+- Optional Cloudflare R2 image/object storage cache
+
+## Quick Start
+
+### 1) Install
+
 ```bash
-cd /Users/kevinlin/OpenGroundNews
 npm install
-export BROWSER_USE_API_KEY="<your_browser_use_key>"
+```
+
+### 2) Configure env
+
+Copy `.env.example` to `.env.local` and set the minimum required keys:
+
+- `DATABASE_URL`
+- `BROWSER_USE_API_KEY`
+- `OGN_API_KEY` (or `OPEN_GROUND_NEWS_API_KEY`)
+
+### 3) Start app
+
+Fast path:
+
+```bash
 npm run dev
 ```
 
-Open:
+Or use the managed launcher (recommended in local dev):
+
+```bash
+./restart.sh dev
+```
+
+`restart.sh` can auto-provision a local Postgres cluster when `DATABASE_URL` is not already set.
+
+### 4) Open
+
 - [http://localhost:3000](http://localhost:3000)
 
-Build + run production:
+## Build And Test
+
 ```bash
 npm run build
 npm run start
+npm run test
 ```
 
-## 5) Configuration
+## Script Reference
+
+### Core runtime
+
+- `npm run dev` - start Next.js dev server
+- `npm run build` - build production bundle
+- `npm run start` - run production server
+
+### Database
+
+- `npm run db:generate` - prisma generate
+- `npm run db:migrate` - prisma migrate dev
+- `npm run db:deploy` - prisma migrate deploy
+- `npm run db:studio` - prisma studio
+- `npm run db:import-json` - import JSON store into DB
+
+### Ingestion + archive
+
+- `npm run groundnews:scrape` - scrape Ground News routes via Browser Use CDP
+- `npm run ingest:groundnews` - full pipeline runner with retries/checkpoint
+- `npm run ingest:enrich-outlets` - backfill/enrich outlet metadata
+- `npm run archive:extract` - single archive-first extraction
+- `npm run archive:verify` - batch archive verification
+
+### Notifications
+
+- `npm run newsletter:digest` - trigger digest endpoint locally
+- `npm run push:vapid` - generate VAPID keys
+
+### Parity toolchain
+
+- `npm run parity:checklist`
+- `npm run parity:smoke`
+- `npm run parity:baseline`
+- `npm run parity:visual-diff`
+- `npm run parity:gate`
+- `npm run parity:todo`
+
+## Environment Variables
+
+See `.env.example` for the canonical template. Key groups:
+
 ### Required
-- `BROWSER_USE_API_KEY`: Browser Use Cloud API key
-- `OGN_API_KEY` (or `OPEN_GROUND_NEWS_API_KEY`): required for protected write APIs (`POST /api/ingest/groundnews`, `POST /api/archive/read`)
-- `DATABASE_URL`: Postgres connection string for Prisma (required for app runtime + ingestion)
+- `DATABASE_URL`
+- `BROWSER_USE_API_KEY`
+- `OGN_API_KEY` or `OPEN_GROUND_NEWS_API_KEY`
 
-### Optional (notifications)
-- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`: enables Web Push notifications
-  - Generate keys: `npm run push:vapid`
+### Auth
+- `AUTH_SECRET` / `NEXTAUTH_SECRET`
+- `AUTH_GOOGLE_ID` + `AUTH_GOOGLE_SECRET` (or `GOOGLE_CLIENT_ID` + `GOOGLE_CLIENT_SECRET`)
+- `NEXTAUTH_URL`
+- `OGN_ADMIN_EMAILS`
 
-### Optional browser session controls
-- `BROWSER_USE_TIMEOUT_MINUTES`: session timeout passed to Browser Use `/api/v2/browsers`
-- `BROWSER_USE_PROFILE_ID`: single Browser Use profile UUID
-- `BROWSER_USE_PROXY_COUNTRY_CODE`: single proxy country code (case-insensitive; normalized internally)
+### Ingestion/rotation
+- `BROWSER_USE_PROFILE_ID` / `BROWSER_USE_PROFILE_IDS`
+- `BROWSER_USE_PROXY_COUNTRY_CODE` / `BROWSER_USE_PROXY_COUNTRY_CODES`
+- `BROWSER_USE_EDITION_PROXY_MAP`
+- `BROWSER_USE_ROTATION_MODE`
+- `BROWSER_USE_ROTATION_STATE_FILE`
+- `BROWSER_USE_CREATE_RETRIES`
+- `BROWSER_USE_TIMEOUT_MINUTES`
+- `OGN_PIPELINE_*` (attempts, retry, route expansion, worker counts, checkpoint controls)
 
-### Optional rotation controls
-- `BROWSER_USE_PROFILE_IDS`: comma-separated profile UUID list
-- `BROWSER_USE_PROXY_COUNTRY_CODES`: comma-separated country list
-- `BROWSER_USE_ROTATION_MODE`: `round_robin` (default), `random`, or `sticky`
-- `BROWSER_USE_ROTATION_STATE_FILE`: custom path for persisted round-robin counters
+### API/rate/image tuning
+- `API_STORIES_RATE_LIMIT`, `API_STORIES_RATE_WINDOW_SEC`
+- `IMAGE_PROXY_RATE_LIMIT`, `IMAGE_PROXY_RATE_WINDOW_SEC`
+- `IMAGE_PROXY_TTL_SEC`, `IMAGE_PROXY_TIMEOUT_MS`, `IMAGE_PROXY_MAX_BYTES`, `IMAGE_PROXY_FALLBACK_TTL_SEC`
+- `STORY_STALE_AFTER_DAYS`
 
-## 6) Rotation Strategies (Profiles/Regions)
-OpenGroundNews now supports profile and region rotation directly in `scripts/lib/browser_use_cdp.mjs`.
+### Optional integrations
+- `RESEND_API_KEY`, `EMAIL_FROM`, `NEXT_PUBLIC_SITE_URL`
+- `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
+- `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN`
+- `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_PUBLIC_BASE_URL`
 
-### Modes
-- `round_robin`:
-  - Cycles through candidate profiles/regions
-  - Persists counters to `output/browser_use/rotation_state.json` by default
-- `random`:
-  - Chooses random candidate per session
-- `sticky`:
-  - Deterministically picks candidate based on rotation key
-  - Useful for stable host-specific behavior
+## High-Level Data Flow
 
-### Script-specific rotation keys
-- `groundnews_scrape_cdp.mjs`: `groundnews:<routes>`
-- `archive_extract_cdp.mjs`: `archive-extract:<source-hostname>`
-- `archive_verify_cdp.mjs`: `archive-verify-batch`
+1. Scrape and discovery scripts collect story/source candidates from Ground News routes.
+2. Pipeline enriches and normalizes stories/outlets, then upserts to Postgres.
+3. App reads from DB-backed store adapters (`lib/dbStore.ts`) for pages and APIs.
+4. Reader requests call archive-first extraction and persist archive cache entries.
+5. Personalization APIs write follows/saved/reading/custom feed preferences.
+6. Digest and push endpoints fan out to subscribed users.
 
-### Example: region round-robin
-```bash
-export BROWSER_USE_API_KEY="<key>"
-export BROWSER_USE_ROTATION_MODE="round_robin"
-export BROWSER_USE_PROXY_COUNTRY_CODES="US,CA,GB,DE"
-npm run groundnews:scrape -- --routes /,/blindspot
-```
+For full architecture details: `docs/ARCHITECTURE.md`
 
-### Example: sticky profile + region
-```bash
-export BROWSER_USE_API_KEY="<key>"
-export BROWSER_USE_ROTATION_MODE="sticky"
-export BROWSER_USE_PROFILE_IDS="<uuid1>,<uuid2>,<uuid3>"
-export BROWSER_USE_PROXY_COUNTRY_CODES="US,GB"
-npm run archive:extract -- --url https://example.com/news/article
-```
+## API Overview
 
-### Notes
-- Invalid profile IDs are ignored unless they are UUIDs.
-- Rotation metadata is included in output JSON (`sessionRotation`, `sessionPayload`).
-- Rotation reduces repeated-identical fingerprint patterns but does not guarantee challenge-free archive access.
+The app exposes both:
+- Main app APIs under `/api/*`
+- Parity APIs under `/api/v1/*`
 
-## 7) Scripts
-```bash
-# Run Ground News scrape only
-npm run groundnews:scrape -- --routes /,/blindspot,/my,/local
+Full route reference, auth requirements, params, and side effects:
+- `docs/API.md`
 
-# Run ingestion pipeline (scrape + enrich + store update)
-npm run ingest:groundnews
+## Operations
 
-# Verify archive availability for multiple URLs
-npm run archive:verify -- --urls-file output/browser_use/archive_tests/test_urls.txt
+- Local/prod runbook, cron cadence, health checks, and incident flow:
+  - `docs/OPERATIONS.md`
+- Browser Use rotation and identity spread strategies:
+  - `docs/ROTATION_STRATEGIES.md`
 
-# Extract one URL via archive-first flow
-npm run archive:extract -- --url https://example.com/news/story
+## Documentation Index
 
-# Restart the full app server (frontend + API routes in Next.js)
-./restart.sh dev
-# or
-PORT=3001 ./restart.sh prod
-
-# Capture local screenshot baseline for parity diff
-npm run parity:baseline -- --base-url http://localhost:3000
-
-# Run parity smoke + visual diff gate
-npm run parity:gate -- --base-url http://localhost:3000
-```
-
-## 8) API Endpoints
-- `GET /api/stories`
-  - Query params: `view`, `topic`, `limit`, `edition`, `location`
-- `GET /api/stories/[slug]`
-- `POST /api/archive/read`
-  - Header: `x-ogn-api-key: <key>`
-  - Body: `{ "url": "https://...", "force": true|false }`
-- `POST /api/ingest/groundnews`
-  - Header: `x-ogn-api-key: <key>`
-- `POST /api/reader`
-  - Session: requires `ogn_session`
-  - Body: `{ "url": "https://...", "force": true|false }`
-- `GET /api/push/public-key`
-- `POST /api/push/subscribe` (session required; stores subscription)
-- `POST /api/push/unsubscribe` (session required)
-
-See detailed request/response notes in:
-- `/Users/kevinlin/OpenGroundNews/docs/API.md`
-
-## 9) Data Layout
-- Primary store: Postgres (see `prisma/schema.prisma`)
-- Runtime outputs: `/Users/kevinlin/OpenGroundNews/output/browser_use/`
-- Main pipeline scripts:
-  - `/Users/kevinlin/OpenGroundNews/scripts/groundnews_scrape_cdp.mjs`
-  - `/Users/kevinlin/OpenGroundNews/scripts/sync_groundnews_pipeline.mjs`
-  - `/Users/kevinlin/OpenGroundNews/scripts/archive_extract_cdp.mjs`
-  - `/Users/kevinlin/OpenGroundNews/scripts/archive_verify_cdp.mjs`
-
-## 10) Operations and Scheduling
-Recommended cadence:
-- Feed ingestion: every 5-10 minutes
-- Archive cache refresh: on demand + optional nightly refresh
-- Health checks: alert when scraper returns zero story links repeatedly
-
-See:
-- `/Users/kevinlin/OpenGroundNews/docs/OPERATIONS.md`
-
-## 11) Safety and Legal Notes
-- This project does not implement CAPTCHA bypass.
-- Archive retrieval is opportunistic. If blocked, the app falls back to direct extraction.
-- UI/functionality may be inspired by perspective-aware aggregators, but branding and implementation should remain distinct.
-- Respect source website Terms and legal requirements in your deployment environment.
-
-## 12) Documentation Index
-- `/Users/kevinlin/OpenGroundNews/docs/README.md`
-- `/Users/kevinlin/OpenGroundNews/docs/ARCHITECTURE.md`
-- `/Users/kevinlin/OpenGroundNews/docs/API.md`
-- `/Users/kevinlin/OpenGroundNews/docs/OPERATIONS.md`
-- `/Users/kevinlin/OpenGroundNews/docs/ROTATION_STRATEGIES.md`
-
-## Source References
-- Browser Use Cloud API docs: [CLOUD.md](https://github.com/browser-use/browser-use/blob/main/CLOUD.md)
-- Browser Use customization docs (stealth/CAPTCHA context): [Stealth & CAPTCHA](https://docs.browser-use.com/customize/usage/stealth)
-- Ground News public pages:
-  - [Homepage](https://ground.news/)
-  - [Blindspot](https://ground.news/blindspot)
-  - [Local](https://ground.news/local)
-  - [Rating System](https://ground.news/rating-system)
+- `docs/README.md`
+- `docs/ARCHITECTURE.md`
+- `docs/API.md`
+- `docs/OPERATIONS.md`
+- `docs/ROTATION_STRATEGIES.md`
+- `docs/GROUND_NEWS_CSS_DESIGN_SYSTEM.md`
+- `docs/parity/EXCEPTIONS.md`
+- `docs/parity/PARITY_TODO.md`

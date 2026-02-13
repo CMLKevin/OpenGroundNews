@@ -1,23 +1,30 @@
-# Ground News Parity TODO
+# Parity TODO Tracker
 
-Generated from `audit.md`.
+This file is a parity tracking artifact generated from audit data.
 
-## Status
-- Total issues in audit: **0**
+## Current Snapshot
+
+- Total issues in latest checklist: **0**
 - Marked done in `docs/parity/done_ids.json`: **0**
 - Remaining pending: **0**
 
-## How To Use
-- Update done list: `docs/parity/done_ids.json`
-- Regenerate: `npm run parity:todo`
-- Smoke verify: `npm run parity:smoke -- --base-url http://localhost:3000`
+## Regeneration Commands
 
-## Implemented (Checked Off)
-These are checked off based on code already landed on this branch. If any are only partial, remove them from `done_ids.json` and they’ll reappear under Pending.
+```bash
+npm run parity:checklist
+npm run parity:todo
+npm run parity:smoke -- --base-url http://localhost:3000
+npm run parity:gate -- --base-url http://localhost:3000
+```
 
-## Pending (Implement All Remaining)
+## Workflow
+
+1. Generate/update checklist artifacts.
+2. Mark completed IDs in `docs/parity/done_ids.json`.
+3. Regenerate this TODO view.
+4. Run smoke/visual gate before closing parity work.
 
 ## Notes
-- This file is a tracking artifact; the source of truth for issue descriptions remains `audit.md`.
-- Keep each TODO item tied to an audit ID so we can verify parity systematically.
 
+- This document is intentionally concise and machine-regenerated.
+- If this file and code disagree, rerun the parity toolchain to refresh artifacts.
