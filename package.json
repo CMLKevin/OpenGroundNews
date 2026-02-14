@@ -14,6 +14,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:import-json": "node scripts/db_import_json.mjs",
+    "db:dedupe-stories": "node scripts/db_dedupe_stories.mjs",
     "groundnews:scrape": "node scripts/groundnews_scrape_cdp.mjs",
     "browseruse:stop-active-browsers": "node scripts/browser_use_stop_active_browsers.mjs",
     "archive:verify": "node scripts/archive_verify_cdp.mjs",

@@ -134,6 +134,8 @@ export type Story = {
   blindspot: boolean;
   local: boolean;
   trending: boolean;
+  homepageRank?: number;
+  homepageFeaturedAt?: string;
   sources: SourceArticle[];
   coverage?: CoverageTotals;
   readerLinks?: string[];

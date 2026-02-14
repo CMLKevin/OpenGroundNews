@@ -17,6 +17,7 @@ const STORE_PATH = path.join(process.cwd(), "data", "store.json");
 const STORE_LOCK_PATH = path.join(process.cwd(), "data", "store.lock");
 const DEFAULT_OUT = "output/browser_use/groundnews_cdp/ingest_scrape.json";
 const DEFAULT_ARTICLE_AUDIT_DIR = "output/browser_use/groundnews_cdp/article_audit";
+const DEFAULT_INGEST_REPORT_DIR = "output/ingest_reports";
 const FALLBACK_IMAGE = "/images/story-fallback.svg";
 const FALLBACK_IMAGE_VARIANTS = [
   "/images/fallbacks/story-fallback-1.svg",
@@ -511,7 +512,7 @@ export function parseArgs(argv) {
     articleAudit: true,
     refreshExisting: 0,
     repairImagesOnly: false,
-    repairImageLimit: 0,
+    repairImageLimit: Math.max(0, Math.round(envNumber(process.env.OGN_PIPELINE_REPAIR_IMAGE_LIMIT, 140))),
     sessionStoryBatchSize: 8,
     sessionMaxMs: 11 * 60 * 1000,
     storyWorkerCount: Math.max(1, Math.round(envNumber(process.env.OGN_PIPELINE_STORY_WORKERS, DEFAULT_STORY_WORKERS))),
@@ -548,12 +549,23 @@ export function parseArgs(argv) {
         .filter(Boolean),
     ),
     outletEnrichment: process.env.OGN_PIPELINE_OUTLET_ENRICHMENT !== "0",
-    outletEnrichmentTimeoutMs: Math.max(
-      2500,
-      Math.round(envNumber(process.env.OGN_PIPELINE_OUTLET_ENRICH_TIMEOUT_MS, SOURCE_FETCH_TIMEOUT_MS)),
-    ),
-    silent: true,
-  };
+	    outletEnrichmentTimeoutMs: Math.max(
+	      2500,
+	      Math.round(envNumber(process.env.OGN_PIPELINE_OUTLET_ENRICH_TIMEOUT_MS, SOURCE_FETCH_TIMEOUT_MS)),
+	    ),
+      // Default-on debug surface area: the report + JSONL telemetry are the primary way to understand
+      // what the scraper is doing, what it tried, and why it failed.
+      silent: process.env.OGN_PIPELINE_SILENT === "1",
+      logLevel: normalizeLogLevel(
+        process.env.OGN_LOG_LEVEL,
+        process.env.OGN_PIPELINE_SILENT === "1" ? "warn" : "debug",
+      ),
+      telemetry: process.env.OGN_TELEMETRY !== "0",
+      visualize: process.env.OGN_VISUALIZE !== "0",
+      review: process.env.OGN_REVIEW !== "0",
+      httpFirst: process.env.OGN_HTTP_FIRST !== "0",
+      reportDir: normalizeText(process.env.OGN_REPORT_DIR || ""),
+	  };
 
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
@@ -563,7 +575,7 @@ export function parseArgs(argv) {
         .map((s) => s.trim())
         .filter(Boolean);
       i += 1;
-    } else if (a === "--story-limit" && argv[i + 1]) {
+    } else if ((a === "--story-limit" || a === "--max-stories" || a === "--maxStories") && argv[i + 1]) {
       const parsed = Number(argv[i + 1]);
       opts.storyLimit = Number.isFinite(parsed) ? parsed : 0;
       i += 1;
@@ -653,16 +665,98 @@ export function parseArgs(argv) {
       opts.outletEnrichmentTimeoutMs =
         Number.isFinite(parsed) && parsed > 0 ? Math.max(1000, Math.round(parsed)) : opts.outletEnrichmentTimeoutMs;
       i += 1;
-    } else if (a === "--verbose") {
-      opts.silent = false;
-    }
-  }
+	    } else if (a === "--verbose") {
+	      opts.silent = false;
+        // When asked for verbose output, also generate a report by default.
+        if (opts.logLevel === "info" || opts.logLevel === "warn") opts.logLevel = "debug";
+        opts.telemetry = true;
+        opts.visualize = true;
+        opts.review = true;
+      } else if ((a === "--log-level" || a === "--loglevel") && argv[i + 1]) {
+        opts.logLevel = normalizeLogLevel(argv[i + 1], opts.logLevel);
+        i += 1;
+      } else if (a === "--trace") {
+        opts.silent = false;
+        opts.logLevel = "trace";
+        opts.telemetry = true;
+        opts.visualize = true;
+        opts.review = true;
+      } else if (a === "--quiet") {
+        opts.silent = true;
+        if (opts.logLevel === "trace" || opts.logLevel === "debug" || opts.logLevel === "info") opts.logLevel = "warn";
+      } else if (a === "--telemetry") {
+        opts.telemetry = true;
+      } else if (a === "--no-telemetry") {
+        opts.telemetry = false;
+      } else if (a === "--visualize") {
+        opts.visualize = true;
+      } else if (a === "--no-visualize") {
+        opts.visualize = false;
+      } else if (a === "--review") {
+        opts.review = true;
+      } else if (a === "--no-review") {
+        opts.review = false;
+      } else if (a === "--http-first") {
+        opts.httpFirst = true;
+      } else if (a === "--no-http-first") {
+        opts.httpFirst = false;
+      } else if (a === "--report-dir" && argv[i + 1]) {
+        opts.reportDir = argv[i + 1];
+        i += 1;
+	    }
+	  }
   opts.editions = normalizeEditionList(opts.editions);
   return opts;
 }
 
 async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTimeout(promise, timeoutMs, label = "operation") {
+  const ms = Number(timeoutMs);
+  if (!Number.isFinite(ms) || ms <= 0) return promise;
+  let timer = null;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${ms}ms`));
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, timeout]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+function createSemaphore(limit) {
+  const max = Math.max(1, Math.round(Number(limit) || 1));
+  let active = 0;
+  const queue = [];
+
+  const acquire = () =>
+    new Promise((resolve) => {
+      const grant = () => {
+        active += 1;
+        let released = false;
+        resolve(() => {
+          if (released) return;
+          released = true;
+          active = Math.max(0, active - 1);
+          const next = queue.shift();
+          if (next) next();
+        });
+      };
+      if (active < max) return grant();
+      queue.push(grant);
+    });
+
+  return {
+    limit: max,
+    acquire,
+    activeCount: () => active,
+    queuedCount: () => queue.length,
+  };
 }
 
 async function withStoreLock(run) {
@@ -764,21 +858,25 @@ async function loadRefreshCandidatesFromDb(limit) {
   if (!process.env.DATABASE_URL || max <= 0) return [];
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
-    const sql = `
-      SELECT "canonicalUrl", "slug"
-      FROM "Story"
-      WHERE (
-          LOWER(COALESCE("imageUrl", '')) LIKE '%webmetaimg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://ground.news/images/cache/%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://www.ground.news/images/cache/%'
-        )
-      ORDER BY "updatedAt" ASC
-      LIMIT $1
-    `;
+	    const sql = `
+	      SELECT "canonicalUrl", "slug"
+	      FROM "Story"
+	      WHERE (
+	          LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://ground.news/images/cache/%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE 'http%://www.ground.news/images/cache/%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/logo.%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/logos/%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%logo%no%outline%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%wordmark%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%brandmark%'
+	        )
+	      ORDER BY "updatedAt" ASC
+	      LIMIT $1
+	    `;
     const result = await pool.query(sql, [max]);
     return Array.from(
       new Set(
@@ -805,19 +903,25 @@ async function loadPlaceholderStoryRowsFromDb(limit) {
   if (!process.env.DATABASE_URL || max <= 0) return [];
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
-    const sql = `
-      SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
-      FROM "Story"
-      WHERE (
-          LOWER(COALESCE("imageUrl", '')) LIKE '%webmetaimg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
-        )
-      ORDER BY "updatedAt" ASC
-      LIMIT $1
-    `;
+	    const sql = `
+	      SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
+	      FROM "Story"
+	      WHERE (
+	          LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/assets/web/images/stock/%icon%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%groundnews.b-cdn.net/assets/web/images/stock/%icon%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/logo.%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/logos/%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%logo%no%outline%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%wordmark%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%brandmark%'
+	        )
+	      ORDER BY "updatedAt" ASC
+	      LIMIT $1
+	    `;
     const result = await pool.query(sql, [max]);
     return (result.rows || []).map((row) => ({
       id: normalizeText(row?.id || ""),
@@ -838,17 +942,23 @@ async function countPlaceholderStoriesInDb() {
   if (!process.env.DATABASE_URL) return 0;
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
   try {
-    const sql = `
-      SELECT COUNT(*)::int AS count
-      FROM "Story"
-      WHERE (
-          LOWER(COALESCE("imageUrl", '')) LIKE '%webmetaimg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
-          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
-        )
-    `;
+	    const sql = `
+	      SELECT COUNT(*)::int AS count
+	      FROM "Story"
+	      WHERE (
+	          LOWER(COALESCE("imageUrl", '')) LIKE '%ground.news/images/story-fallback%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback.svg%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/story-fallback-thumb.svg%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/images/fallbacks/story-fallback-%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/assets/web/images/stock/%icon%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%groundnews.b-cdn.net/assets/web/images/stock/%icon%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/logo.%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%/logos/%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%logo%no%outline%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%wordmark%'
+	          OR LOWER(COALESCE("imageUrl", '')) LIKE '%brandmark%'
+	        )
+	    `;
     const result = await pool.query(sql);
     return Number(result.rows?.[0]?.count || 0);
   } catch {
@@ -901,6 +1011,44 @@ async function loadLikelyBrokenImageStoryRowsFromDb(limit) {
         imageUrl,
         updatedAt: normalizeText(row?.updatedAt || ""),
       });
+    }
+    return mapped;
+  } catch {
+    return [];
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
+async function loadSuspectCachedImageStoryRowsFromDb(limit) {
+  const max = Math.max(1, Math.round(Number(limit) || 0));
+  if (!process.env.DATABASE_URL || max <= 0) return [];
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    // We need a wide scan because unhealthy cached images might not be among the newest rows.
+    const scanLimit = Math.max(400, Math.min(6000, max * 30));
+    const result = await pool.query(
+      `SELECT "id", "slug", "title", "canonicalUrl", "imageUrl", "updatedAt"
+       FROM "Story"
+       WHERE LOWER(COALESCE("imageUrl", '')) LIKE '/images/cache/%'
+       ORDER BY "updatedAt" DESC
+       LIMIT $1`,
+      [scanLimit],
+    );
+    const mapped = [];
+    for (const row of result.rows || []) {
+      const imageUrl = normalizeText(row?.imageUrl || "");
+      if (!imageUrl.startsWith("/images/cache/")) continue;
+      if (await cachedStoryImageLooksHealthy(imageUrl)) continue;
+      mapped.push({
+        id: normalizeText(row?.id || ""),
+        slug: normalizeText(row?.slug || ""),
+        title: normalizeText(row?.title || ""),
+        canonicalUrl: normalizeExternalUrl(row?.canonicalUrl),
+        imageUrl,
+        updatedAt: normalizeText(row?.updatedAt || ""),
+      });
+      if (mapped.length >= max) break;
     }
     return mapped;
   } catch {
@@ -1005,6 +1153,28 @@ async function loadOverusedImageUrlStoryRowsFromDb(limit) {
   }
 }
 
+async function clearStaleHomepageRanksInDb(homepageUrls = []) {
+  if (!process.env.DATABASE_URL) return 0;
+  const urls = dedupeOrdered((homepageUrls || []).map((u) => normalizeText(u).toLowerCase()).filter(Boolean)).slice(0, 2000);
+  if (urls.length === 0) return 0;
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  try {
+    const result = await pool.query(
+      `UPDATE "Story"
+       SET "homepageRank" = NULL,
+           "homepageFeaturedAt" = NULL
+       WHERE "homepageRank" IS NOT NULL
+         AND ( "canonicalUrl" IS NULL OR LOWER("canonicalUrl") <> ALL($1::text[]) )`,
+      [urls],
+    );
+    return Number(result.rowCount || 0);
+  } catch {
+    return 0;
+  } finally {
+    await pool.end().catch(() => {});
+  }
+}
+
 function stableId(value, prefix) {
   const hash = crypto.createHash("sha256").update(value).digest("hex").slice(0, 16);
   return `${prefix}-${hash}`;
@@ -1022,6 +1192,694 @@ function slugForFile(value, fallback = "item", maxLength = 72) {
 function resolveAuditDir(rawDir) {
   if (!rawDir) return path.resolve(process.cwd(), DEFAULT_ARTICLE_AUDIT_DIR);
   return path.isAbsolute(rawDir) ? rawDir : path.resolve(process.cwd(), rawDir);
+}
+
+function resolveReportDir(rawDir, runId) {
+  const base = rawDir
+    ? path.isAbsolute(rawDir)
+      ? rawDir
+      : path.resolve(process.cwd(), rawDir)
+    : path.resolve(process.cwd(), DEFAULT_INGEST_REPORT_DIR);
+  const safeRun = slugForFile(runId || "run", "run", 140);
+  return path.join(base, safeRun);
+}
+
+function isoForRunId(date = new Date()) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}_${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+function createRunId(prefix = "groundnews") {
+  return `${prefix}_${isoForRunId()}_${shortHash(`${process.pid}:${Date.now()}:${Math.random()}`, 6)}`;
+}
+
+const LOG_LEVELS = Object.freeze({
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50,
+  silent: 99,
+});
+
+function normalizeLogLevel(raw, fallback = "info") {
+  const value = normalizeText(raw || "").toLowerCase();
+  if (value in LOG_LEVELS) return value;
+  return fallback in LOG_LEVELS ? fallback : "info";
+}
+
+function createTelemetry({ enabled, dir, runId, logLevel = "info", consoleEnabled = true } = {}) {
+  const level = normalizeLogLevel(logLevel, "info");
+  const min = LOG_LEVELS[level] ?? LOG_LEVELS.info;
+  const should = (lvl) => (LOG_LEVELS[normalizeLogLevel(lvl, "info")] ?? LOG_LEVELS.info) >= min;
+
+  const state = {
+    enabled: Boolean(enabled),
+    dir: normalizeText(dir || ""),
+    runId: normalizeText(runId || ""),
+    level,
+    consoleEnabled: Boolean(consoleEnabled),
+    eventsPath: "",
+    errorsPath: "",
+    bufferEvents: [],
+    bufferErrors: [],
+    flushInFlight: null,
+    closed: false,
+    flushTimer: null,
+    ioErrors: [],
+    spans: [],
+    storyRuns: new Map(),
+    errorGroups: new Map(),
+    counters: { events: 0, errors: 0 },
+  };
+
+  const safeJson = (value) => {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return JSON.stringify({ note: "unserializable" });
+    }
+  };
+
+  const safeJsonForHtml = (value) => safeJson(value).replace(/<\//g, "<\\/");
+
+  const recordIoError = (phase, error) => {
+    const err = error instanceof Error ? error : new Error(String(error || "unknown error"));
+    const entry = {
+      ts: new Date().toISOString(),
+      phase: normalizeText(phase || "io"),
+      message: err.message,
+      stack: err.stack || "",
+    };
+    state.ioErrors.push(entry);
+    // Telemetry IO failures should be loud: they block the whole debug/review story.
+    if (state.consoleEnabled) {
+      const clean = String(err.message || "unknown").replace(/\s+/g, " ").trim();
+      console.warn(`[warn] telemetry io error phase=${entry.phase}: ${clean}`);
+    }
+  };
+
+  const appendBuffered = async () => {
+    if (!state.enabled) return;
+    if (state.flushInFlight) return state.flushInFlight;
+    state.flushInFlight = (async () => {
+      const batchEvents = state.bufferEvents.splice(0, state.bufferEvents.length);
+      const batchErrors = state.bufferErrors.splice(0, state.bufferErrors.length);
+      if (batchEvents.length === 0 && batchErrors.length === 0) return;
+      try {
+        await fs.mkdir(state.dir, { recursive: true });
+        if (!state.eventsPath || !state.errorsPath) {
+          throw new Error("telemetry init has not set eventsPath/errorsPath");
+        }
+        if (batchEvents.length > 0) await fs.appendFile(state.eventsPath, batchEvents.join(""), "utf8");
+        if (batchErrors.length > 0) await fs.appendFile(state.errorsPath, batchErrors.join(""), "utf8");
+      } catch (error) {
+        recordIoError("flush", error);
+      }
+    })()
+      .finally(() => {
+        state.flushInFlight = null;
+      });
+    return state.flushInFlight;
+  };
+
+  const emit = (lvl, type, payload = {}) => {
+    if (!state.enabled || state.closed) return;
+    if (!should(lvl)) return;
+    const normalizedLevel = normalizeLogLevel(lvl, "info");
+    const entry = {
+      ts: new Date().toISOString(),
+      runId: state.runId,
+      level: normalizedLevel,
+      type,
+      ...payload,
+    };
+    state.bufferEvents.push(`${safeJson(entry)}\n`);
+    state.counters.events += 1;
+    // Keep telemetry usable during long runs: make sure `events.jsonl` updates even early in the run.
+    // We flush immediately for info/warn/error so "tail -f" stays useful.
+    if (
+      normalizedLevel === "info" ||
+      normalizedLevel === "warn" ||
+      normalizedLevel === "error" ||
+      state.bufferEvents.length >= 25
+    ) {
+      void appendBuffered();
+    }
+  };
+
+  const emitError = (type, error, payload = {}) => {
+    if (!state.enabled || state.closed) return;
+    const err = error instanceof Error ? error : new Error(String(error || "unknown error"));
+    const entry = {
+      ts: new Date().toISOString(),
+      runId: state.runId,
+      level: "error",
+      type,
+      message: err.message,
+      stack: err.stack || "",
+      ...payload,
+    };
+    state.bufferErrors.push(`${safeJson(entry)}\n`);
+    state.counters.errors += 1;
+    // Errors should be visible immediately.
+    void appendBuffered();
+
+    const groupKey = `${type}::${String(err.message || "").slice(0, 180)}`;
+    const group = state.errorGroups.get(groupKey) || { type, message: err.message, count: 0, samples: [] };
+    group.count += 1;
+    if (group.samples.length < 6) {
+      group.samples.push({
+        ts: entry.ts,
+        message: err.message,
+        stack: (err.stack || "").split("\n").slice(0, 6).join("\n"),
+        ...payload,
+      });
+    }
+    state.errorGroups.set(groupKey, group);
+  };
+
+  const consoleLine = (lvl, msg) => {
+    if (!state.consoleEnabled) return;
+    if (!should(lvl)) return;
+    const prefix = `[${normalizeLogLevel(lvl, "info")}]`;
+    const clean = String(msg || "").replace(/\s+/g, " ").trim();
+    if (lvl === "error") console.error(`${prefix} ${clean}`);
+    else if (lvl === "warn") console.warn(`${prefix} ${clean}`);
+    else console.log(`${prefix} ${clean}`);
+  };
+
+  const startSpan = (name, payload = {}) => {
+    const spanId = shortHash(`${state.runId}:${name}:${Date.now()}:${Math.random()}`, 10);
+    const startedAt = Date.now();
+    state.spans.push({
+      spanId,
+      name: normalizeText(name || ""),
+      startedAt: new Date(startedAt).toISOString(),
+      startedAtMs: startedAt,
+      status: "running",
+      payload: payload || {},
+    });
+    emit("debug", "span.start", { spanId, name, ...payload });
+    return {
+      id: spanId,
+      name,
+      startedAt,
+      end: (status = "ok", extra = {}) => {
+        const durMs = Date.now() - startedAt;
+        const idx = state.spans.findIndex((s) => s.spanId === spanId);
+        if (idx >= 0) {
+          state.spans[idx] = {
+            ...state.spans[idx],
+            finishedAt: new Date().toISOString(),
+            finishedAtMs: Date.now(),
+            durMs,
+            status,
+            extra: extra || {},
+          };
+        }
+        emit(status === "ok" ? "debug" : "warn", "span.end", { spanId, name, status, durMs, ...extra });
+        return durMs;
+      },
+    };
+  };
+
+  const storyKey = (workerId, ordinal, link) =>
+    `w${String(workerId || 0)}-o${String(ordinal ?? "x")}-${shortHash(normalizeText(link || ""), 10)}`;
+
+  const noteStoryStart = ({ workerId, ordinal, link }) => {
+    const key = storyKey(workerId, ordinal, link);
+    const item = state.storyRuns.get(key) || {};
+    state.storyRuns.set(key, {
+      ...item,
+      key,
+      workerId,
+      ordinal,
+      link,
+      startedAt: item.startedAt || new Date().toISOString(),
+      startedAtMs: item.startedAtMs || Date.now(),
+      steps: item.steps || {},
+      ok: item.ok ?? null,
+    });
+    return key;
+  };
+
+  const noteStoryStep = (key, stepName, durMs, extra = {}) => {
+    const item = state.storyRuns.get(key);
+    if (!item) return;
+    item.steps = item.steps || {};
+    item.steps[stepName] = { durMs, ...(extra || {}) };
+    state.storyRuns.set(key, item);
+  };
+
+  const noteStoryEnd = (
+    key,
+    { ok, title, slug, canonicalUrl, sourceCount, selectedImageUrl, failure, screenshotPath } = {},
+  ) => {
+    const item = state.storyRuns.get(key);
+    if (!item) return;
+    item.ok = Boolean(ok);
+    item.title = normalizeText(title || item.title || "");
+    item.slug = normalizeText(slug || item.slug || "");
+    item.canonicalUrl = normalizeText(canonicalUrl || item.canonicalUrl || "");
+    item.sourceCount = Number.isFinite(Number(sourceCount)) ? Number(sourceCount) : item.sourceCount;
+    item.selectedImageUrl = normalizeText(selectedImageUrl || item.selectedImageUrl || "");
+    item.screenshotPath = normalizeText(screenshotPath || item.screenshotPath || "");
+    item.failure = failure || item.failure || null;
+    item.finishedAt = new Date().toISOString();
+    item.durMs = Date.now() - (item.startedAtMs || Date.now());
+    state.storyRuns.set(key, item);
+  };
+
+  const init = async () => {
+    if (!state.enabled) return;
+    try {
+      await fs.mkdir(state.dir, { recursive: true });
+      state.eventsPath = path.join(state.dir, "events.jsonl");
+      state.errorsPath = path.join(state.dir, "errors.jsonl");
+      // Create the files eagerly so "tail -f" works even before the first flush.
+      await fs.writeFile(state.eventsPath, "", { encoding: "utf8", flag: "a" });
+      await fs.writeFile(state.errorsPath, "", { encoding: "utf8", flag: "a" });
+      await writeTextFile(
+        path.join(state.dir, "README.txt"),
+        `OpenGroundNews ingest telemetry\nrunId=${state.runId}\nlogLevel=${state.level}\n`,
+      );
+      // Keep debug/trace telemetry visible during long runs even if no info-level events fire.
+      // Important for "MUCH more verbose" tailing and for diagnosing stalls.
+      state.flushTimer = setInterval(() => {
+        void appendBuffered();
+      }, 2000);
+      state.flushTimer.unref?.();
+    } catch (error) {
+      recordIoError("init", error);
+      // If telemetry can't initialize, disable it so the run doesn't die on repeated flush attempts.
+      state.enabled = false;
+    }
+  };
+
+  const summary = () => {
+    const stories = Array.from(state.storyRuns.values());
+    const total = stories.length;
+    const ok = stories.filter((s) => s.ok === true).length;
+    const fail = stories.filter((s) => s.ok === false).length;
+    const stageCounts = new Map();
+    for (const s of stories) {
+      const stage = normalizeText(s?.failure?.stage || "");
+      if (!stage) continue;
+      stageCounts.set(stage, (stageCounts.get(stage) || 0) + 1);
+    }
+    const topStages = Array.from(stageCounts.entries())
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 12)
+      .map(([stage, count]) => ({ stage, count }));
+    const topErrors = Array.from(state.errorGroups.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 12)
+      .map((g) => ({ type: g.type, message: g.message, count: g.count }));
+    const slowestStories = stories
+      .filter((s) => Number.isFinite(Number(s.durMs)))
+      .slice()
+      .sort((a, b) => Number(b.durMs) - Number(a.durMs))
+      .slice(0, 8)
+      .map((s) => ({ ordinal: s.ordinal, durMs: s.durMs, title: s.title, link: s.canonicalUrl || s.link || "" }));
+    return {
+      runId: state.runId,
+      dir: state.dir,
+      logLevel: state.level,
+      counters: { ...state.counters },
+      io: { errors: state.ioErrors.slice(0, 20) },
+      stories: { total, ok, fail, topStages, slowestStories },
+      errors: { top: topErrors },
+    };
+  };
+
+  const finalize = async (reportData = {}) => {
+    if (!state.enabled) return null;
+    // Prevent new events from being added while we flush + write the report.
+    state.closed = true;
+    if (state.flushTimer) clearInterval(state.flushTimer);
+    await appendBuffered();
+
+    const stories = Array.from(state.storyRuns.values()).sort((a, b) => (a.ordinal ?? 0) - (b.ordinal ?? 0));
+    // Attach cached image metadata to story runs so the report can flag low-res / broken assets.
+    const imageSummary = { total: 0, good: 0, low: 0, bad: 0, missing: 0, worst: [] };
+    for (const story of stories) {
+      const img = normalizeText(story?.selectedImageUrl || "");
+      if (!img || !img.startsWith("/images/cache/")) {
+        if (!img) imageSummary.missing += 1;
+        continue;
+      }
+      const meta = await readCachedImageMeta(img);
+      if (!meta) {
+        imageSummary.missing += 1;
+        continue;
+      }
+      story.imageMeta = meta;
+      imageSummary.total += 1;
+      if (meta.quality === "good") imageSummary.good += 1;
+      else if (meta.quality === "low") imageSummary.low += 1;
+      else if (meta.quality === "bad") imageSummary.bad += 1;
+      if (meta.quality !== "good") {
+        imageSummary.worst.push({
+          title: normalizeText(story.title || ""),
+          link: normalizeText(story.canonicalUrl || story.link || ""),
+          ...meta,
+        });
+      }
+    }
+    imageSummary.worst = imageSummary.worst
+      .slice()
+      .sort((a, b) => Number(a.maxSide || 0) - Number(b.maxSide || 0) || Number(a.area || 0) - Number(b.area || 0))
+      .slice(0, 60);
+    const errors = Array.from(state.errorGroups.values()).sort((a, b) => b.count - a.count);
+    const spans = (state.spans || [])
+      .slice()
+      .filter((s) => s && typeof s === "object")
+      .sort((a, b) => Number(b?.durMs || 0) - Number(a?.durMs || 0))
+      .slice(0, 240);
+    const finalReport = {
+      generatedAt: new Date().toISOString(),
+      runId: state.runId,
+      logLevel: state.level,
+      counters: state.counters,
+      ioErrors: state.ioErrors.slice(0, 50),
+      spans,
+      stories,
+      errors,
+      imageSummary,
+      ...reportData,
+    };
+
+    const reportJsonPath = path.join(state.dir, "report_data.json");
+    await writeJsonFile(reportJsonPath, finalReport);
+
+    const embedded = safeJsonForHtml(finalReport);
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OpenGroundNews Ingest Report</title>
+  <style>
+    :root{--bg:#0b0f14;--panel:#121a24;--muted:#8aa0b5;--text:#e8f0f8;--good:#46d39a;--warn:#ffcc66;--bad:#ff6b6b;--line:#223044;--mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;}
+    html,body{background:var(--bg);color:var(--text);font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial; margin:0;}
+    header{padding:18px 18px 10px;border-bottom:1px solid var(--line);}
+    h1{margin:0 0 6px;font-size:18px;letter-spacing:0.2px;}
+    .sub{color:var(--muted);font-family:var(--mono);font-size:12px;}
+    main{padding:18px;display:grid;gap:14px;}
+    .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px;}
+    .card h2{margin:0 0 8px;font-size:13px;color:#cfe3f5;}
+    .kv{display:grid;grid-template-columns: 160px 1fr;gap:6px 10px;font-size:12px;}
+    .k{color:var(--muted);} .v{font-family:var(--mono);}
+    table{width:100%;border-collapse:collapse;font-size:12px;}
+    th,td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top;}
+    th{color:#cfe3f5;font-weight:600;text-align:left;}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-family:var(--mono);font-size:11px;border:1px solid var(--line);}
+    .ok{color:var(--good);border-color: rgba(70,211,154,0.35);} .fail{color:var(--bad);border-color: rgba(255,107,107,0.35);} .warn{color:var(--warn);border-color: rgba(255,204,102,0.35);}
+    .bar{height:10px;background:#0a111a;border:1px solid var(--line);border-radius:999px;overflow:hidden;}
+    .seg{height:100%;display:inline-block;}
+    .seg.dom{background:#2f81f7;} .seg.sources{background:#46d39a;} .seg.image{background:#ffcc66;} .seg.persist{background:#b392f0;} .seg.other{background:#7b8ca3;}
+    .muted{color:var(--muted);} a{color:#9ad1ff;}
+    .mono{font-family:var(--mono);}
+    .small{font-size:11px;}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>OpenGroundNews Ingest Report</h1>
+    <div class="sub" id="sub"></div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>Summary</h2>
+      <div class="kv" id="summary"></div>
+    </section>
+    <section class="card">
+      <h2>Image Health</h2>
+      <div class="muted small" id="imgNote"></div>
+      <div style="overflow:auto;max-height:440px;border-radius:10px;">
+        <table id="imgTbl"></table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Spans</h2>
+      <div class="muted small">High-level phase durations captured during the run.</div>
+      <div style="overflow:auto;max-height:360px;border-radius:10px;">
+        <table id="spansTbl"></table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Routes</h2>
+      <div class="muted small" id="routesNote"></div>
+      <div style="overflow:auto;max-height:420px;border-radius:10px;">
+        <table id="routesTbl"></table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Selected Links</h2>
+      <div class="muted small">First 30 selected story links (post-ranking)</div>
+      <div class="mono small" id="linksPreview" style="white-space:pre-wrap;line-height:1.45;"></div>
+    </section>
+    <section class="card">
+      <h2>Stories</h2>
+      <div class="muted small" id="storiesNote"></div>
+      <div style="overflow:auto;max-height:560px;border-radius:10px;">
+        <table id="storiesTbl"></table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Telemetry IO</h2>
+      <div class="muted small">File write errors while producing this report (should usually be empty).</div>
+      <div style="overflow:auto;max-height:320px;border-radius:10px;">
+        <table id="ioTbl"></table>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Top Errors</h2>
+      <div style="overflow:auto;max-height:420px;border-radius:10px;">
+        <table id="errorsTbl"></table>
+      </div>
+    </section>
+  </main>
+  <script id="report-data" type="application/json">${embedded}</script>
+  <script>
+  (function(){
+    var data = JSON.parse(document.getElementById('report-data').textContent || '{}');
+    var sub = document.getElementById('sub');
+    sub.textContent = 'runId=' + (data.runId || '') + '  generatedAt=' + (data.generatedAt || '') + '  logLevel=' + (data.logLevel || '');
+
+    function kv(k,v){ return '<div class="k">' + k + '</div><div class="v">' + String(v==null?'':v) + '</div>'; }
+    var stories = data.stories || [];
+    var storyOk = stories.filter(function(s){ return s.ok === true; }).length;
+    var storyFail = stories.filter(function(s){ return s.ok === false; }).length;
+
+    var sum = document.getElementById('summary');
+    sum.innerHTML = [
+      kv('Stories (ok/fail)', String(stories.length) + ' (' + storyOk + '/' + storyFail + ')'),
+      kv('Event lines', (data.counters && data.counters.events) || 0),
+      kv('Error lines', (data.counters && data.counters.errors) || 0),
+      kv('Telemetry IO errors', (data.ioErrors && data.ioErrors.length) || 0),
+      kv('Cached images (good/low/bad)', (data.imageSummary ? (String(data.imageSummary.total||0) + ' (' + (data.imageSummary.good||0) + '/' + (data.imageSummary.low||0) + '/' + (data.imageSummary.bad||0) + ')') : '')),
+      kv('Report Dir', data.reportDir || data.dir || ''),
+      kv('Notes', data.notes || '')
+    ].join('');
+
+    var imgSummary = data.imageSummary || {};
+    var imgWorst = (imgSummary.worst || []).slice(0, 120);
+    var imgNote = document.getElementById('imgNote');
+    imgNote.textContent = 'cachedTotal=' + (imgSummary.total||0) + ' good=' + (imgSummary.good||0) + ' low=' + (imgSummary.low||0) + ' bad=' + (imgSummary.bad||0) + ' missing=' + (imgSummary.missing||0) + ' (showing worst first)';
+    var it = document.getElementById('imgTbl');
+    it.innerHTML = '<thead><tr><th>Quality</th><th>Dims</th><th>Bytes</th><th>Preview</th><th>Story</th></tr></thead>' +
+      '<tbody>' + imgWorst.map(function(r){
+        var q = String(r.quality||'');
+        var pill = (q === 'good') ? '<span class="pill ok">good</span>' : (q === 'low') ? '<span class="pill warn">low</span>' : '<span class="pill fail">bad</span>';
+        var dims = (r.width && r.height) ? (String(r.width) + 'x' + String(r.height)) : '';
+        var bytes = (r.byteLength != null) ? String(r.byteLength) : '';
+        var imgSrc = r.path || '';
+        if (imgSrc && imgSrc.indexOf('/images/') === 0) imgSrc = '../../../public' + imgSrc;
+        var thumb = imgSrc ? ('<a href="' + imgSrc + '" target="_blank"><img src="' + imgSrc + '" style="width:140px;height:78px;object-fit:cover;border-radius:10px;border:1px solid var(--line);" loading="lazy" /></a>') : '';
+        var title = String(r.title||'').slice(0, 120);
+        var href = String(r.link||'');
+        var link = href ? ('<a class="mono small" href=\"' + href + '\" target=\"_blank\">story</a>') : '';
+        return '<tr>' +
+          '<td>' + pill + '</td>' +
+          '<td class="mono">' + dims + '</td>' +
+          '<td class="mono">' + bytes + '</td>' +
+          '<td>' + thumb + '</td>' +
+          '<td><div>' + title + '</div><div class=\"muted mono small\">' + link + '</div></td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+
+    var spans = (data.spans || []).slice();
+    spans.sort(function(a,b){ return (Number(b.durMs||0)-Number(a.durMs||0)) || String(a.name||'').localeCompare(String(b.name||'')); });
+    spans = spans.slice(0, 120);
+    var spt = document.getElementById('spansTbl');
+    spt.innerHTML = '<thead><tr><th>Status</th><th>Name</th><th>Dur</th><th>Started</th><th>Details</th></tr></thead>' +
+      '<tbody>' + spans.map(function(s){
+        var status = String(s.status||'');
+        var pill = (status === 'ok') ? '<span class="pill ok">ok</span>' : (status === 'running') ? '<span class="pill warn">run</span>' : '<span class="pill fail">err</span>';
+        var dur = (s.durMs != null) ? (Math.round(Number(s.durMs)) + 'ms') : '';
+        var details = '';
+        try{ details = JSON.stringify(s.payload || s.extra || {}).slice(0, 220); } catch(e){ details = ''; }
+        return '<tr>' +
+          '<td>' + pill + '</td>' +
+          '<td class="mono">' + String(s.name||'').slice(0, 80) + '</td>' +
+          '<td class="mono">' + dur + '</td>' +
+          '<td class="mono small">' + String(s.startedAt||'').slice(0, 24) + '</td>' +
+          '<td class="mono small">' + String(details) + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+
+    var baseRoutes = (data.routes && data.routes.baseRoutes) ? data.routes.baseRoutes : [];
+    var expandedRoutes = (data.routes && data.routes.expandedRoutes) ? data.routes.expandedRoutes : [];
+    var routeSummary = (data.routes && data.routes.summary) ? data.routes.summary : [];
+    var routesNote = document.getElementById('routesNote');
+    routesNote.textContent = 'baseRoutes=' + baseRoutes.length + ' expandedRoutes=' + expandedRoutes.length + ' routeRows=' + routeSummary.length;
+
+    // Sort by yield descending so the most productive routes show first.
+    routeSummary = routeSummary.slice().sort(function(a, b){
+      return (Number(b.storyLinks||0) - Number(a.storyLinks||0)) || String(a.routeUrl||'').localeCompare(String(b.routeUrl||''));
+    }).slice(0, 240);
+
+    var rt = document.getElementById('routesTbl');
+    rt.innerHTML = '<thead><tr><th>Status</th><th>Edition</th><th>Route</th><th>Links</th><th>Topics</th><th>Outlets</th><th>Error</th></tr></thead>' +
+      '<tbody>' + routeSummary.map(function(r){
+        var status = String(r.status||'');
+        var pill = (status === 'ok') ? '<span class="pill ok">ok</span>' : '<span class="pill fail">err</span>';
+        var edition = (r.editionLabel || r.edition || '');
+        var route = (r.routeUrl || '');
+        var links = Number(r.storyLinks||0);
+        var topics = Number(r.topicLinks||0);
+        var outlets = Number(r.outletLinks||0);
+        var err = String(r.error||'').slice(0, 180);
+        return '<tr>' +
+          '<td>' + pill + '</td>' +
+          '<td class="mono">' + String(edition).slice(0, 24) + '</td>' +
+          '<td class="mono">' + String(route).slice(0, 80) + '</td>' +
+          '<td class="mono">' + links + '</td>' +
+          '<td class="mono">' + topics + '</td>' +
+          '<td class="mono">' + outlets + '</td>' +
+          '<td class="mono small">' + err + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+
+    var linksObj = data.links || {};
+    var linkPreview = (linksObj.selectedPreview || []).map(function(u, i){ return String(i+1).padStart(2,'0') + '. ' + u; }).join('\\n');
+    document.getElementById('linksPreview').textContent = linkPreview;
+
+    var io = (data.ioErrors || []).slice(0, 120);
+    var iot = document.getElementById('ioTbl');
+    iot.innerHTML = '<thead><tr><th>When</th><th>Phase</th><th>Message</th></tr></thead>' +
+      '<tbody>' + io.map(function(e){
+        return '<tr>' +
+          '<td class="mono small">' + String(e.ts||'').slice(0, 24) + '</td>' +
+          '<td class="mono">' + String(e.phase||'') + '</td>' +
+          '<td class="mono small">' + String(e.message||'').slice(0, 260) + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+
+    function bar(steps){
+      steps = steps || {};
+      var dom = (steps.dom_extract && steps.dom_extract.durMs) || 0;
+      var src = (steps.sources_enrich && steps.sources_enrich.durMs) || 0;
+      var img = (steps.image_select && steps.image_select.durMs) || 0;
+      var per = (steps.persist && steps.persist.durMs) || 0;
+      var total = (steps.total && steps.total.durMs) || (dom + src + img + per);
+      total = Math.max(1, total);
+      var other = Math.max(0, total - (dom + src + img + per));
+      function seg(cls, ms){
+        if (!ms) return '';
+        return '<span class="seg ' + cls + '" style="width:' + ((ms/total)*100).toFixed(2) + '%"></span>';
+      }
+      var title = 'dom=' + dom + 'ms sources=' + src + 'ms image=' + img + 'ms persist=' + per + 'ms other=' + other + 'ms total=' + total + 'ms';
+      return '<div class="bar" title="' + title + '">' + seg('dom', dom) + seg('sources', src) + seg('image', img) + seg('persist', per) + seg('other', other) + '</div>';
+    }
+
+    var st = document.getElementById('storiesTbl');
+    st.innerHTML = '<thead><tr><th>#</th><th>Status</th><th>Worker</th><th>Title</th><th>Dur</th><th>Steps</th><th>Shot</th><th>Image</th><th>Failure</th></tr></thead>' +
+      '<tbody>' + stories.map(function(s){
+        var pill = (s.ok === true) ? '<span class="pill ok">ok</span>' : (s.ok === false) ? '<span class="pill fail">fail</span>' : '<span class="pill warn">unknown</span>';
+        var dur = (s.durMs != null) ? (Math.round(s.durMs) + 'ms') : '';
+        var shot = '';
+        if (s.screenshotPath) {
+          shot = '<a class="mono small" href="' + s.screenshotPath + '" target="_blank">view</a>' +
+            '<div style="margin-top:6px;"><img src="' + s.screenshotPath + '" style="width:110px;height:62px;object-fit:cover;border-radius:10px;border:1px solid var(--line);" loading="lazy" /></div>';
+        }
+        var imgUrl = (s.selectedImageUrl || '');
+        var imgSrc = imgUrl;
+        if (imgUrl && imgUrl.indexOf('/images/') === 0) {
+          imgSrc = '../../../public' + imgUrl;
+        }
+        var img = imgUrl.slice(0, 90);
+        var imgThumb = imgSrc ? ('<a href="' + imgSrc + '" target="_blank"><img src="' + imgSrc + '" style="width:110px;height:62px;object-fit:cover;border-radius:10px;border:1px solid var(--line);" loading="lazy" /></a>') : '';
+        var fail = s.failure ? ((s.failure.stage || '') + ' ' + (s.failure.message || '')).trim().slice(0, 160) : '';
+        var href = (s.canonicalUrl || s.link || '');
+        var title = (s.title || '').slice(0, 140);
+        return '<tr>' +
+          '<td class="mono">' + ((s.ordinal != null) ? (s.ordinal + 1) : '') + '</td>' +
+          '<td>' + pill + '</td>' +
+          '<td class="mono">' + (s.workerId || '') + '</td>' +
+          '<td><div>' + title + '</div><div class="muted mono small">' + String(href).slice(0, 140) + '</div></td>' +
+          '<td class="mono">' + dur + '</td>' +
+          '<td>' + bar(s.steps || {}) + '</td>' +
+          '<td>' + shot + '</td>' +
+          '<td><div>' + imgThumb + '</div><div class="mono small" style="margin-top:6px;">' + img + '</div></td>' +
+          '<td class="mono small">' + fail + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+
+    var errors = data.errors || [];
+    var et = document.getElementById('errorsTbl');
+    et.innerHTML = '<thead><tr><th>Count</th><th>Type</th><th>Message</th><th>Samples</th></tr></thead>' +
+      '<tbody>' + errors.slice(0, 120).map(function(e){
+        var samples = (e.samples || []).map(function(s){
+          var extra = '';
+          if (s.stage) extra += 'stage=' + s.stage + '\\n';
+          if (s.link) extra += 'link=' + s.link + '\\n';
+          extra += (s.message || '');
+          if (s.stack) extra += '\\n' + s.stack;
+          return '<div class="mono small" style="margin-bottom:8px;white-space:pre-wrap;">' + extra + '</div>';
+        }).join('');
+        return '<tr>' +
+          '<td class="mono">' + (e.count || 0) + '</td>' +
+          '<td class="mono">' + String(e.type || '').slice(0, 60) + '</td>' +
+          '<td>' + String(e.message || '').slice(0, 180) + '</td>' +
+          '<td>' + samples + '</td>' +
+        '</tr>';
+      }).join('') + '</tbody>';
+  })();
+  </script>
+</body>
+</html>
+`;
+
+    const reportHtmlPath = path.join(state.dir, "report.html");
+    await writeTextFile(reportHtmlPath, html);
+    return { reportJsonPath, reportHtmlPath, dir: state.dir };
+  };
+
+  return {
+    init,
+    emit,
+    emitError,
+    console: consoleLine,
+    startSpan,
+    noteStoryStart,
+    noteStoryStep,
+    noteStoryEnd,
+    flush: appendBuffered,
+    summary,
+    finalize,
+    get dir() {
+      return state.dir;
+    },
+    get runId() {
+      return state.runId;
+    },
+    get enabled() {
+      return state.enabled;
+    },
+  };
 }
 
 async function writeTextFile(targetPath, content) {
@@ -1189,12 +2047,14 @@ function isGroundNewsUrl(url) {
 function isPlaceholderStoryImageUrl(value) {
   const lower = normalizeText(value).toLowerCase();
   if (!lower) return true;
-  if (lower.includes("webmetaimg")) return true;
   if (lower.includes("/images/story-fallback.svg")) return true;
   if (lower.includes("/images/story-fallback-thumb.svg")) return true;
   if (lower.includes("/images/fallbacks/story-fallback-")) return true;
   if (lower.includes("ground.news/images/story-fallback")) return true;
   if (lower.includes("ground.news/images/story-fallback-thumb")) return true;
+  // Treat tiny outlet icons used as story images as placeholders so they get repaired.
+  if (lower.includes("/assets/web/images/stock/") && lower.includes("icon")) return true;
+  if (/\/assets\/web\/images\/stock\/[^/?#]*icon\.(webp|png|jpe?g)(\?|$)/i.test(lower)) return true;
   return false;
 }
 
@@ -1235,13 +2095,6 @@ function sanitizeImageUrl(raw, baseUrl) {
     if (/groundnews\.b-cdn\.net$/i.test(parsed.hostname) && /\/assets\/flags\//i.test(parsed.pathname)) {
       return fallbackImageForSeed(baseUrl || "story");
     }
-    // GN "webMetaImg" endpoints bake bias bars into the image. Avoid for UI parity (we render our own).
-    const lowerPath = String(parsed.pathname || "").toLowerCase();
-    if (lowerPath.includes("webmetaimg") || (lowerPath.includes("webmeta") && lowerPath.includes("img"))) {
-      return fallbackImageForSeed(baseUrl || "story");
-    }
-    const lowerHref = parsed.toString().toLowerCase();
-    if (lowerHref.includes("webmetaimg")) return fallbackImageForSeed(baseUrl || "story");
     return parsed.toString();
   } catch {
     return fallbackImageForSeed(baseUrl || "story");
@@ -1265,17 +2118,50 @@ function isLikelyDecorativeImageUrl(url) {
   const lower = normalizeText(url).toLowerCase();
   if (!lower) return true;
   if (lower.includes("/assets/flags/")) return true;
+  if (lower.includes("/assets/web/images/stock/") && lower.includes("icon")) return true;
   if (lower.includes("/assets/lettericons/")) return true;
   if (lower.includes("/assets/topfeededitions/")) return true;
   if (lower.includes("/interests/")) return true;
   if (lower.includes("/interest/")) return true;
   if (lower.includes("/interest-covers/")) return true;
-  if (lower.includes("ground.news/images/cache/")) return true;
   if (lower.includes("getty-logo")) return true;
   if (lower.includes("/favicon")) return true;
   if (lower.includes("/apple-touch-icon")) return true;
-  if (lower.includes("logo-no-outline")) return true;
-  if (lower.includes("/logo.") || lower.includes("/logos/")) return true;
+  // Publisher/brand assets: prefer story photos.
+  const decodedForTokens = (() => {
+    try {
+      return decodeURIComponent(lower);
+    } catch {
+      return lower;
+    }
+  })()
+    .replace(/\+/g, " ")
+    .replace(/%20/g, " ");
+  const lastSegment = decodedForTokens.split("/").pop() || "";
+  if (/(^|[^a-z0-9])(logo|logotype|wordmark|brandmark|brand)([^a-z0-9]|$)/i.test(lastSegment)) return true;
+  if (decodedForTokens.includes("logo-no-outline")) return true;
+  if (decodedForTokens.includes("/logo.") || decodedForTokens.includes("/logos/")) return true;
+  if (lower.includes("s2/favicons") || lower.includes("google.com/s2/favicons")) return true;
+  return false;
+}
+
+function isLikelyLowQualityStoryImageUrl(value) {
+  const lower = normalizeText(value).toLowerCase();
+  if (!lower) return true;
+  if (isPlaceholderStoryImageUrl(lower)) return true;
+  if (isLikelyTemplateStoryImageUrl(lower)) return true;
+  if (isLikelyDecorativeImageUrl(lower)) return true;
+  // Ground News frequently uses tiny outlet icons as og:image for some stories (e.g. Reuters/AP icons).
+  if (lower.includes("groundnews.b-cdn.net") && lower.includes("/assets/web/images/stock/") && lower.includes("icon")) {
+    return true;
+  }
+  if (/\/assets\/web\/images\/stock\/[^/?#]*icon\.(webp|png|jpe?g)(\?|$)/i.test(lower)) return true;
+  // Common small-icon query params.
+  if (/[?&](sz|size|w|width|h|height)=([0-9]{1,3})(?:&|$)/i.test(lower)) {
+    const m = lower.match(/[?&](sz|size|w|width|h|height)=([0-9]{1,3})(?:&|$)/i);
+    const n = m ? Number(m[2]) : 0;
+    if (Number.isFinite(n) && n > 0 && n <= 192) return true;
+  }
   return false;
 }
 
@@ -1306,6 +2192,7 @@ function normalizeExternalImageCandidate(raw, baseUrl) {
   if (isPlaceholderStoryImageUrl(sanitized)) return "";
   if (isLikelyTemplateStoryImageUrl(sanitized)) return "";
   if (isLikelyDecorativeImageUrl(sanitized)) return "";
+  if (isLikelyLowQualityStoryImageUrl(sanitized)) return "";
   return sanitized;
 }
 
@@ -1340,11 +2227,38 @@ function scoreImageCandidate(url) {
   if (clean.includes("cdn")) score += 8;
   if (clean.includes("media.gettyimages.com")) score += 15;
   if (clean.includes("web-api-cdn.ground.news/api/v04/images/story/")) score += 10;
+  // GN webMetaImg is often the only high-res fallback, but it includes a GN watermark/bias bar.
+  if (clean.includes("webmetaimg")) score -= 22;
   if (clean.includes("thumbnail")) score -= 6;
   if (clean.includes("hqdefault.jpg")) score -= 8;
+  if (clean.includes("icon") && clean.includes("/assets/web/images/stock/")) score -= 120;
   if (isLikelyTemplateStoryImageUrl(clean)) score -= 120;
   if (isLikelyDecorativeImageUrl(clean)) score -= 80;
   return score;
+}
+
+function parseSrcsetForLargest(srcsetRaw, storyUrl) {
+  const raw = normalizeText(srcsetRaw || "");
+  if (!raw) return [];
+  const parts = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const [u, d] = part.split(/\s+/);
+      const normalized = normalizeExternalImageCandidate(u, storyUrl);
+      if (!normalized) return null;
+      const desc = normalizeText(d || "");
+      const widthMatch = desc.match(/^(\d{2,5})w$/i);
+      const xMatch = desc.match(/^(\d+(?:\.\d+)?)x$/i);
+      const width = widthMatch ? Number(widthMatch[1]) : 0;
+      const density = xMatch ? Number(xMatch[1]) : 0;
+      const score = Number.isFinite(width) && width > 0 ? width : Number.isFinite(density) && density > 0 ? density * 1000 : 1;
+      return { url: normalized, score };
+    })
+    .filter(Boolean);
+  parts.sort((a, b) => (b.score || 0) - (a.score || 0));
+  return parts.slice(0, 2).map((p) => p.url);
 }
 
 function extractGroundStoryImageCandidatesFromHtml(html, storyUrl) {
@@ -1359,15 +2273,30 @@ function extractGroundStoryImageCandidatesFromHtml(html, storyUrl) {
   try {
     const $ = cheerio.load(html);
     pushCandidate($("meta[property='og:image']").attr("content") || "");
+    pushCandidate($("meta[property='og:image:secure_url']").attr("content") || "");
+    pushCandidate($("meta[property='og:image:url']").attr("content") || "");
     pushCandidate($("meta[name='twitter:image']").attr("content") || "");
     pushCandidate($("meta[name='twitter:image:src']").attr("content") || "");
+    pushCandidate($("meta[itemprop='image']").attr("content") || "");
+    pushCandidate($("link[rel='image_src']").attr("href") || "");
     $("link[rel='preload'][as='image']").each((_, el) => {
       pushCandidate($(el).attr("href") || "");
+      for (const fromSrcset of parseSrcsetForLargest($(el).attr("imagesrcset") || "", storyUrl)) {
+        pushCandidate(fromSrcset);
+      }
     });
     $("img[src]").each((_, el) => {
       pushCandidate($(el).attr("src") || "");
       pushCandidate($(el).attr("data-src") || "");
       pushCandidate($(el).attr("data-original") || "");
+      for (const fromSrcset of parseSrcsetForLargest($(el).attr("srcset") || "", storyUrl)) {
+        pushCandidate(fromSrcset);
+      }
+    });
+    $("source[srcset]").each((_, el) => {
+      for (const fromSrcset of parseSrcsetForLargest($(el).attr("srcset") || "", storyUrl)) {
+        pushCandidate(fromSrcset);
+      }
     });
   } catch {
     // Ignore HTML parse failures and continue with regex extraction.
@@ -1530,10 +2459,11 @@ async function repairPlaceholderStoryImagesViaHttp({
   const max = Math.max(1, Math.round(Number(limit) || 0));
   const placeholderRows = await loadPlaceholderStoryRowsFromDb(max);
   const brokenRows = await loadLikelyBrokenImageStoryRowsFromDb(max);
+  const suspectCacheRows = await loadSuspectCachedImageStoryRowsFromDb(Math.max(25, Math.round(max * 1.5)));
   const duplicateCacheRows = await loadDuplicateCacheImageStoryRows(max);
   const overusedImageRows = await loadOverusedImageUrlStoryRowsFromDb(max);
   const rowById = new Map();
-  for (const row of [...placeholderRows, ...brokenRows, ...duplicateCacheRows, ...overusedImageRows]) {
+  for (const row of [...placeholderRows, ...brokenRows, ...suspectCacheRows, ...duplicateCacheRows, ...overusedImageRows]) {
     if (!row?.id) continue;
     if (!rowById.has(row.id)) rowById.set(row.id, row);
   }
@@ -1584,26 +2514,19 @@ async function repairPlaceholderStoryImagesViaHttp({
           return;
         }
 
-        let finalImage = "";
-        for (const candidate of candidates) {
-          if (isLikelyTemplateStoryImageUrl(candidate)) continue;
-          const cached = await cacheStoryImage(candidate, row.slug || row.id || shortHash(storyUrl, 12));
-          const normalized =
-            normalizeStoryImageCandidate(cached || "", storyUrl) || normalizeStoryImageCandidate(candidate, storyUrl);
-          if (!normalized) continue;
-          if (isLikelyTemplateStoryImageUrl(normalized)) continue;
-          if (normalized.startsWith("/images/cache/")) {
-            if (!(await cachedStoryImageLooksHealthy(normalized))) {
-              continue;
-            }
-            finalImage = normalized;
-            break;
-          }
-          if (await isImageUrlReachable(normalized)) {
-            finalImage = normalized;
-            break;
-          }
-        }
+	        let finalImage = "";
+	        for (const candidate of candidates) {
+	          if (isLikelyTemplateStoryImageUrl(candidate)) continue;
+	          const cached = await cacheStoryImage(candidate, row.slug || row.id || shortHash(storyUrl, 12));
+	          const normalized = normalizeStoryImageCandidate(cached || "", storyUrl);
+	          if (!normalized) continue;
+	          if (isLikelyTemplateStoryImageUrl(normalized)) continue;
+	          if (isLikelyLowQualityStoryImageUrl(normalized)) continue;
+	          if (!normalized.startsWith("/images/cache/")) continue;
+	          if (!(await cachedStoryImageLooksHealthy(normalized))) continue;
+	          finalImage = normalized;
+	          break;
+	        }
 
         if (!finalImage) {
           unresolved += 1;
@@ -2965,6 +3888,10 @@ async function inspectStoryPageState(page, expectedStoryUrl) {
       bodyText.includes("subscribe");
 
     const samePath = expectedPath ? currentPath === expectedPath : true;
+    const looksLikeMyFeed =
+      !hasArticleMarkers &&
+      (bodyText.includes("my feed") || bodyText.includes("start reading stories")) &&
+      bodyText.includes("discover");
 
     return {
       href,
@@ -2973,6 +3900,7 @@ async function inspectStoryPageState(page, expectedStoryUrl) {
       hasExternalSourceLink,
       hasTopProceedControl,
       looksLikePromoInterstitial,
+      looksLikeMyFeed,
       samePath,
       onArticlePath,
     };
@@ -2984,8 +3912,11 @@ async function ensureStoryPageLoaded(page, storyUrl) {
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
     const state = await inspectStoryPageState(page, storyUrl);
+    if (state.looksLikeMyFeed) {
+      throw new Error(`Story redirected to Discover/My Feed (blocked or unavailable): ${state.href}`);
+    }
     if (state.hasArticleMarkers) {
-      return;
+      return normalizeExternalUrl(state.href) || "";
     }
 
     await dismissGroundNewsCookies(page);
@@ -3003,12 +3934,17 @@ async function ensureStoryPageLoaded(page, storyUrl) {
   }
 
   const finalState = await inspectStoryPageState(page, storyUrl);
+  if (finalState.looksLikeMyFeed) {
+    throw new Error(`Story redirected to Discover/My Feed (blocked or unavailable): ${finalState.href}`);
+  }
   if (!finalState.hasArticleMarkers) {
     if (finalState.onArticlePath || (finalState.samePath && (finalState.headline.length >= 10 || finalState.hasExternalSourceLink))) {
-      return;
+      return normalizeExternalUrl(finalState.href) || "";
     }
     throw new Error(`Unable to reach story content (no article markers): ${finalState.href}`);
   }
+
+  return normalizeExternalUrl(finalState.href) || "";
 }
 
 async function expandSourceCards(page, maxClicks = 8) {
@@ -3415,8 +4351,10 @@ async function fetchSourceMetadata(url, cache) {
         cache: "no-store",
         signal: AbortSignal.timeout(SOURCE_FETCH_TIMEOUT_MS),
         headers: {
-          "user-agent": "OpenGroundNewsCrawler/2.0",
-          accept: "text/html,application/xhtml+xml",
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+          accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "accept-language": "en-US,en;q=0.9",
         },
       });
 
@@ -3454,10 +4392,75 @@ async function fetchSourceMetadata(url, cache) {
         $("h1").first().text() ||
         $("title").text() ||
         "";
-      const imageUrl =
-        $("meta[property='og:image']").attr("content") ||
-        $("meta[name='twitter:image']").attr("content") ||
-        "";
+
+      const jsonLdImageCandidates = [];
+      const pushJsonLdImages = (node) => {
+        if (!node) return;
+        if (typeof node === "string") {
+          jsonLdImageCandidates.push(node);
+          return;
+        }
+        if (Array.isArray(node)) {
+          for (const item of node) pushJsonLdImages(item);
+          return;
+        }
+        if (typeof node !== "object") return;
+
+        // Prefer images attached to article/page objects; avoid collecting every random URL string.
+        const type = String(node["@type"] || "").toLowerCase();
+        const isImageObject = type.includes("imageobject");
+        const isArticleLike =
+          type.includes("newsarticle") ||
+          type === "article" ||
+          type.includes("reportagenewsarticle") ||
+          type.includes("blogposting") ||
+          type === "webpage";
+
+        if (isImageObject) {
+          if (node.url) jsonLdImageCandidates.push(node.url);
+          if (node.contentUrl) jsonLdImageCandidates.push(node.contentUrl);
+          if (node.thumbnailUrl) jsonLdImageCandidates.push(node.thumbnailUrl);
+        }
+
+        if (isArticleLike) {
+          if (node.image) pushJsonLdImages(node.image);
+          if (node.thumbnailUrl) pushJsonLdImages(node.thumbnailUrl);
+          if (node.primaryImageOfPage) pushJsonLdImages(node.primaryImageOfPage);
+        }
+
+        for (const value of Object.values(node)) {
+          if (value && typeof value === "object") pushJsonLdImages(value);
+        }
+      };
+
+      $("script[type='application/ld+json']").each((_, el) => {
+        const raw = normalizeText($(el).text() || "");
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          pushJsonLdImages(parsed);
+        } catch {
+          // Ignore JSON-LD parse failures (many publishers include invalid JSON in some variants).
+        }
+      });
+
+      const imageCandidates = [
+        $("meta[property='og:image']").attr("content") || "",
+        $("meta[property='og:image:secure_url']").attr("content") || "",
+        $("meta[property='og:image:url']").attr("content") || "",
+        $("meta[name='twitter:image']").attr("content") || "",
+        $("meta[name='twitter:image:src']").attr("content") || "",
+        $("meta[itemprop='image']").attr("content") || "",
+        $("link[rel='image_src']").attr("href") || "",
+        $("link[rel='preload'][as='image']").first().attr("href") || "",
+        ...jsonLdImageCandidates,
+      ]
+        .map((v) => normalizeText(v))
+        .filter(Boolean);
+      const imageUrl = imageCandidates
+        .map((candidate) => normalizeExternalImageCandidate(candidate, url))
+        .filter(Boolean)
+        .sort((a, b) => scoreImageCandidate(b) - scoreImageCandidate(a) || a.localeCompare(b))[0] || "";
       const iconUrl =
         $("link[rel='apple-touch-icon']").attr("href") ||
         $("link[rel='icon']").attr("href") ||
@@ -3652,18 +4655,19 @@ function imageBytesLookTemplateOrWeak({ url, byteLength, dimensions }) {
   if (!cleanUrl) return true;
   if (isPlaceholderStoryImageUrl(cleanUrl) || isLikelyTemplateStoryImageUrl(cleanUrl)) return true;
   if (!Number.isFinite(byteLength) || byteLength <= 0 || byteLength > IMAGE_CACHE_MAX_BYTES) return true;
-  if (byteLength < 6000) return true;
+  if (byteLength < 9000) return true;
   if (!dimensions || !Number.isFinite(dimensions.width) || !Number.isFinite(dimensions.height)) return false;
 
   const width = Number(dimensions.width);
   const height = Number(dimensions.height);
-  if (width < 240 || height < 180) return true;
+  // Minimum for crisp story cards/hero images.
+  if (width < 640 || height < 360) return true;
   const ratio = width / height;
   const maxSide = Math.max(width, height);
   const area = width * height;
   if (maxSide <= 620 && ratio >= 0.86 && ratio <= 1.18) return true;
   if (ratio < 0.45 || ratio > 2.9) return true;
-  if (area < 90000) return true;
+  if (area < 180000) return true;
   return false;
 }
 
@@ -3675,6 +4679,39 @@ function guessContentTypeFromImagePath(imagePath) {
   if (clean.endsWith(".svg")) return "image/svg+xml";
   if (clean.endsWith(".avif")) return "image/avif";
   return "image/jpeg";
+}
+
+async function readCachedImageMeta(localImagePath) {
+  const clean = normalizeText(localImagePath);
+  if (!clean.startsWith("/images/cache/")) return null;
+  const absolute = path.join(process.cwd(), "public", clean.replace(/^\/+/, ""));
+  try {
+    const bytes = await fs.readFile(absolute);
+    const byteLength = bytes.length || 0;
+    const dimensions = detectImageDimensions(bytes, guessContentTypeFromImagePath(clean));
+    const width = Number(dimensions?.width || 0);
+    const height = Number(dimensions?.height || 0);
+    const maxSide = Math.max(width, height);
+    const area = width * height;
+
+    const weak = imageBytesLookTemplateOrWeak({ url: clean, byteLength, dimensions });
+    let quality = "unknown";
+    if (weak) quality = "bad";
+    else if (maxSide < 1100 || area < 650000) quality = "low";
+    else quality = "good";
+
+    return {
+      path: clean,
+      byteLength,
+      width: width || null,
+      height: height || null,
+      maxSide: Number.isFinite(maxSide) ? maxSide : null,
+      area: Number.isFinite(area) ? area : null,
+      quality,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function cacheStoryImage(imageUrl, storySlug) {
@@ -3728,6 +4765,10 @@ async function cacheStoryImage(imageUrl, storySlug) {
     const fileName = `${shortHash(`${storySlug}:${parsed.toString()}`, 16)}.${ext}`;
     const targetPath = path.join(IMAGE_CACHE_DIR, fileName);
     await fs.mkdir(IMAGE_CACHE_DIR, { recursive: true });
+    // Avoid churn in git worktrees that accidentally track cache files, and avoid re-encoding the
+    // same file on every run. If we already have a healthy cached asset, keep it.
+    const already = `/images/cache/${fileName}`;
+    if (await cachedStoryImageLooksHealthy(already)) return already;
     await fs.writeFile(targetPath, buffer);
     return `/images/cache/${fileName}`;
   } catch {
@@ -3790,7 +4831,7 @@ function computeLinkSignals(scrapeOutput) {
 
 async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrdinal = 0) {
   await page.goto(storyUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
-  await ensureStoryPageLoaded(page, storyUrl);
+  const resolvedStoryUrl = (await ensureStoryPageLoaded(page, storyUrl)) || "";
   await dismissGroundNewsCookies(page);
   await page.waitForTimeout(1200);
   await expandSourceCards(page, 10);
@@ -4327,6 +5368,9 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
 
     const imageUrl =
       meta("meta[property='og:image']") ||
+      meta("meta[name='twitter:image']") ||
+      meta("meta[name='twitter:image:src']") ||
+      meta("meta[itemprop='image']") ||
       normalize(document.querySelector("img")?.getAttribute("src") || "");
 
     const publishedAt =
@@ -4428,30 +5472,40 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
     };
   });
 
-  if (auditState?.enabled) {
-    const key = `${String(articleOrdinal + 1).padStart(3, "0")}-${slugForFile(toSlugFromUrl(storyUrl, rendered.title))}-${shortHash(storyUrl)}`;
-    const articleHtmlPath = path.join(auditState.dir, "articles", `${key}.raw.html`);
-    const articleFeaturesPath = path.join(auditState.dir, "articles", `${key}.features.json`);
-    const articleNextDataPath = path.join(auditState.dir, "articles", `${key}.__NEXT_DATA__.json`);
-    const articleNextFlightPath = path.join(auditState.dir, "articles", `${key}.__NEXT_FLIGHT__.json`);
-    const html = await page.content();
+  const canonicalUrl =
+    normalizeExternalUrl(resolvedStoryUrl || rendered?.rawFeatures?.url || page.url() || storyUrl) || storyUrl;
+  return { ...rendered, canonicalUrl };
+}
+
+async function maybeWriteStoryAudit({ auditState, storyUrl, rendered, renderedHtml, articleOrdinal, method = "" } = {}) {
+  if (!auditState?.enabled) return;
+  try {
+    const key = `${String((articleOrdinal || 0) + 1).padStart(3, "0")}-${slugForFile(
+      toSlugFromUrl(storyUrl, rendered?.title || ""),
+    )}-${shortHash(storyUrl)}`;
+    const base = path.join(auditState.dir, "articles");
+    const articleHtmlPath = path.join(base, `${key}.raw.html`);
+    const articleFeaturesPath = path.join(base, `${key}.features.json`);
+    const articleNextDataPath = path.join(base, `${key}.__NEXT_DATA__.json`);
+    const articleNextFlightPath = path.join(base, `${key}.__NEXT_FLIGHT__.json`);
+
+    const html = String(renderedHtml || "");
     await writeTextFile(articleHtmlPath, html);
     const nextDataRaw = extractNextDataRawFromHtml(html);
-    if (nextDataRaw) {
-      await writeTextFile(articleNextDataPath, nextDataRaw);
-    } else {
-      await writeTextFile(articleNextDataPath, "");
-    }
+    await writeTextFile(articleNextDataPath, nextDataRaw || "");
     const nextFlightStructured = extractStructuredFromNextFlightHtml(html);
     await writeJsonFile(articleNextFlightPath, nextFlightStructured);
 
     await writeJsonFile(articleFeaturesPath, {
       capturedAt: new Date().toISOString(),
       storyUrl,
+      method: normalizeText(method || "") || undefined,
       extracted: rendered,
     });
+
     auditState.index.articles.push({
       storyUrl,
+      method: normalizeText(method || "") || undefined,
       htmlPath: articleHtmlPath,
       featurePath: articleFeaturesPath,
       nextDataPath: articleNextDataPath,
@@ -4463,9 +5517,110 @@ async function extractStoryFromDom(page, storyUrl, auditState = null, articleOrd
       nextFlightParsedLines: nextFlightStructured.parsedLineCount || 0,
       nextFlightSourceCount: nextFlightStructured.sources?.length || 0,
     });
+  } catch {
+    // Audit is best-effort and should never fail the run.
   }
+}
 
-  return rendered;
+async function fetchGroundStoryHtml(storyUrl) {
+  const url = normalizeExternalUrl(storyUrl) || "";
+  if (!url) return { status: 0, finalUrl: storyUrl, html: "" };
+  try {
+    const response = await fetch(url, {
+      cache: "no-store",
+      redirect: "follow",
+      signal: AbortSignal.timeout(STORY_HTTP_FETCH_TIMEOUT_MS),
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        accept: "text/html,application/xhtml+xml",
+        referer: "https://ground.news/",
+      },
+    });
+    const finalUrl = normalizeExternalUrl(response.url) || storyUrl;
+    if (!response.ok) return { status: response.status, finalUrl, html: "" };
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("text/html")) return { status: response.status, finalUrl, html: "" };
+    const html = await response.text();
+    return { status: response.status, finalUrl, html };
+  } catch {
+    return { status: 0, finalUrl: storyUrl, html: "" };
+  }
+}
+
+function extractStoryFromHttpHtml(html, storyUrl, finalUrl = "") {
+  const structured = extractStructuredFromNextFlightHtml(html || "");
+  const tags = Array.isArray(structured?.tags) ? structured.tags.map((t) => normalizeText(t)).filter(Boolean) : [];
+  const $ = (() => {
+    try {
+      return cheerio.load(html || "");
+    } catch {
+      return null;
+    }
+  })();
+  const meta = (selector) => {
+    if (!$) return "";
+    return normalizeText($(selector).attr("content") || "");
+  };
+  const title =
+    meta("meta[property='og:title']") ||
+    meta("meta[name='twitter:title']") ||
+    normalizeText(meta("meta[name='title']")) ||
+    "Untitled story";
+  const summary =
+    meta("meta[property='og:description']") ||
+    meta("meta[name='description']") ||
+    "";
+  const author =
+    normalizeText(
+      meta("meta[name='author']") ||
+        meta("meta[property='article:author']") ||
+        "",
+    )
+      .replace(/^by\\s+/i, "")
+      .trim();
+  const publishedAt =
+    meta("meta[property='article:published_time']") ||
+    meta("meta[name='pubdate']") ||
+    meta("meta[property='article:modified_time']") ||
+    "";
+  const imageUrl =
+    meta("meta[property='og:image']") ||
+    meta("meta[property='og:image:secure_url']") ||
+    meta("meta[name='twitter:image']") ||
+    meta("meta[name='twitter:image:src']") ||
+    "";
+  const section = meta("meta[property='article:section']") || "";
+  const topic = tags[0] || section || "Top Stories";
+  const canonicalUrl = normalizeExternalUrl(finalUrl || storyUrl) || storyUrl;
+
+  // Location isn't reliably exposed in meta; downstream `chooseStoryLocation` will infer when missing.
+  return {
+    title,
+    dek: "",
+    author,
+    summary,
+    topic,
+    tags,
+    location: "",
+    imageUrl,
+    publishedAt,
+    coverage: structured?.coverage || {},
+    sources: Array.isArray(structured?.sources) ? structured.sources : [],
+    readerLinks: [],
+    timelineHeaders: [],
+    podcastReferences: [],
+    rawFeatures: {
+      url: canonicalUrl,
+      title,
+      method: "http",
+      nextFlightChunkCount: structured?.chunkCount || 0,
+      nextFlightParsedLines: structured?.parsedLineCount || 0,
+      nextFlightSourceCount: Array.isArray(structured?.sources) ? structured.sources.length : 0,
+      keyHits: structured?.keyHits || {},
+    },
+    canonicalUrl,
+  };
 }
 
 async function enrichSourceCandidate(storySlug, candidate, sourceMetadataCache, storyUrlForAssets, outletEnricher = null) {
@@ -4546,15 +5701,83 @@ async function enrichStory(
   storyUrl,
   linkSignals,
   sourceMetadataCache,
+  homepageRankByUrl,
   auditState,
   articleOrdinal,
   sourceFetchConcurrency = DEFAULT_SOURCE_FETCH_CONCURRENCY,
   outletEnricher = null,
+  telemetry = null,
+  storyRunKey = "",
+  httpFirst = true,
 ) {
-  const rendered = await extractStoryFromDom(page, storyUrl, auditState, articleOrdinal);
-  const renderedHtml = await page.content().catch(() => "");
-  const nextData = renderedHtml ? extractNextDataFromHtml(renderedHtml) : null;
-  const nextFlightStructured = renderedHtml ? extractStructuredFromNextFlightHtml(renderedHtml) : null;
+  const timed = async (stepName, fn) => {
+    const start = Date.now();
+    try {
+      telemetry?.console?.("trace", `${storyUrl} step=${stepName} start`);
+      const value = await fn();
+      const durMs = Date.now() - start;
+      telemetry?.noteStoryStep?.(storyRunKey, stepName, durMs);
+      telemetry?.console?.("trace", `${storyUrl} step=${stepName} ok durMs=${durMs}`);
+      return value;
+    } catch (error) {
+      const durMs = Date.now() - start;
+      telemetry?.noteStoryStep?.(storyRunKey, stepName, durMs, { status: "error" });
+      telemetry?.console?.("trace", `${storyUrl} step=${stepName} error durMs=${durMs}`);
+      if (error && typeof error === "object" && !error.stage) {
+        error.stage = stepName;
+      }
+      throw error;
+    }
+  };
+
+  let rendered = null;
+  let renderedHtml = "";
+  let extractionMethod = "dom";
+
+  if (httpFirst) {
+    const httpResult = await timed("http_fetch", () => fetchGroundStoryHtml(storyUrl));
+    if (httpResult?.html) {
+      renderedHtml = httpResult.html;
+      rendered = await timed("http_parse", async () => extractStoryFromHttpHtml(renderedHtml, storyUrl, httpResult.finalUrl));
+      extractionMethod = "http";
+    }
+  }
+
+  const httpOk =
+    rendered &&
+    normalizeText(rendered.title) &&
+    normalizeText(rendered.title).toLowerCase() !== "untitled story" &&
+    Array.isArray(rendered.sources) &&
+    rendered.sources.length >= 4;
+
+  if (!httpOk) {
+    if (!page) {
+      const err = new Error("http-first extraction was insufficient; browser fallback required");
+      err.stage = "http_first";
+      err.needsBrowser = true;
+      throw err;
+    }
+    rendered = await timed("dom_extract", () => extractStoryFromDom(page, storyUrl, null, articleOrdinal));
+    renderedHtml = await timed("page_content", async () => await page.content().catch(() => ""));
+    extractionMethod = "dom";
+  } else {
+    telemetry?.noteStoryStep?.(storyRunKey, "dom_extract", 0, { status: "skipped", reason: "http_ok" });
+    telemetry?.noteStoryStep?.(storyRunKey, "page_content", 0, { status: "skipped", reason: "http_ok" });
+  }
+
+  const nextData = await timed("nextdata_parse", async () => (renderedHtml ? extractNextDataFromHtml(renderedHtml) : null));
+  const nextFlightStructured = await timed("nextflight_parse", async () =>
+    renderedHtml ? extractStructuredFromNextFlightHtml(renderedHtml) : null,
+  );
+
+  await maybeWriteStoryAudit({
+    auditState,
+    storyUrl,
+    rendered,
+    renderedHtml,
+    articleOrdinal,
+    method: extractionMethod,
+  });
   const updatedAt = new Date().toISOString();
   const sourceOutletSet = new Set(
     (rendered.sources || [])
@@ -4571,7 +5794,13 @@ async function enrichStory(
     relevanceFiltered.filter((tag) => !sourceOutletSet.has(normalizeText(tag).toLowerCase())),
   );
   const title = summarizeText(rendered.title, "Untitled story");
-  const slug = toSlugFromUrl(storyUrl, title);
+  const canonicalStoryUrl = normalizeExternalUrl(rendered?.canonicalUrl || storyUrl) || storyUrl;
+  const slug = toSlugFromUrl(canonicalStoryUrl, title);
+  const homepageRank = Number.isFinite(homepageRankByUrl?.get?.(canonicalStoryUrl))
+    ? homepageRankByUrl.get(canonicalStoryUrl)
+    : Number.isFinite(homepageRankByUrl?.get?.(storyUrl))
+      ? homepageRankByUrl.get(storyUrl)
+      : null;
   const candidateByUrl = new Map(
     (rendered.sources || [])
       .map((source) => ({ ...source, url: normalizeExternalUrl(source.url) }))
@@ -4639,16 +5868,23 @@ async function enrichStory(
   const candidates = Array.from(candidateByUrl.values());
 
   const fetchConcurrency = Math.max(1, Math.round(sourceFetchConcurrency || DEFAULT_SOURCE_FETCH_CONCURRENCY));
-  let enrichedSources = (
-    await mapWithConcurrency(candidates, fetchConcurrency, (candidate) =>
-      enrichSourceCandidate(slug, candidate, sourceMetadataCache, storyUrl, outletEnricher),
+  let enrichedSources = [];
+  enrichedSources = await timed("sources_enrich", async () => {
+    let list = (
+      await mapWithConcurrency(candidates, fetchConcurrency, (candidate) =>
+        enrichSourceCandidate(slug, candidate, sourceMetadataCache, storyUrl, outletEnricher),
+      )
     )
-  )
-    .filter(Boolean)
-    .map((source) => applyReferenceToSource(source));
-  enrichedSources = aggregateOutletBias(enrichedSources);
+      .filter(Boolean)
+      .map((source) => applyReferenceToSource(source));
+    list = aggregateOutletBias(list);
+    return list;
+  });
 
-  const signals = linkSignals.get(storyUrl) || { trending: false, blindspot: false, local: false };
+  const signals =
+    linkSignals.get(storyUrl) ||
+    linkSignals.get(canonicalStoryUrl) ||
+    { trending: false, blindspot: false, local: false };
   const derivedBias = deriveBiasDistribution(enrichedSources);
   const coverageBiasRaw = rendered?.coverage?.percentages || nextFlightStructured?.coverage?.percentages;
   const coverageBias =
@@ -4706,34 +5942,46 @@ async function enrichStory(
     location: rendered.location,
   });
 
-  const seededStoryImage = sanitizeImageUrl(rendered.imageUrl, storyUrl);
+  // Seeded image is advisory only; treat decorative/low-quality URLs as empty so we keep looking.
+  const seededStoryImage = normalizeStoryImageCandidate(rendered.imageUrl || "", storyUrl);
   const imageCandidatePool = [];
-  if (
-    seededStoryImage &&
-    !isPlaceholderStoryImageUrl(seededStoryImage) &&
-    !isLikelyTemplateStoryImageUrl(seededStoryImage) &&
-    !seededStoryImage.startsWith("/images/")
-  ) {
+  const seededWeak =
+    !seededStoryImage ||
+    isPlaceholderStoryImageUrl(seededStoryImage) ||
+    isLikelyTemplateStoryImageUrl(seededStoryImage) ||
+    isLikelyDecorativeImageUrl(seededStoryImage) ||
+    isLikelyLowQualityStoryImageUrl(seededStoryImage);
+
+  if (seededStoryImage && seededStoryImage.startsWith("/images/cache/")) {
+    // If we already have a healthy cached image, keep it as a top candidate (fast path).
+    if (await cachedStoryImageLooksHealthy(seededStoryImage)) {
+      imageCandidatePool.push(seededStoryImage);
+    }
+  } else if (!seededWeak) {
     imageCandidatePool.push(seededStoryImage);
   }
 
   for (const source of enrichedSources || []) {
-    const fromSource = sanitizeImageUrl(source.imageUrl || "", source.url);
+    const fromSource = normalizeStoryImageCandidate(source.imageUrl || "", source.url);
     if (!fromSource) continue;
     if (isPlaceholderStoryImageUrl(fromSource)) continue;
     if (isLikelyTemplateStoryImageUrl(fromSource)) continue;
+    if (isLikelyDecorativeImageUrl(fromSource)) continue;
     if (fromSource.startsWith("/images/")) continue;
     imageCandidatePool.push(fromSource);
   }
 
-  if (imageCandidatePool.length === 0 || isPlaceholderStoryImageUrl(seededStoryImage) || seededStoryImage.startsWith("/images/")) {
+  if (imageCandidatePool.length === 0 || seededWeak) {
     const sourceMetaList = await mapWithConcurrency(
       (enrichedSources || []).slice(0, 20),
       Math.max(1, Math.min(8, sourceFetchConcurrency || DEFAULT_SOURCE_FETCH_CONCURRENCY)),
       async (source) => {
         const sourceMeta = await fetchSourceMetadata(source.url, sourceMetadataCache);
-        const sourceImage = sanitizeImageUrl(sourceMeta.imageUrl || "", source.url);
-        return sourceImage && !isPlaceholderStoryImageUrl(sourceImage) && !isLikelyTemplateStoryImageUrl(sourceImage)
+        const sourceImage = normalizeStoryImageCandidate(sourceMeta.imageUrl || "", source.url);
+        return sourceImage &&
+          !isPlaceholderStoryImageUrl(sourceImage) &&
+          !isLikelyTemplateStoryImageUrl(sourceImage) &&
+          !isLikelyDecorativeImageUrl(sourceImage)
           ? sourceImage
           : "";
       },
@@ -4745,44 +5993,80 @@ async function enrichStory(
     }
   }
 
-  if (imageCandidatePool.length === 0 || isPlaceholderStoryImageUrl(seededStoryImage) || seededStoryImage.startsWith("/images/")) {
+  if (imageCandidatePool.length === 0 || seededWeak) {
     const httpResult = await fetchStoryImageCandidatesViaHttp(storyUrl, sourceMetadataCache, sourceFetchConcurrency);
     for (const candidate of httpResult.candidates || []) {
       const normalized = normalizeExternalImageCandidate(candidate, storyUrl);
       if (!normalized) continue;
       if (isLikelyTemplateStoryImageUrl(normalized)) continue;
+      if (isLikelyDecorativeImageUrl(normalized)) continue;
       imageCandidatePool.push(normalized);
     }
   }
 
-  const rankedImageCandidates = dedupeOrdered(
-    imageCandidatePool.filter((candidate) => candidate && !isLikelyTemplateStoryImageUrl(candidate)),
-  ).sort((a, b) => scoreImageCandidate(b) - scoreImageCandidate(a) || a.localeCompare(b));
-  let storyImageCandidate = "";
-  let imageUrl = "";
-  for (const candidate of rankedImageCandidates) {
-    const cached = await cacheStoryImage(candidate, slug);
-    const normalized =
-      normalizeStoryImageCandidate(cached || "", storyUrl) || normalizeStoryImageCandidate(candidate, storyUrl);
-    if (!normalized) continue;
-    if (isPlaceholderStoryImageUrl(normalized) || isLikelyTemplateStoryImageUrl(normalized)) continue;
-    if (normalized.startsWith("/images/cache/")) {
-      if (!(await cachedStoryImageLooksHealthy(normalized))) continue;
-      storyImageCandidate = candidate;
-      imageUrl = normalized;
-      break;
-    }
-    if (await isImageUrlReachable(normalized)) {
-      storyImageCandidate = candidate;
-      imageUrl = normalized;
-      break;
-    }
-  }
+  const imageResult = await timed("image_select", async () => {
+    const rankedImageCandidates = dedupeOrdered(
+      imageCandidatePool.filter((candidate) => candidate && !isLikelyTemplateStoryImageUrl(candidate)),
+    ).sort((a, b) => scoreImageCandidate(b) - scoreImageCandidate(a) || a.localeCompare(b));
 
-  if (!imageUrl) {
-    storyImageCandidate = fallbackImageForSeed(slug);
-    imageUrl = (await cacheStoryImage(storyImageCandidate, slug)) || storyImageCandidate;
-  }
+    let storyImageCandidate = "";
+    let imageUrl = "";
+    let attempts = 0;
+    let bestLow = null;
+    const maxAttempts = Math.max(4, Math.min(16, Number(process.env.OGN_IMAGE_MAX_ATTEMPTS || 10)));
+    for (const candidate of rankedImageCandidates) {
+      attempts += 1;
+      if (attempts > maxAttempts) break;
+      const cached = await cacheStoryImage(candidate, slug);
+      const normalized = normalizeStoryImageCandidate(cached || "", storyUrl);
+      if (!normalized) continue;
+      if (isPlaceholderStoryImageUrl(normalized) || isLikelyTemplateStoryImageUrl(normalized)) continue;
+      if (isLikelyLowQualityStoryImageUrl(normalized)) continue;
+      if (!normalized.startsWith("/images/cache/")) continue;
+      if (!(await cachedStoryImageLooksHealthy(normalized))) continue;
+      const meta = await readCachedImageMeta(normalized);
+      if (meta && meta.quality === "good") {
+        storyImageCandidate = candidate;
+        imageUrl = normalized;
+        break;
+      }
+      // Keep the best "low" fallback while we continue looking for a higher-res option.
+      if (meta && meta.quality === "low") {
+        const score = Number(meta.maxSide || 0) * 1000 + Number(meta.area || 0);
+        const prevScore = bestLow ? Number(bestLow.score || 0) : -1;
+        if (!bestLow || score > prevScore) {
+          bestLow = { candidate, imageUrl: normalized, meta, score };
+        }
+      } else {
+        // If we couldn't read meta, accept as a potential fallback but don't prefer it.
+        if (!bestLow) bestLow = { candidate, imageUrl: normalized, meta: null, score: 0 };
+      }
+    }
+
+    if (!imageUrl) {
+      if (bestLow?.imageUrl) {
+        storyImageCandidate = bestLow.candidate;
+        imageUrl = bestLow.imageUrl;
+      } else {
+        storyImageCandidate = fallbackImageForSeed(slug);
+        imageUrl = (await cacheStoryImage(storyImageCandidate, slug)) || storyImageCandidate;
+      }
+    }
+    return { storyImageCandidate, imageUrl, attempts, poolSize: imageCandidatePool.length, rankedSize: rankedImageCandidates.length };
+  });
+
+  const storyImageCandidate = imageResult.storyImageCandidate;
+  const imageUrl = imageResult.imageUrl;
+  telemetry?.emit?.("debug", "story.image.selected", {
+    storyRunKey,
+    storyUrl,
+    slug,
+    poolSize: imageResult.poolSize,
+    rankedSize: imageResult.rankedSize,
+    attempts: imageResult.attempts,
+    selectedCandidate: storyImageCandidate,
+    selectedLocal: imageUrl,
+  });
 
   if (process.env.OGN_IMAGE_DEBUG === "1") {
     const seededKind = isPlaceholderStoryImageUrl(seededStoryImage) ? "placeholder" : "ok";
@@ -4811,10 +6095,32 @@ async function enrichStory(
   const lastRefreshedAt = updatedAt;
   const staleAt = new Date(Date.parse(lastRefreshedAt) + 7 * 86400000).toISOString();
 
+  // Guardrails: occasionally browser fallback lands on a non-story page (e.g. "Discover / My Feed")
+  // due to redirects, blocked content, or unexpected navigation. Do not persist these as stories.
+  {
+    const lowerTitle = normalizeText(title || "").toLowerCase();
+    if (lowerTitle.includes("ground news") && (lowerTitle.includes("discover") || lowerTitle.includes("my feed"))) {
+      const err = new Error(`Non-story page captured during enrichment: title="${title}"`);
+      err.stage = "validate_story";
+      throw err;
+    }
+    if (!normalizeText(canonicalStoryUrl).includes("/article/")) {
+      const err = new Error(`Non-article canonicalUrl captured during enrichment: ${canonicalStoryUrl}`);
+      err.stage = "validate_story";
+      throw err;
+    }
+    if (!Array.isArray(enrichedSources) || enrichedSources.length < 1) {
+      const err = new Error("Story enrichment returned zero sources");
+      err.stage = "validate_story";
+      throw err;
+    }
+  }
+
   return {
-    id: stableId(storyUrl, "story"),
+    // Use canonical URL for stable IDs so UUID entrypoints don't create duplicate primary keys for the same story.
+    id: stableId(canonicalStoryUrl, "story"),
     slug,
-    canonicalUrl: storyUrl,
+    canonicalUrl: canonicalStoryUrl,
     title,
     dek: summarizeText(rendered.dek || "", ""),
     author: normalizeText(rendered.author || ""),
@@ -4834,6 +6140,8 @@ async function enrichStory(
     blindspot: signals.blindspot || blindspotBySkew,
     local: signals.local || localHeuristic,
     trending: signals.trending,
+    homepageRank,
+    homepageFeaturedAt: homepageRank ? updatedAt : null,
     sources: enrichedSources,
     coverage: coverageTotals,
     readerLinks: Array.isArray(rendered.readerLinks) ? rendered.readerLinks.slice(0, 12) : [],
@@ -5036,6 +6344,66 @@ export async function runGroundNewsIngestion(opts = {}) {
     ...parseArgs([]),
     ...opts,
   };
+  const runId = createRunId("gn_ingest");
+  const reportDir = resolveReportDir(options.reportDir, runId);
+  const telemetry = createTelemetry({
+    enabled: Boolean(options.telemetry || options.visualize || options.logLevel === "trace" || options.logLevel === "debug"),
+    dir: reportDir,
+    runId,
+    logLevel: options.logLevel,
+    consoleEnabled: !options.silent,
+  });
+  await telemetry.init();
+  telemetry.emit("info", "run.start", {
+    startedAt,
+    pid: process.pid,
+    cwd: process.cwd(),
+    node: process.version,
+    options: {
+      storyLimit: options.storyLimit,
+      refreshExisting: options.refreshExisting,
+      repairImagesOnly: options.repairImagesOnly,
+      repairImageLimit: options.repairImageLimit,
+      routes: Array.isArray(options.routes) ? options.routes.slice(0, 60) : [],
+      editions: options.editions,
+      scrollPasses: options.scrollPasses,
+      frontpageScrollPasses: options.frontpageScrollPasses,
+      storyWorkerCount: options.storyWorkerCount,
+      scrapeSessionConcurrency: options.scrapeSessionConcurrency,
+      sourceFetchConcurrency: options.sourceFetchConcurrency,
+      expandRoutes: options.expandRoutes,
+      maxLinksPerRoute: options.maxLinksPerRoute,
+      maxDiscoveredRoutes: options.maxDiscoveredRoutes,
+      maxTopicRoutes: options.maxTopicRoutes,
+      outletEnrichment: options.outletEnrichment,
+      outletEnrichmentTimeoutMs: options.outletEnrichmentTimeoutMs,
+      articleAudit: options.articleAudit,
+      articleAuditDir: options.articleAuditDir,
+      httpFirst: options.httpFirst,
+      logLevel: options.logLevel,
+      telemetry: options.telemetry,
+      visualize: options.visualize,
+      reportDir: options.reportDir,
+      silent: options.silent,
+    },
+  });
+  if (!options.silent) {
+    telemetry.console("info", `telemetry enabled: ${telemetry.enabled ? "yes" : "no"} (${reportDir})`);
+  }
+  // Keep a single pointer to the most recent run for quick manual review.
+  try {
+    await writeJsonFile(path.resolve(process.cwd(), DEFAULT_INGEST_REPORT_DIR, "LATEST.json"), {
+      updatedAt: new Date().toISOString(),
+      runId,
+      reportDir,
+    });
+  } catch (error) {
+    // This is non-fatal, but it's a key affordance for debugging runs so keep it visible.
+    if (!options.silent) {
+      telemetry.console("warn", `failed to write LATEST.json: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
   if (!options.repairImagesOnly) {
     requireApiKey();
   }
@@ -5046,44 +6414,65 @@ export async function runGroundNewsIngestion(opts = {}) {
       ? Math.max(1, Math.round(options.repairImageLimit))
       : 0;
   const effectiveLimit = Number.isFinite(limit) ? limit + refreshExisting : Infinity;
-  if (options.repairImagesOnly) {
-    const imageRepairLimit = repairImageLimit || refreshExisting || (Number.isFinite(limit) ? limit : 150);
-    const imageRepairStats = await repairPlaceholderStoryImagesViaHttp({
-      limit: imageRepairLimit,
-      silent: options.silent,
-      sourceFetchConcurrency:
-        Number.isFinite(options.sourceFetchConcurrency) && options.sourceFetchConcurrency > 0
-          ? Math.round(options.sourceFetchConcurrency)
-          : DEFAULT_SOURCE_FETCH_CONCURRENCY,
-    });
-    await persistIngestionRun({
-      startedAt,
-      finishedAt: new Date().toISOString(),
-      status: "ok",
-      mode: "groundnews-story-image-http-repair",
-      routeCount: 0,
-      uniqueStoryLinks: imageRepairStats.attempted || 0,
-      ingestedStories: imageRepairStats.repaired || 0,
-      errors: {
-        attempted: imageRepairStats.attempted || 0,
-        repaired: imageRepairStats.repaired || 0,
-        unresolved: imageRepairStats.unresolved || 0,
-        failed: imageRepairStats.failed || 0,
-        remainingPlaceholders: imageRepairStats.remainingPlaceholders || 0,
-      },
-    }).catch(() => {});
+  try {
+    if (options.repairImagesOnly) {
+      const imageRepairLimit = repairImageLimit || refreshExisting || (Number.isFinite(limit) ? limit : 150);
+      telemetry.emit("info", "repair_images_only.start", { limit: imageRepairLimit });
+      const span = telemetry.startSpan("repair_images_only", { limit: imageRepairLimit });
+      const imageRepairStats = await repairPlaceholderStoryImagesViaHttp({
+        limit: imageRepairLimit,
+        silent: options.silent,
+        sourceFetchConcurrency:
+          Number.isFinite(options.sourceFetchConcurrency) && options.sourceFetchConcurrency > 0
+            ? Math.round(options.sourceFetchConcurrency)
+            : DEFAULT_SOURCE_FETCH_CONCURRENCY,
+      });
+      span.end("ok", { attempted: imageRepairStats.attempted, repaired: imageRepairStats.repaired });
+      telemetry.emit("info", "repair_images_only.done", imageRepairStats);
 
-    return {
-      ok: true,
-      mode: "groundnews-story-image-http-repair",
-      output: options.out,
-      imageRepair: imageRepairStats,
-    };
-  }
+      await persistIngestionRun({
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        status: "ok",
+        mode: "groundnews-story-image-http-repair",
+        routeCount: 0,
+        uniqueStoryLinks: imageRepairStats.attempted || 0,
+        ingestedStories: imageRepairStats.repaired || 0,
+        errors: {
+          attempted: imageRepairStats.attempted || 0,
+          repaired: imageRepairStats.repaired || 0,
+          unresolved: imageRepairStats.unresolved || 0,
+          failed: imageRepairStats.failed || 0,
+          remainingPlaceholders: imageRepairStats.remainingPlaceholders || 0,
+        },
+      }).catch(() => {});
+
+      const finishedAt = new Date().toISOString();
+      const artifacts = await telemetry.finalize({
+        reportDir,
+        startedAt,
+        finishedAt,
+        status: "ok",
+        mode: "groundnews-story-image-http-repair",
+        notes: `repair-images-only attempted=${imageRepairStats.attempted} repaired=${imageRepairStats.repaired}`,
+      });
+
+      return {
+        ok: true,
+        mode: "groundnews-story-image-http-repair",
+        output: options.out,
+        imageRepair: imageRepairStats,
+        reportDir,
+        reportHtmlPath: artifacts?.reportHtmlPath || null,
+        reportJsonPath: artifacts?.reportJsonPath || null,
+      };
+    }
 
   let preRepairStats = null;
   if (refreshExisting > 0 || repairImageLimit > 0) {
     const preRepairLimit = repairImageLimit || Math.max(25, Math.min(refreshExisting, 200));
+    telemetry.emit("info", "image.pre_repair.start", { limit: preRepairLimit });
+    const span = telemetry.startSpan("image.pre_repair", { limit: preRepairLimit });
     preRepairStats = await repairPlaceholderStoryImagesViaHttp({
       limit: preRepairLimit,
       silent: options.silent,
@@ -5092,6 +6481,8 @@ export async function runGroundNewsIngestion(opts = {}) {
           ? Math.round(options.sourceFetchConcurrency)
           : DEFAULT_SOURCE_FETCH_CONCURRENCY,
     });
+    span.end("ok", { attempted: preRepairStats?.attempted || 0, repaired: preRepairStats?.repaired || 0 });
+    telemetry.emit("info", "image.pre_repair.done", preRepairStats);
     if (!options.silent) {
       console.log(
         `pre-repair placeholder images: repaired ${preRepairStats.repaired}/${preRepairStats.attempted}, remaining=${preRepairStats.remainingPlaceholders}`,
@@ -5120,6 +6511,12 @@ export async function runGroundNewsIngestion(opts = {}) {
   );
   const scrapeInputRoutes = normalizedBaseRoutes.length > 0 ? normalizedBaseRoutes : ["/"];
   const scrapeEditions = normalizeEditionList(options.editions);
+  const initialScrapeSpan = telemetry.startSpan("scrape.initial", {
+    routeCount: scrapeInputRoutes.length,
+    editions: scrapeEditions,
+    sessionConcurrency: options.scrapeSessionConcurrency,
+    scrollPasses: options.scrollPasses,
+  });
   const initialScrape = await runGroundNewsScrape({
     routes: scrapeInputRoutes,
     editions: scrapeEditions,
@@ -5128,12 +6525,25 @@ export async function runGroundNewsIngestion(opts = {}) {
     sessionConcurrency: options.scrapeSessionConcurrency,
     maxLinksPerRoute: options.maxLinksPerRoute,
     silent: options.silent,
+  }).catch((error) => {
+    telemetry.emitError("scrape.initial.error", error, { routes: scrapeInputRoutes, editions: scrapeEditions });
+    initialScrapeSpan.end("error");
+    throw error;
+  });
+  initialScrapeSpan.end("ok", {
+    uniqueStoryLinkCount: initialScrape.uniqueStoryLinkCount || 0,
+    routeCount: initialScrape.routeCount || 0,
+  });
+  telemetry.emit("info", "scrape.initial.done", {
+    uniqueStoryLinkCount: initialScrape.uniqueStoryLinkCount || 0,
+    routeCount: initialScrape.routeCount || 0,
   });
 
   let scrapeOutput = initialScrape;
   let linkSignals = new Map();
   let links = [];
   let homepageSnapshot = null;
+  let homepageRankByUrl = new Map();
 
   const stories = [];
   const sourceMetadataCache = new Map();
@@ -5153,6 +6563,7 @@ export async function runGroundNewsIngestion(opts = {}) {
     {
       let discoveryBrowser = null;
       let discoverySessionId = null;
+      const discoverSpan = telemetry.startSpan("homepage.discovery", { editions: scrapeEditions });
       try {
         const session = await createBrowserSession(
           {},
@@ -5165,6 +6576,20 @@ export async function runGroundNewsIngestion(opts = {}) {
           discoveryBrowser.contexts()[0] ?? (await discoveryBrowser.newContext({ viewport: { width: 1440, height: 900 } }));
         const page = await context.newPage();
         homepageSnapshot = await collectHomepageSnapshot(page, options, auditState);
+        discoverSpan.end("ok", {
+          editionsCaptured: homepageSnapshot?.counts?.editionsCaptured || 0,
+          discoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
+          topStoryCards: homepageSnapshot?.topStoryCards?.length || 0,
+        });
+        telemetry.emit("info", "homepage.discovery.done", {
+          editionsCaptured: homepageSnapshot?.counts?.editionsCaptured || 0,
+          discoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
+          topStoryCards: homepageSnapshot?.topStoryCards?.length || 0,
+        });
+      } catch (error) {
+        discoverSpan.end("error");
+        telemetry.emitError("homepage.discovery.error", error, { editions: scrapeEditions });
+        throw error;
       } finally {
         if (discoveryBrowser) await discoveryBrowser.close().catch(() => {});
         await stopBrowserSession(discoverySessionId);
@@ -5176,7 +6601,14 @@ export async function runGroundNewsIngestion(opts = {}) {
       if (expandedRoutes.length > 0) {
         if (!options.silent) {
           console.log(`route expansion: scraping ${expandedRoutes.length} additional route(s)`);
+          console.log(`expanded routes preview: ${expandedRoutes.slice(0, 24).join(", ")}${expandedRoutes.length > 24 ? " ..." : ""}`);
         }
+        telemetry.emit("info", "routes.expanded", {
+          expandedRouteCount: expandedRoutes.length,
+          expandedRoutes: expandedRoutes.slice(0, 240),
+        });
+        telemetry.emit("info", "scrape.expanded.start", { expandedRouteCount: expandedRoutes.length });
+        const expandedSpan = telemetry.startSpan("scrape.expanded", { expandedRouteCount: expandedRoutes.length });
         const expandedScrape = await runGroundNewsScrape({
           routes: expandedRoutes,
           editions: scrapeEditions,
@@ -5185,8 +6617,17 @@ export async function runGroundNewsIngestion(opts = {}) {
           sessionConcurrency: options.scrapeSessionConcurrency,
           maxLinksPerRoute: options.maxLinksPerRoute,
           silent: options.silent,
+        }).catch((error) => {
+          expandedSpan.end("error");
+          telemetry.emitError("scrape.expanded.error", error, { expandedRouteCount: expandedRoutes.length });
+          throw error;
         });
+        expandedSpan.end("ok", { uniqueStoryLinkCount: expandedScrape.uniqueStoryLinkCount || 0 });
         scrapeOutput = mergeScrapeOutputs([initialScrape, expandedScrape]);
+        telemetry.emit("info", "scrape.expanded.done", {
+          mergedUniqueStoryLinkCount: scrapeOutput.uniqueStoryLinkCount || 0,
+          mergedRouteCount: scrapeOutput.routeCount || 0,
+        });
       }
     }
 
@@ -5196,6 +6637,21 @@ export async function runGroundNewsIngestion(opts = {}) {
     const homepageTopStoryLinks = dedupeOrdered(
       (homepageSnapshot?.topStoryCards || []).map((card) => normalizeExternalUrl(card?.href)).filter(Boolean),
     );
+
+    // Persist the "as-seen-on-homepage" ordering so the OpenGroundNews front page can mirror GN's homepage.
+    // Smaller rank = more prominent.
+    homepageRankByUrl = new Map();
+    for (let i = 0; i < homepageTopStoryLinks.length; i += 1) {
+      const url = homepageTopStoryLinks[i];
+      if (!url) continue;
+      if (!homepageRankByUrl.has(url)) homepageRankByUrl.set(url, i + 1);
+    }
+    const DISCOVERED_OFFSET = 200;
+    for (let i = 0; i < homepageLinks.length; i += 1) {
+      const url = homepageLinks[i];
+      if (!url) continue;
+      if (!homepageRankByUrl.has(url)) homepageRankByUrl.set(url, DISCOVERED_OFFSET + i + 1);
+    }
 
     for (const homeLink of homepageLinks) {
       const existing = linkSignals.get(homeLink) || { trending: false, blindspot: false, local: false };
@@ -5213,6 +6669,14 @@ export async function runGroundNewsIngestion(opts = {}) {
       linkSignals,
     });
     links = prioritizedLinks.slice(0, effectiveLimit);
+    telemetry.emit("info", "links.selected", {
+      selected: links.length,
+      effectiveLimit,
+      scrapeLinks: scrapeLinks.length,
+      homepageLinks: homepageLinks.length,
+      homepageTopStoryLinks: homepageTopStoryLinks.length,
+      routeCount: scrapeOutput.routeCount || 0,
+    });
 
     if (!options.silent) {
       const homepageEditionCount = Number(homepageSnapshot?.counts?.editionsCaptured || 0);
@@ -5225,6 +6689,9 @@ export async function runGroundNewsIngestion(opts = {}) {
         console.log("front-page discovery returned 0 links; using route-scraped article links");
       }
       console.log(`article links selected for enrichment: ${links.length}`);
+      if (options.logLevel === "debug" || options.logLevel === "trace") {
+        console.log(`selected links preview:\n${links.slice(0, 15).map((u, i) => `  ${String(i + 1).padStart(2, "0")}. ${u}`).join("\n")}`);
+      }
     }
 
     // Data-quality gate: if we repeatedly fail to discover any links, record a failed run and stop.
@@ -5301,6 +6768,25 @@ export async function runGroundNewsIngestion(opts = {}) {
     const recoverableRetries = new Map();
     let completedCount = 0;
     let failedCount = 0;
+    const enrichBrowserSessionLimit = Math.max(
+      1,
+      Math.round(Number(process.env.OGN_ENRICH_BROWSER_SESSION_CONCURRENCY || options.scrapeSessionConcurrency || 2)),
+    );
+    const enrichBrowserSessionGate = createSemaphore(enrichBrowserSessionLimit);
+    telemetry.emit("info", "browser.session.gate", {
+      limit: enrichBrowserSessionLimit,
+      storyWorkers: workerCount,
+      scrapeSessionConcurrency: options.scrapeSessionConcurrency,
+    });
+  const wantScreenshots = Boolean(options.visualize || options.logLevel === "trace");
+  const screenshotDir = path.join(reportDir, "screenshots");
+  if (wantScreenshots) {
+    await fs.mkdir(screenshotDir, { recursive: true }).catch(() => {});
+  }
+  let okShotsTaken = 0;
+  const OK_SHOTS_MAX = 18;
+  let failShotsTaken = 0;
+  const FAIL_SHOTS_MAX = 80;
 
     const claimJob = () => {
       if (retryQueue.length > 0) return retryQueue.shift();
@@ -5317,15 +6803,18 @@ export async function runGroundNewsIngestion(opts = {}) {
       let sessionStartedAt = 0;
       let processedInSession = 0;
       let sessionCounter = 0;
+      let sessionPermitRelease = null;
 
       async function closeSession() {
         if (browser) await browser.close().catch(() => {});
         if (sessionId) await stopBrowserSession(sessionId);
+        if (sessionPermitRelease) sessionPermitRelease();
         sessionId = null;
         browser = null;
         page = null;
         sessionStartedAt = 0;
         processedInSession = 0;
+        sessionPermitRelease = null;
       }
 
       async function ensureSession() {
@@ -5337,15 +6826,54 @@ export async function runGroundNewsIngestion(opts = {}) {
         }
         if (page) return;
         sessionCounter += 1;
-        const session = await createBrowserSession(
-          {},
-          { rotationKey: `groundnews:frontpage-enrich:worker:${workerId}:session:${sessionCounter}` },
-        );
+        if (!sessionPermitRelease) {
+          const waitStartedAt = Date.now();
+          sessionPermitRelease = await enrichBrowserSessionGate.acquire();
+          const waitedMs = Date.now() - waitStartedAt;
+          if (waitedMs > 450) {
+            telemetry.emit("warn", "browser.session.wait", {
+              workerId,
+              waitedMs,
+              active: enrichBrowserSessionGate.activeCount(),
+              queued: enrichBrowserSessionGate.queuedCount(),
+              limit: enrichBrowserSessionGate.limit,
+            });
+          }
+        }
+        let session = null;
+        for (let attempt = 1; attempt <= 4; attempt += 1) {
+          try {
+            session = await createBrowserSession(
+              {},
+              { rotationKey: `groundnews:frontpage-enrich:worker:${workerId}:session:${sessionCounter}` },
+            );
+            break;
+          } catch (error) {
+            const msg = error instanceof Error ? error.message : String(error || "");
+            const is429 = msg.includes("HTTP 429") || msg.toLowerCase().includes("too many concurrent active sessions");
+            if (!is429 || attempt >= 4) throw error;
+            telemetry.emit("warn", "browser.session.retry", { workerId, attempt, message: msg.slice(0, 220) });
+            await sleep(800 * attempt);
+          }
+        }
         sessionId = session.id;
         if (!session.cdpUrl) throw new Error("Browser Use did not return cdpUrl for article enrichment.");
         browser = await chromium.connectOverCDP(session.cdpUrl, { timeout: 60000 });
         const context = browser.contexts()[0] ?? (await browser.newContext({ viewport: { width: 1440, height: 900 } }));
         page = await context.newPage();
+        // Speed: Ground News pages are heavy. We don't need images/fonts/media to extract story metadata.
+        // Keep scripts/XHR enabled so coverage + sources hydrate properly.
+        await page.route("**/*", async (route) => {
+          try {
+            const type = route.request().resourceType();
+            if (type === "image" || type === "media" || type === "font" || type === "stylesheet") {
+              return await route.abort();
+            }
+            return await route.continue();
+          } catch {
+            return await route.continue().catch(() => {});
+          }
+        });
         sessionStartedAt = Date.now();
       }
 
@@ -5354,26 +6882,115 @@ export async function runGroundNewsIngestion(opts = {}) {
           const job = claimJob();
           if (!job) break;
           const { link, ordinal } = job;
-          await ensureSession();
+          const storyRunKey = telemetry.noteStoryStart({ workerId, ordinal, link });
           if (!options.silent) {
             console.log(`[worker ${workerId}] article ${completedCount + 1}/${links.length}: ${link}`);
           }
-          try {
-            const story = await enrichStory(
-              page,
-              link,
-              linkSignals,
-              sourceMetadataCache,
-              auditState,
-              ordinal,
-              sourceFetchConcurrency,
-              outletEnricher,
-            );
-            stories.push(story);
-            processedInSession += 1;
-            completedCount += 1;
-          } catch (error) {
-            const message = error instanceof Error ? error.message : "unknown";
+	          try {
+	            const storyStart = Date.now();
+              let story = null;
+              let usedBrowser = false;
+
+              if (options.httpFirst) {
+                try {
+                  story = await enrichStory(
+                    null,
+                    link,
+                    linkSignals,
+                    sourceMetadataCache,
+                    homepageRankByUrl,
+                    auditState,
+                    ordinal,
+                    sourceFetchConcurrency,
+                    outletEnricher,
+                    telemetry,
+                    storyRunKey,
+                    true,
+                  );
+                } catch (error) {
+                  const needsBrowser = Boolean(error && typeof error === "object" && error.needsBrowser);
+                  if (!needsBrowser) throw error;
+                  usedBrowser = true;
+                  telemetry.emit("info", "story.http_first.fallback", { link, workerId, ordinal, storyRunKey });
+                }
+              }
+
+              if (!story) {
+                usedBrowser = true;
+                await ensureSession();
+                story = await enrichStory(
+                  page,
+                  link,
+                  linkSignals,
+                  sourceMetadataCache,
+                  homepageRankByUrl,
+                  auditState,
+                  ordinal,
+                  sourceFetchConcurrency,
+                  outletEnricher,
+                  telemetry,
+                  storyRunKey,
+                  false,
+                );
+              }
+	            stories.push(story);
+	            if (usedBrowser) processedInSession += 1;
+	            completedCount += 1;
+	            telemetry.noteStoryStep(storyRunKey, "total", Date.now() - storyStart);
+
+	            let screenshotPath = "";
+	            if (wantScreenshots && okShotsTaken < OK_SHOTS_MAX && page && usedBrowser) {
+	              const name = `${String(ordinal + 1).padStart(3, "0")}_ok_${slugForFile(story?.slug || shortHash(link, 10), "story", 80)}_${shortHash(link, 6)}.png`;
+	              const abs = path.join(screenshotDir, name);
+	              const rel = path.posix.join("screenshots", name);
+	              const ok = await page.screenshot({ path: abs, fullPage: false }).then(() => true).catch(() => false);
+	              if (ok) {
+	                okShotsTaken += 1;
+	                screenshotPath = rel;
+	                telemetry.emit("debug", "story.screenshot", { link, workerId, ordinal, storyRunKey, screenshotPath });
+	              }
+	            }
+
+	            telemetry.noteStoryEnd(storyRunKey, {
+	              ok: true,
+	              title: story?.title,
+	              slug: story?.slug,
+	              canonicalUrl: story?.canonicalUrl,
+	              sourceCount: story?.sourceCount,
+	              selectedImageUrl: story?.imageUrl,
+	              screenshotPath,
+	            });
+              if (!options.silent && (options.logLevel === "debug" || options.logLevel === "trace")) {
+                const title = normalizeText(story?.title || "").slice(0, 120);
+                const method = usedBrowser ? "browser" : "http";
+                const src = Number(story?.sourceCount || 0) || 0;
+                const img = normalizeText(story?.imageUrl || "").slice(0, 84);
+                console.log(
+                  `[worker ${workerId}] ok #${ordinal + 1} method=${method} sources=${src} title="${title}" image="${img}"`,
+                );
+              }
+	          } catch (error) {
+	            const message = error instanceof Error ? error.message : "unknown";
+	            const stage = error && typeof error === "object" ? error.stage || "" : "";
+	            let screenshotPath = "";
+	            if (wantScreenshots && page && failShotsTaken < FAIL_SHOTS_MAX) {
+	              const name = `${String(ordinal + 1).padStart(3, "0")}_fail_${slugForFile(shortHash(link, 10), "story", 80)}_${shortHash(link, 6)}.png`;
+	              const abs = path.join(screenshotDir, name);
+	              const rel = path.posix.join("screenshots", name);
+	              const ok = await page.screenshot({ path: abs, fullPage: false }).then(() => true).catch(() => false);
+	              if (ok) {
+	                failShotsTaken += 1;
+	                screenshotPath = rel;
+	                telemetry.emit("debug", "story.screenshot", { link, workerId, ordinal, storyRunKey, screenshotPath });
+	              }
+	            }
+
+	            telemetry.noteStoryEnd(storyRunKey, {
+	              ok: false,
+	              failure: { stage, message: String(message || "unknown") },
+	              screenshotPath,
+	            });
+	            telemetry.emitError("story.enrich.error", error, { link, workerId, ordinal, stage });
             if (isRecoverableBrowserError(message)) {
               const attempts = (recoverableRetries.get(link) || 0) + 1;
               recoverableRetries.set(link, attempts);
@@ -5384,6 +7001,7 @@ export async function runGroundNewsIngestion(opts = {}) {
                     `[worker ${workerId}] transient browser failure on ${link}; retrying in a fresh session (attempt ${attempts}/3)`,
                   );
                 }
+                telemetry.emit("warn", "story.enrich.retry", { link, workerId, ordinal, attempts, stage, message });
                 retryQueue.push(job);
                 continue;
               }
@@ -5395,6 +7013,10 @@ export async function runGroundNewsIngestion(opts = {}) {
             }
             failedCount += 1;
             completedCount += 1;
+            if (!options.silent && (options.logLevel === "debug" || options.logLevel === "trace")) {
+              const cleanMsg = String(message || "unknown").replace(/\\s+/g, " ").slice(0, 220);
+              console.log(`[worker ${workerId}] fail #${ordinal + 1} stage=${stage || "unknown"} msg="${cleanMsg}"`);
+            }
           }
         }
       } finally {
@@ -5435,53 +7057,163 @@ export async function runGroundNewsIngestion(opts = {}) {
     });
   }
 
-  // Persist to DB for the actual app runtime.
-  if (process.env.DATABASE_URL) {
-    await persistStoriesToDb(normalizedStories, { disconnect: false });
-  }
-  await persistIngestionRun({
-    startedAt,
-    finishedAt: new Date().toISOString(),
-    status: "ok",
-    mode: "groundnews-frontpage-individual-article-pipeline",
-    routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
-    uniqueStoryLinks: links.length,
-    ingestedStories: stories.length,
-    errors: {
-      editions: scrapeEditions,
-      homepageEditionCount: Number(homepageSnapshot?.counts?.editionsCaptured || 0),
-      homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
-      scrapeUniqueStoryLinkCount: scrapeOutput.uniqueStoryLinkCount || 0,
-      scrapeRouteCount: scrapeOutput.routeCount || 0,
-      sourceFetchConcurrency,
-      scrapeSessionConcurrency: options.scrapeSessionConcurrency,
-      outletEnrichment: Boolean(options.outletEnrichment),
-      outletEnrichmentTimeoutMs: options.outletEnrichmentTimeoutMs,
-      storyWorkers: options.storyWorkerCount,
-      auditEnabled: Boolean(auditState.enabled),
-      imagePreRepairAttempted: preRepairStats?.attempted || 0,
-      imagePreRepairRepaired: preRepairStats?.repaired || 0,
-      imagePreRepairRemaining: preRepairStats?.remainingPlaceholders || 0,
-    },
-  }).catch(() => {});
-  if (process.env.DATABASE_URL) {
-    await persistStoriesToDb([], { disconnect: true }).catch(() => {});
-  }
+	  // Persist to DB for the actual app runtime.
+	  const persistTimeoutMs = Math.max(30_000, Number(process.env.OGN_PERSIST_TIMEOUT_MS || 10 * 60 * 1000));
+	  telemetry.emit("info", "persist.start", { storyCount: normalizedStories.length, timeoutMs: persistTimeoutMs });
+	  await telemetry.flush();
+	  const persistSpan = telemetry.startSpan("persist", { storyCount: normalizedStories.length, timeoutMs: persistTimeoutMs });
+	  if (process.env.DATABASE_URL) {
+	    await withTimeout(
+	      persistStoriesToDb(normalizedStories, {
+	        disconnect: false,
+          // Persist-time enrichment is redundant with the main pipeline and can stall; default off unless explicitly enabled.
+          persistOutletEnrichment: process.env.OGN_DB_PERSIST_OUTLET_ENRICHMENT === "1",
+        }),
+	      persistTimeoutMs,
+	      "persistStoriesToDb",
+	    );
+	  }
+	  const finishedAt = new Date().toISOString();
+	  persistSpan.end("ok", { finishedAt });
+	  telemetry.emit("info", "persist.done", { finishedAt });
+	  await telemetry.flush();
 
-  return {
-    ok: true,
-    ingestedStories: stories.length,
-    scrapedLinks: links.length,
-    totalStories: normalizedStories.length,
-    routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
-    editions: scrapeEditions,
-    scrapeSessionConcurrency: options.scrapeSessionConcurrency,
-    homepageEditionCount: Number(homepageSnapshot?.counts?.editionsCaptured || 0),
-    homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
-    output: options.out,
-    articleAuditDir: auditState.enabled ? auditState.dir : null,
-    imagePreRepair: preRepairStats,
-  };
+    // Keep the app homepage aligned with the current Ground News homepage by clearing stale ranks.
+    if (process.env.DATABASE_URL) {
+      const homepageUrls = Array.from(homepageRankByUrl.keys());
+      const cleared = await clearStaleHomepageRanksInDb(homepageUrls);
+      telemetry.emit("info", "homepage.rank.cleared", { cleared, homepageUrlCount: homepageUrls.length });
+    }
+
+	  await persistIngestionRun({
+	    startedAt,
+	    finishedAt,
+	    status: "ok",
+	    mode: "groundnews-frontpage-individual-article-pipeline",
+	    routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
+	    uniqueStoryLinks: links.length,
+	    ingestedStories: stories.length,
+	    errors: {
+	      editions: scrapeEditions,
+	      homepageEditionCount: Number(homepageSnapshot?.counts?.editionsCaptured || 0),
+	      homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
+	      scrapeUniqueStoryLinkCount: scrapeOutput.uniqueStoryLinkCount || 0,
+	      scrapeRouteCount: scrapeOutput.routeCount || 0,
+	      sourceFetchConcurrency,
+	      scrapeSessionConcurrency: options.scrapeSessionConcurrency,
+	      outletEnrichment: Boolean(options.outletEnrichment),
+	      outletEnrichmentTimeoutMs: options.outletEnrichmentTimeoutMs,
+	      storyWorkers: options.storyWorkerCount,
+	      auditEnabled: Boolean(auditState.enabled),
+	      imagePreRepairAttempted: preRepairStats?.attempted || 0,
+	      imagePreRepairRepaired: preRepairStats?.repaired || 0,
+	      imagePreRepairRemaining: preRepairStats?.remainingPlaceholders || 0,
+	    },
+	  }).catch(() => {});
+	  if (process.env.DATABASE_URL) {
+	    await persistStoriesToDb([], { disconnect: true }).catch(() => {});
+	  }
+
+	  const result = {
+	    ok: true,
+	    ingestedStories: stories.length,
+	    scrapedLinks: links.length,
+	    totalStories: normalizedStories.length,
+	    routeCount: scrapeOutput.routeCount || scrapeInputRoutes.length,
+	    editions: scrapeEditions,
+	    scrapeSessionConcurrency: options.scrapeSessionConcurrency,
+	    homepageEditionCount: Number(homepageSnapshot?.counts?.editionsCaptured || 0),
+	    homepageDiscoveredLinks: homepageSnapshot?.discoveredLinks?.length || 0,
+	    output: options.out,
+	    articleAuditDir: auditState.enabled ? auditState.dir : null,
+	    imagePreRepair: preRepairStats,
+	  };
+
+	  telemetry.emit("info", "run.ok", {
+	    finishedAt,
+	    ingestedStories: result.ingestedStories,
+	    scrapedLinks: result.scrapedLinks,
+	    totalStories: result.totalStories,
+	    failedLinks: Math.max(0, (links || []).length - (stories || []).length),
+	  });
+
+	  const routeSummary = (scrapeOutput?.routes || []).slice(0, 800).map((route) => ({
+	    status: route?.status || "unknown",
+	    routeUrl: normalizeText(route?.routeUrl || ""),
+	    finalUrl: normalizeText(route?.finalUrl || ""),
+	    edition: normalizeText(route?.edition || ""),
+	    editionLabel: normalizeText(route?.editionLabel || ""),
+	    storyLinks: Array.isArray(route?.storyLinks) ? route.storyLinks.length : 0,
+	    topicLinks: Array.isArray(route?.topicLinks) ? route.topicLinks.length : 0,
+	    outletLinks: Array.isArray(route?.sourceLinks) ? route.sourceLinks.length : 0,
+	    error: normalizeText(route?.error || ""),
+	  }));
+	  const artifacts = await telemetry.finalize({
+	    reportDir,
+	    startedAt,
+	    finishedAt,
+	    status: "ok",
+	    mode: "groundnews-frontpage-individual-article-pipeline",
+	    notes: `Synced ${stories.length} stories from ${links.length} link(s)`,
+	    routes: {
+	      baseRoutes: scrapeInputRoutes,
+	      expandedRoutes: options.expandRoutes ? deriveExpandedRoutes(scrapeInputRoutes, initialScrape, homepageSnapshot, options) : [],
+	      routeCount: scrapeOutput.routeCount || 0,
+	      summary: routeSummary,
+	    },
+	    links: {
+	      selectedCount: links.length,
+	      selectedPreview: links.slice(0, 30),
+	      homepageTopStoryCount: (homepageSnapshot?.topStoryCards || []).length,
+	      homepageDiscoveredCount: (homepageSnapshot?.discoveredLinks || []).length,
+	    },
+	  });
+
+	  if (options.review) {
+	    const s = telemetry.summary();
+	    telemetry.console("info", `review: stories ok=${s.stories.ok}/${s.stories.total} fail=${s.stories.fail}`);
+	    if (s.stories.topStages.length > 0) {
+	      telemetry.console(
+	        "info",
+	        `review: top failure stages: ${s.stories.topStages.map((x) => `${x.stage}(${x.count})`).join(", ")}`,
+	      );
+	    }
+	    if (s.errors.top.length > 0) {
+	      telemetry.console(
+	        "info",
+	        `review: top errors: ${s.errors.top.map((x) => `${x.type}(${x.count})`).slice(0, 6).join(", ")}`,
+	      );
+	    }
+	  }
+	  if (artifacts?.reportHtmlPath) {
+      // "Review all of that each time": always print the report path even when `--quiet` is set.
+      console.log(`report: ${artifacts.reportHtmlPath}`);
+    }
+
+	  return {
+	    ...result,
+	    reportDir,
+	    reportHtmlPath: artifacts?.reportHtmlPath || null,
+	    reportJsonPath: artifacts?.reportJsonPath || null,
+	  };
+  } catch (error) {
+    telemetry.emitError("run.error", error, { startedAt });
+    const finishedAt = new Date().toISOString();
+    const artifacts = await telemetry
+      .finalize({
+        reportDir,
+        startedAt,
+        finishedAt,
+        status: "error",
+        mode: options.repairImagesOnly ? "groundnews-story-image-http-repair" : "groundnews-frontpage-individual-article-pipeline",
+        notes: "run failed; see errors.jsonl",
+      })
+      .catch(() => null);
+    if (!options.silent && artifacts?.reportHtmlPath) {
+      telemetry.console("error", `report: ${artifacts.reportHtmlPath}`);
+    }
+    throw error;
+  }
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

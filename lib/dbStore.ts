@@ -197,6 +197,8 @@ function toStory(row: any): Story {
     blindspot: Boolean(row.isBlindspot),
     local: Boolean(row.isLocal),
     trending: Boolean(row.isTrending),
+    homepageRank: typeof row.homepageRank === "number" ? row.homepageRank : undefined,
+    homepageFeaturedAt: row.homepageFeaturedAt ? new Date(row.homepageFeaturedAt).toISOString() : undefined,
     sources,
     coverage: row.coverageTotal
       ? {
@@ -287,6 +289,13 @@ export async function listStories(params?: {
   });
 
   let stories = rows.map(toStory);
+  // Mirror Ground News homepage ordering when present.
+  stories.sort((a, b) => {
+    const ra = typeof a.homepageRank === "number" ? a.homepageRank : Number.POSITIVE_INFINITY;
+    const rb = typeof b.homepageRank === "number" ? b.homepageRank : Number.POSITIVE_INFINITY;
+    if (ra !== rb) return ra - rb;
+    return +new Date(b.updatedAt) - +new Date(a.updatedAt);
+  });
 
   if (params?.topic) {
     const needle = params.topic.trim().toLowerCase();

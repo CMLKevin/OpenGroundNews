@@ -17,3 +17,6 @@ tsconfig.tsbuildinfo
 
 # Local backups created during ingestion/debug
 data/store.json.bak-*
+
+# Generated story thumbnail cache (populated by ingestion).
+public/images/cache/**

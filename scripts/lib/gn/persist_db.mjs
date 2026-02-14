@@ -468,6 +468,42 @@ export async function persistStoriesToDb(stories, context = {}) {
     return;
   }
 
+  // DB-level dedupe guard: avoid creating multiple Story rows with the same headline.
+  // Ground News sometimes surfaces the same story under multiple slugs/UUID URLs.
+  const titleWindowHours = Math.max(12, Number(process.env.OGN_DB_DEDUPE_TITLE_HOURS || 96));
+  const titleKeys = Array.from(
+    safeStories.reduce((acc, s) => {
+      const key = normalizeText(s?.title || "").toLowerCase();
+      if (key) acc.add(key);
+      return acc;
+    }, new Set()),
+  ).slice(0, 1500);
+  const existingByTitleKey = new Map();
+  if (titleKeys.length > 0) {
+    try {
+      const rows = await db.$queryRaw`
+        SELECT id, slug, title, "publishedAt", "updatedAt", "homepageRank"
+        FROM "Story"
+        WHERE LOWER(title) = ANY(${titleKeys})
+      `;
+      for (const row of rows || []) {
+        const key = normalizeText(row?.title || "").toLowerCase();
+        if (!key) continue;
+        const list = existingByTitleKey.get(key) || [];
+        list.push({
+          id: String(row.id || ""),
+          slug: String(row.slug || ""),
+          publishedAt: row.publishedAt,
+          updatedAt: row.updatedAt,
+          homepageRank: typeof row.homepageRank === "number" ? row.homepageRank : null,
+        });
+        existingByTitleKey.set(key, list);
+      }
+    } catch {
+      // Best-effort: if raw query fails we continue without DB-side dedupe.
+    }
+  }
+
   const persistEnrichmentEnabled = context.persistOutletEnrichment !== false && process.env.OGN_DB_PERSIST_OUTLET_ENRICHMENT !== "0";
   const persistEnrichmentTimeoutMs = Math.max(
     1000,
@@ -528,16 +564,32 @@ export async function persistStoriesToDb(stories, context = {}) {
       const ownershipByOutletId = new Map();
 
       for (const story of storiesForPersist) {
-        const slug = String(story.slug || "").trim();
+        let slug = String(story.slug || "").trim();
         if (!slug) continue;
-
-        const storyId = String(story.id || stableId("story", story.canonicalUrl || story.url || slug));
-        runStoryIds.push(storyId);
-        runStoryBySlug.set(slug.toLowerCase(), { id: storyId, story });
 
         const updatedAtIso = story.updatedAt || nowIso;
         const updatedAt = parseDate(updatedAtIso, nowIso);
         const publishedAt = parseDate(story.publishedAt || updatedAtIso, updatedAtIso);
+
+        // If we already have a story row with the same title and a near-identical publish window,
+        // update that row instead of creating a duplicate with a different slug.
+        const titleKey = normalizeText(story.title || "").toLowerCase();
+        const candidates = existingByTitleKey.get(titleKey) || [];
+        const windowMs = titleWindowHours * 3600 * 1000;
+        const match = candidates
+          .filter((c) => c?.id && c?.slug && c?.publishedAt)
+          .map((c) => ({ ...c, gapMs: Math.abs(+publishedAt - +new Date(c.publishedAt)) }))
+          .filter((c) => Number.isFinite(c.gapMs) && c.gapMs <= windowMs)
+          .sort((a, b) => {
+            const ra = Number.isFinite(Number(a.homepageRank)) ? Number(a.homepageRank) : Number.POSITIVE_INFINITY;
+            const rb = Number.isFinite(Number(b.homepageRank)) ? Number(b.homepageRank) : Number.POSITIVE_INFINITY;
+            if (ra !== rb) return ra - rb;
+            return +new Date(b.updatedAt || 0) - +new Date(a.updatedAt || 0);
+          })[0];
+        const storyId = match?.id ? String(match.id) : String(story.id || stableId("story", story.canonicalUrl || story.url || slug));
+        if (match?.slug) slug = String(match.slug);
+        runStoryIds.push(storyId);
+        runStoryBySlug.set(slug.toLowerCase(), { id: storyId, story });
 
         const coverage = story.coverage || {};
 
@@ -556,7 +608,6 @@ export async function persistStoriesToDb(stories, context = {}) {
         await tx.story.upsert({
           where: { slug },
           update: {
-            id: storyId,
             canonicalUrl: story.canonicalUrl || null,
             title: story.title || "",
             dek: story.dek || null,
@@ -575,6 +626,11 @@ export async function persistStoriesToDb(stories, context = {}) {
             isBlindspot: Boolean(story.blindspot),
             isLocal: Boolean(story.local),
             isTrending: Boolean(story.trending),
+            homepageRank:
+              typeof story.homepageRank === "number" && Number.isFinite(story.homepageRank)
+                ? Math.max(1, Math.round(story.homepageRank))
+                : null,
+            homepageFeaturedAt: story.homepageFeaturedAt ? new Date(story.homepageFeaturedAt) : null,
             lastRefreshedAt: story.lastRefreshedAt ? new Date(story.lastRefreshedAt) : updatedAt,
             staleAt: story.staleAt ? new Date(story.staleAt) : null,
             readTimeMinutes:
@@ -609,6 +665,11 @@ export async function persistStoriesToDb(stories, context = {}) {
             isBlindspot: Boolean(story.blindspot),
             isLocal: Boolean(story.local),
             isTrending: Boolean(story.trending),
+            homepageRank:
+              typeof story.homepageRank === "number" && Number.isFinite(story.homepageRank)
+                ? Math.max(1, Math.round(story.homepageRank))
+                : null,
+            homepageFeaturedAt: story.homepageFeaturedAt ? new Date(story.homepageFeaturedAt) : null,
             lastRefreshedAt: story.lastRefreshedAt ? new Date(story.lastRefreshedAt) : updatedAt,
             staleAt: story.staleAt ? new Date(story.staleAt) : null,
             readTimeMinutes:
