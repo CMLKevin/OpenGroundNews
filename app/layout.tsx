@@ -8,6 +8,7 @@ import { SiteFooter } from "@/components/SiteFooter";
 import { AppBreadcrumbs } from "@/components/AppBreadcrumbs";
 import "@/app/globals.css";
 import { cookies } from "next/headers";
+import { Analytics } from "@vercel/analytics/next";
 
 const bricolage = Bricolage_Grotesque({
   subsets: ["latin"],
@@ -65,6 +66,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {children}
         <MobileBottomNav />
         <SiteFooter />
+        <Analytics />
       </body>
     </html>
   );
